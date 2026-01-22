@@ -1,0 +1,314 @@
+/* ============================================
+   Toolbar - Enhanced Design System
+   ============================================ */
+
+.toolbar {
+    height: var(--header-height);
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-primary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--space-5);
+    flex-shrink: 0;
+    position: relative;
+    backdrop-filter: blur(var(--glass-blur));
+    z-index: 100;
+}
+
+/* Top gradient accent line */
+.toolbar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--gradient-primary);
+    opacity: 0.6;
+}
+
+/* Bottom glow effect on hover */
+.toolbar::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 20%;
+    right: 20%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.5), transparent);
+    opacity: 0;
+    transition: opacity var(--transition-slow), left var(--transition-slow), right var(--transition-slow);
+}
+
+.toolbar:hover::after {
+    opacity: 1;
+    left: 10%;
+    right: 10%;
+}
+
+/* Layout Sections */
+.toolbar-left,
+.toolbar-center,
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.toolbar-left {
+    flex: 1;
+    min-width: 0;
+}
+
+.toolbar-center {
+    flex-shrink: 0;
+}
+
+.toolbar-right {
+    flex: 1;
+    justify-content: flex-end;
+    gap: var(--space-1);
+}
+
+/* ============================================
+   Book Info Display
+   ============================================ */
+.toolbar-book-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-left: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-secondary);
+    animation: slideInLeft var(--transition-base) ease;
+    max-width: 400px;
+    transition: all var(--transition-base);
+}
+
+.toolbar-book-info:hover {
+    border-color: var(--border-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.toolbar-book-title {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+    flex: 1;
+    min-width: 0;
+}
+
+.toolbar-book-progress {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-light);
+    padding: var(--space-1) var(--space-3);
+    border-radius: 100px;
+    transition: all var(--transition-base);
+    flex-shrink: 0;
+    border: 1px solid transparent;
+}
+
+.toolbar-book-progress:hover {
+    background: var(--accent);
+    color: white;
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.3);
+}
+
+/* ============================================
+   Button Groups - Enhanced
+   ============================================ */
+.toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-secondary);
+    margin-right: var(--space-2);
+    transition: all var(--transition-base);
+}
+
+.toolbar-group:hover {
+    border-color: var(--border-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.toolbar-group .btn-icon {
+    border-radius: var(--radius-md);
+    padding: var(--space-1);
+    color: var(--text-secondary);
+}
+
+.toolbar-group .btn-icon:hover {
+    background: var(--accent-light);
+    color: var(--accent);
+}
+
+.toolbar-font-size {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 42px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    padding: 0 var(--space-1);
+    user-select: none;
+}
+
+/* ============================================
+   Toolbar Buttons
+   ============================================ */
+.toolbar .btn-icon {
+    position: relative;
+    border-radius: var(--radius-md);
+    padding: var(--space-2);
+    color: var(--text-secondary);
+    transition: all var(--transition-base);
+    overflow: hidden;
+}
+
+/* Ripple effect background */
+.toolbar .btn-icon::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at center, var(--accent-light) 0%, transparent 70%);
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all var(--transition-base);
+}
+
+.toolbar .btn-icon:hover {
+    color: var(--accent);
+    transform: translateY(-2px);
+}
+
+.toolbar .btn-icon:hover::before {
+    opacity: 1;
+    transform: scale(1.2);
+}
+
+.toolbar .btn-icon:active {
+    transform: translateY(0) scale(0.95);
+}
+
+/* ============================================
+   Active State Button
+   ============================================ */
+.btn-icon.active {
+    background: var(--gradient-primary);
+    color: white;
+    box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.35);
+}
+
+.btn-icon.active::before {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, transparent 100%);
+    opacity: 1;
+    transform: scale(1);
+}
+
+.btn-icon.active:hover {
+    box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.5);
+    transform: translateY(-2px);
+}
+
+.btn-icon.active:active {
+    transform: translateY(0) scale(0.98);
+}
+
+/* ============================================
+   AI Assistant Button - Special Emphasis
+   ============================================ */
+.toolbar .btn-icon[data-tooltip="AI Assistant"] {
+    position: relative;
+}
+
+/* Animated gradient border */
+.toolbar .btn-icon[data-tooltip="AI Assistant"]::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: var(--radius-lg);
+    background: var(--gradient-primary);
+    opacity: 0;
+    z-index: -1;
+    transition: opacity var(--transition-base);
+}
+
+.toolbar .btn-icon[data-tooltip="AI Assistant"]:hover::after {
+    opacity: 0.2;
+    animation: subtleGlow 2s ease-in-out infinite;
+}
+
+.toolbar .btn-icon[data-tooltip="AI Assistant"].active::after {
+    opacity: 0;
+}
+
+/* ============================================
+   Divider
+   ============================================ */
+.toolbar-divider {
+    width: 1px;
+    height: 28px;
+    background: linear-gradient(180deg, transparent, var(--border-primary), transparent);
+    margin: 0 var(--space-3);
+    opacity: 0.7;
+}
+
+/* ============================================
+   Theme Toggle Button Special Styling
+   ============================================ */
+.toolbar .btn-icon[data-tooltip="Toggle Theme"] {
+    position: relative;
+}
+
+.toolbar .btn-icon[data-tooltip="Toggle Theme"] svg {
+    transition: transform var(--transition-spring);
+}
+
+.toolbar .btn-icon[data-tooltip="Toggle Theme"]:hover svg {
+    transform: rotate(20deg);
+}
+
+/* ============================================
+   Settings Button Special Styling
+   ============================================ */
+.toolbar .btn-icon[data-tooltip="Settings"] svg {
+    transition: transform var(--transition-slow);
+}
+
+.toolbar .btn-icon[data-tooltip="Settings"]:hover svg {
+    transform: rotate(45deg);
+}
+
+/* ============================================
+   Responsive Adjustments
+   ============================================ */
+@media (max-width: 768px) {
+    .toolbar {
+        padding: 0 var(--space-3);
+    }
+
+    .toolbar-book-info {
+        max-width: 200px;
+    }
+
+    .toolbar-book-title {
+        font-size: var(--text-xs);
+    }
+
+    .toolbar-divider {
+        margin: 0 var(--space-1);
+    }
+}

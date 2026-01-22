@@ -1,0 +1,53 @@
+/* ============================================
+   Error Boundary Styles
+   ============================================ */
+
+.error-boundary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    padding: var(--space-8);
+    background: var(--bg-primary);
+}
+
+.error-boundary-content {
+    max-width: 400px;
+    text-align: center;
+    animation: fadeInUp var(--transition-slow) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.error-boundary-content h2 {
+    margin-bottom: var(--space-3);
+    color: var(--error);
+    font-size: var(--text-xl);
+}
+
+.error-boundary-content p {
+    margin-bottom: var(--space-6);
+    color: var(--text-secondary);
+}
+
+.error-details {
+    margin-bottom: var(--space-6);
+    text-align: left;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+}
+
+.error-details summary {
+    cursor: pointer;
+    color: var(--text-tertiary);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-2);
+}
+
+.error-details pre {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--error);
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+}
