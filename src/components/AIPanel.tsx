@@ -4,15 +4,24 @@ import { useAI, useLibrary, useUI } from '../stores/AppContext';
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
 import { perfMark, perfMeasure } from '../utils/perf';
+import { loadStored, saveStored, STORAGE_KEYS } from '../services/LocalStore';
 import type { ChatMessage } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
 // Import from refactored modules
 import {
     SendIcon, AILogoIcon, SparkleIcon, TrashIcon, BookIcon,
-    QuoteIcon, ChevronDownIcon, CopyIcon, CheckIcon, StopIcon,
+    QuoteIcon, PlusIcon, ChevronDownIcon, CopyIcon, CheckIcon, StopIcon,
 } from './ai/icons';
 import { FormatMessage } from './ai/MarkdownRenderer';
-import { quickActions } from './ai/quickActions';
+import {
+    defaultQuickActions,
+    getMissingDefaultQuickActions,
+    hydrateQuickActions,
+    normalizeQuickActions,
+    renderQuickActionIcon,
+} from './ai/quickActions';
+import { createOnceCommitter } from './ai/streamCommit';
+import type { QuickActionConfig } from './ai/quickActions';
 import type { AIProviderInfo, ChatRequest, StreamEvent } from './ai/types';
 import './AIPanel.css';
 import './AIPanelMarkdown.css';
@@ -51,6 +60,13 @@ export function AIPanel() {
     const [selectedModel, setSelectedModel] = useState<string>('opus');
     const [showModelDropdown, setShowModelDropdown] = useState(false);
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+    const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(() => {
+        const stored = loadStored<unknown>(STORAGE_KEYS.quickActions, defaultQuickActions);
+        return normalizeQuickActions(stored);
+    });
+    const [isQuickActionEditorOpen, setQuickActionEditorOpen] = useState(false);
+    const [editingActionId, setEditingActionId] = useState<string | null>(null);
+    const [quickActionDraft, setQuickActionDraft] = useState({ label: '', prompt: '' });
     const [panelWidth, setPanelWidth] = useState(AI_PANEL_WIDTH);
     const [isResizing, setIsResizing] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -60,13 +76,24 @@ export function AIPanel() {
     const pendingScrollBehaviorRef = useRef<ScrollBehavior>('auto');
     const pendingPanelWidthRef = useRef<number | null>(null);
     const panelWidthRafRef = useRef<number | null>(null);
+    const isSendingRef = useRef(false);
 
     useEffect(() => {
         streamingContentRef.current = streamingContent;
     }, [streamingContent]);
 
+    useEffect(() => {
+        saveStored(STORAGE_KEYS.quickActions, quickActionConfigs);
+    }, [quickActionConfigs]);
+
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const panelRef = useRef<HTMLElement>(null);
+
+    const quickActions = useMemo(() => hydrateQuickActions(quickActionConfigs), [quickActionConfigs]);
+    const missingDefaultQuickActions = useMemo(
+        () => getMissingDefaultQuickActions(quickActionConfigs),
+        [quickActionConfigs]
+    );
 
     // Handle resize drag
     const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
@@ -248,8 +275,62 @@ export function AIPanel() {
         }
     }, []);
 
+    const startNewSession = async () => {
+        clearChat();
+        setInput('');
+        setStreamingContent('');
+        setSelectedText('');
+        clearAccumulatedTexts();
+        await refreshAIAvailability();
+    };
+
+    const startEditingQuickAction = (action: QuickActionConfig) => {
+        setEditingActionId(action.id);
+        setQuickActionDraft({ label: action.label, prompt: action.prompt });
+        setQuickActionEditorOpen(true);
+    };
+
+    const saveQuickActionDraft = () => {
+        if (!editingActionId) return;
+        const label = quickActionDraft.label.trim();
+        const prompt = quickActionDraft.prompt.trim();
+        if (!label || !prompt) return;
+        setQuickActionConfigs(actions => actions.map(action =>
+            action.id === editingActionId ? { ...action, label, prompt } : action
+        ));
+        setEditingActionId(null);
+    };
+
+    const deleteQuickAction = (actionId: string) => {
+        setQuickActionConfigs(actions => actions.filter(action => action.id !== actionId));
+        if (editingActionId === actionId) {
+            setEditingActionId(null);
+            setQuickActionDraft({ label: '', prompt: '' });
+        }
+    };
+
+    const restoreQuickAction = (action: QuickActionConfig) => {
+        setQuickActionConfigs(actions => [...actions, action]);
+        startEditingQuickAction(action);
+    };
+
+    const resetQuickActions = () => {
+        setQuickActionConfigs(defaultQuickActions);
+        setEditingActionId(null);
+        setQuickActionDraft({ label: '', prompt: '' });
+    };
+
+    const openQuickActionEditor = () => {
+        const nextOpen = !isQuickActionEditorOpen;
+        setQuickActionEditorOpen(nextOpen);
+        if (nextOpen && !editingActionId && quickActionConfigs[0]) {
+            startEditingQuickAction(quickActionConfigs[0]);
+        }
+    };
+
     const sendMessage = async () => {
-        if (!input.trim() || isLoading) return;
+        if (!input.trim() || isLoading || isSendingRef.current) return;
+        isSendingRef.current = true;
 
         // Combine selected text and accumulated texts as context
         const allContext: string[] = [];
@@ -319,6 +400,16 @@ export function AIPanel() {
                 return fullContent;
             };
 
+            const commitAssistantMessage = createOnceCommitter((content: string) => {
+                const assistantMessage: ChatMessage = {
+                    id: (Date.now() + 1).toString(),
+                    role: 'assistant',
+                    content,
+                    timestamp: Date.now(),
+                };
+                addChatMessage(assistantMessage);
+            });
+
             const scheduleFlush = () => {
                 if (flushRaf !== null) return;
                 flushRaf = requestAnimationFrame(() => {
@@ -344,14 +435,7 @@ export function AIPanel() {
                         }
                         perfMeasure(perfKey, `${perfKey}:start`, `${perfKey}:done`);
                         const finalContent = event.data.fullText || finalizeContent();
-                        // Add the complete message to chat history
-                        const assistantMessage: ChatMessage = {
-                            id: (Date.now() + 1).toString(),
-                            role: 'assistant',
-                            content: finalContent,
-                            timestamp: Date.now(),
-                        };
-                        addChatMessage(assistantMessage);
+                        commitAssistantMessage(finalContent);
                         setStreamingContent('');
                         setIsLoading(false);
                         if (selectedText) {
@@ -386,13 +470,7 @@ export function AIPanel() {
             // Safety check: if stream didn't complete, ensure we clean up
             if (!streamComplete && (fullContent || pendingChunks.length > 0)) {
                 perfMeasure(perfKey, `${perfKey}:start`, `${perfKey}:fallback`);
-                const assistantMessage: ChatMessage = {
-                    id: (Date.now() + 1).toString(),
-                    role: 'assistant',
-                    content: finalizeContent(),
-                    timestamp: Date.now(),
-                };
-                addChatMessage(assistantMessage);
+                commitAssistantMessage(finalizeContent());
                 setStreamingContent('');
                 setIsLoading(false);
             }
@@ -408,6 +486,8 @@ export function AIPanel() {
             setStreamingContent('');
             setIsLoading(false);
             setInput(messageToSend);
+        } finally {
+            isSendingRef.current = false;
         }
     };
 
@@ -491,6 +571,120 @@ export function AIPanel() {
         ));
     }, [shouldRenderEmbeddedPanel, chatMessages, copiedMessageId, copyMessage]);
 
+    const quickActionControls = (
+        <>
+            {isQuickActionEditorOpen && (
+                <div className="ai-quick-editor">
+                    <div className="ai-quick-editor-list">
+                        <div className="ai-quick-editor-list-title">Visible buttons</div>
+                        {quickActionConfigs.length > 0 ? (
+                            quickActionConfigs.map(action => (
+                                <div
+                                    key={action.id}
+                                    className={`ai-quick-editor-item ${editingActionId === action.id ? 'active' : ''}`}
+                                >
+                                    <button
+                                        className="ai-quick-editor-select"
+                                        onClick={() => startEditingQuickAction(action)}
+                                    >
+                                        {renderQuickActionIcon(action.icon)}
+                                        <span>{action.label}</span>
+                                    </button>
+                                    <button
+                                        className="ai-quick-editor-delete"
+                                        onClick={() => deleteQuickAction(action.id)}
+                                        title={`Hide ${action.label}`}
+                                        aria-label={`Hide ${action.label}`}
+                                    >
+                                        x
+                                    </button>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="ai-quick-editor-muted">All quick buttons are hidden.</div>
+                        )}
+                        {missingDefaultQuickActions.length > 0 && (
+                            <div className="ai-quick-editor-restore">
+                                <div className="ai-quick-editor-list-title">Restore hidden</div>
+                                {missingDefaultQuickActions.map(action => (
+                                    <button
+                                        key={action.id}
+                                        className="ai-quick-editor-add"
+                                        onClick={() => restoreQuickAction(action)}
+                                    >
+                                        <PlusIcon />
+                                        <span>{action.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    {editingActionId ? (
+                        <div className="ai-quick-editor-form">
+                            <label>
+                                <span>Button label</span>
+                                <input
+                                    value={quickActionDraft.label}
+                                    onChange={(e) => setQuickActionDraft(draft => ({ ...draft, label: e.target.value }))}
+                                    placeholder="Button label"
+                                />
+                            </label>
+                            <label>
+                                <span>Prompt</span>
+                                <textarea
+                                    value={quickActionDraft.prompt}
+                                    onChange={(e) => setQuickActionDraft(draft => ({ ...draft, prompt: e.target.value }))}
+                                    placeholder="Prompt"
+                                    rows={6}
+                                />
+                            </label>
+                            <div className="ai-quick-editor-actions">
+                                <button className="btn btn-ghost btn-sm" onClick={resetQuickActions}>
+                                    Restore defaults
+                                </button>
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={saveQuickActionDraft}
+                                    disabled={!quickActionDraft.label.trim() || !quickActionDraft.prompt.trim()}
+                                >
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="ai-quick-editor-empty">
+                            <span>Select a button to edit its label and prompt.</span>
+                            <button className="btn btn-ghost btn-sm" onClick={resetQuickActions}>
+                                Restore defaults
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+            <div className="ai-quick-actions">
+                {quickActions.map(action => (
+                    <button
+                        key={action.id}
+                        className="ai-quick-btn"
+                        onClick={() => setInput(action.prompt)}
+                        disabled={isLoading}
+                    >
+                        {action.icon}
+                        <span>{action.label}</span>
+                    </button>
+                ))}
+                <button
+                    className={`ai-quick-btn ai-quick-manage ${isQuickActionEditorOpen ? 'active' : ''}`}
+                    onClick={openQuickActionEditor}
+                    disabled={isLoading}
+                    title="Edit quick actions"
+                >
+                    <span>Manage</span>
+                </button>
+            </div>
+        </>
+    );
+
     if (!shouldRenderEmbeddedPanel) return null;
 
     return (
@@ -540,15 +734,6 @@ export function AIPanel() {
                             </div>
                         )}
                     </div>
-                    {isTauri && (
-                        <button
-                            className="btn btn-ghost btn-icon"
-                            onClick={refreshAIAvailability}
-                            title="Refresh AI availability"
-                        >
-                            ↻
-                        </button>
-                    )}
                     {/* Claude Model Selector - only shown when Claude is selected */}
                     {selectedProvider === 'claude' && (
                         <div className="ai-model-selector">
@@ -586,8 +771,9 @@ export function AIPanel() {
                     )}
                     <button
                         className="btn btn-ghost btn-icon"
-                        onClick={clearChat}
-                        title="Clear chat"
+                        onClick={startNewSession}
+                        title="New session"
+                        disabled={isLoading}
                     >
                         <TrashIcon />
                     </button>
@@ -653,7 +839,7 @@ export function AIPanel() {
                 {chatMessages.length === 0 ? (
                     <div className="ai-panel-empty">
                         <SparkleIcon />
-                        <p>Ask me anything about your book...</p>
+                        <p>原本山川，极命草木</p>
                         {!providers.some(p => p.available) && (
                             <div className="ai-warning">
                                 <p>No AI CLI detected. Please install claude, opencode, or codex CLI.</p>
@@ -663,9 +849,9 @@ export function AIPanel() {
                             </div>
                         )}
                         <div className="ai-panel-suggestions">
-                            {quickActions.slice(0, 4).map(action => (
+                            {quickActions.map(action => (
                                 <button
-                                    key={action.label}
+                                    key={action.id}
                                     className="ai-suggestion"
                                     onClick={() => setInput(action.prompt)}
                                 >
@@ -698,23 +884,7 @@ export function AIPanel() {
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Quick actions bar when chatting */}
-            {chatMessages.length > 0 && (
-                <div className="ai-quick-actions">
-                    {quickActions.map(action => (
-                        <button
-                            key={action.label}
-                            className="ai-quick-btn"
-                            onClick={() => setInput(action.prompt)}
-                            disabled={isLoading}
-                            title={action.prompt}
-                        >
-                            {action.icon}
-                            <span>{action.label}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
+            {quickActionControls}
 
             <div className="ai-panel-input">
                 <textarea

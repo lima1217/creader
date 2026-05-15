@@ -692,10 +692,12 @@
     left: 12px;
     width: 32px;
     height: 32px;
+    z-index: 40;
+    opacity: 0.78;
 }
 
 .reader:hover .reader-toc-toggle {
-    opacity: 0.62;
+    opacity: 0.92;
 }
 
 .reader-toc-toggle:hover,

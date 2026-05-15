@@ -1,14 +1,23 @@
 import type { ReactNode } from 'react';
 import { ExplainIcon, DeconstructIcon, InferenceIcon, TranslateIcon } from './icons';
 
-export type QuickAction = {
+export type QuickActionIcon = 'explain' | 'deconstruct' | 'inference' | 'translate';
+
+export type QuickActionConfig = {
+  id: string;
   label: string;
   prompt: string;
+  icon: QuickActionIcon;
+};
+
+export type QuickAction = Omit<QuickActionConfig, 'icon'> & {
+  iconKey: QuickActionIcon;
   icon: ReactNode;
 };
 
-export const quickActions: QuickAction[] = [
+export const defaultQuickActions: QuickActionConfig[] = [
   {
+    id: 'explain',
     label: '解释',
     prompt: `请针对以下选取的内容进行解释：
 
@@ -24,9 +33,10 @@ export const quickActions: QuickAction[] = [
 - 提供证明思路（如适用）
 
 请确保解释既严谨又易于理解，适当添加自然语言的说明来辅助理解形式化内容。`,
-    icon: <ExplainIcon />
+    icon: 'explain'
   },
   {
+    id: 'deconstruct',
     label: '拆解',
     prompt: `请针对以下选取的内容进行知识拆解：
 
@@ -46,9 +56,10 @@ export const quickActions: QuickAction[] = [
 - **方法**：描述的方法论、步骤或策略
 
 请对每个维度进行分析，若某维度不适用，请说明原因。`,
-    icon: <DeconstructIcon />
+    icon: 'deconstruct'
   },
   {
+    id: 'inference',
     label: '推演',
     prompt: `请针对以下选取的内容进行多路径推演：
 
@@ -72,9 +83,10 @@ export const quickActions: QuickAction[] = [
 - 给出综合判断
 
 请至少提供3条不同的推理路径，展示思维的多样性和深度。`,
-    icon: <InferenceIcon />
+    icon: 'inference'
   },
   {
+    id: 'translate',
     label: '翻译',
     prompt: `请将以下选取的内容翻译为简体中文：
 
@@ -91,6 +103,62 @@ export const quickActions: QuickAction[] = [
 4. 根据文化语言规范调整表达，但不改变原意
 
 请直接输出翻译结果，如有必要可以在最后添加简短的译者注释。`,
-    icon: <TranslateIcon />
+    icon: 'translate'
   }
 ];
+
+const quickActionIconKeys = new Set<QuickActionIcon>(['explain', 'deconstruct', 'inference', 'translate']);
+
+function isQuickActionConfig(value: unknown): value is QuickActionConfig {
+  if (!value || typeof value !== 'object') return false;
+  const action = value as Partial<QuickActionConfig>;
+  return (
+    typeof action.id === 'string' &&
+    typeof action.label === 'string' &&
+    typeof action.prompt === 'string' &&
+    typeof action.icon === 'string' &&
+    quickActionIconKeys.has(action.icon as QuickActionIcon)
+  );
+}
+
+export function normalizeQuickActions(value: unknown): QuickActionConfig[] {
+  if (!Array.isArray(value)) return defaultQuickActions;
+
+  return value
+    .filter(isQuickActionConfig)
+    .map(action => ({
+      id: action.id,
+      label: action.label.trim(),
+      prompt: action.prompt.trim(),
+      icon: action.icon,
+    }))
+    .filter(action => action.id && action.label && action.prompt);
+}
+
+export function getMissingDefaultQuickActions(actions: QuickActionConfig[]): QuickActionConfig[] {
+  const actionIds = new Set(actions.map(action => action.id));
+  return defaultQuickActions.filter(action => !actionIds.has(action.id));
+}
+
+export function renderQuickActionIcon(icon: QuickActionIcon) {
+  switch (icon) {
+    case 'explain':
+      return <ExplainIcon />;
+    case 'deconstruct':
+      return <DeconstructIcon />;
+    case 'inference':
+      return <InferenceIcon />;
+    case 'translate':
+      return <TranslateIcon />;
+  }
+}
+
+export function hydrateQuickActions(actions: QuickActionConfig[]): QuickAction[] {
+  return actions.map(action => ({
+    id: action.id,
+    label: action.label,
+    prompt: action.prompt,
+    iconKey: action.icon,
+    icon: renderQuickActionIcon(action.icon),
+  }));
+}

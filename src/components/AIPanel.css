@@ -84,9 +84,9 @@
    Header
    ============================================ */
 .ai-panel-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
     align-items: center;
-    justify-content: space-between;
     height: var(--header-height);
     padding: 0 var(--space-4);
     border-bottom: 1px solid var(--border-secondary);
@@ -98,6 +98,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    grid-column: 1;
     padding: 0;
 }
 
@@ -121,7 +122,10 @@
 .ai-panel-actions {
     display: flex;
     align-items: center;
+    justify-content: center;
+    grid-column: 2;
     gap: var(--space-1);
+    min-width: 0;
 }
 
 /* ============================================
@@ -593,6 +597,7 @@
    ============================================ */
 .ai-quick-actions {
     display: flex;
+    align-items: center;
     gap: var(--space-2);
     padding: var(--space-3) var(--space-4);
     background: var(--bg-primary);
@@ -636,6 +641,221 @@
 .ai-quick-btn svg {
     width: 12px;
     height: 12px;
+}
+
+.ai-quick-manage {
+    margin-left: auto;
+}
+
+.ai-quick-manage.active {
+    color: var(--accent);
+    border-color: rgba(var(--accent-rgb), 0.24);
+    background: rgba(var(--accent-rgb), 0.08);
+}
+
+.ai-quick-editor {
+    display: grid;
+    grid-template-columns: minmax(128px, 0.78fr) minmax(0, 1.22fr);
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border-secondary);
+    max-height: min(45vh, 360px);
+    overflow: auto;
+}
+
+.ai-quick-editor-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.ai-quick-editor-list-title,
+.ai-quick-editor-form label > span {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.ai-quick-editor-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.ai-quick-editor-select {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-control);
+    background: var(--bg-control);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--text-xs);
+    text-align: left;
+    cursor: default;
+}
+
+.ai-quick-editor-select span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-quick-editor-select svg {
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+}
+
+.ai-quick-editor-item.active .ai-quick-editor-select {
+    border-color: rgba(var(--accent-rgb), 0.28);
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.08);
+}
+
+.ai-quick-editor-delete {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-control);
+    background: var(--bg-control);
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--text-xs);
+    cursor: default;
+}
+
+.ai-quick-editor-delete:hover {
+    color: #b54747;
+    border-color: rgba(181, 71, 71, 0.28);
+    background: rgba(181, 71, 71, 0.08);
+}
+
+.ai-quick-editor-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.ai-quick-editor-form label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.ai-quick-editor-form input,
+.ai-quick-editor-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-control);
+    background: var(--bg-control);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-xs);
+    padding: var(--space-2);
+    outline: none;
+}
+
+.ai-quick-editor-form textarea {
+    resize: vertical;
+    min-height: 110px;
+    line-height: 1.5;
+}
+
+.ai-quick-editor-form input:focus,
+.ai-quick-editor-form textarea:focus {
+    border-color: rgba(var(--accent-rgb), 0.42);
+    background: var(--bg-elevated);
+}
+
+.ai-quick-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+.ai-quick-editor-actions .btn-sm {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+}
+
+.ai-quick-editor-empty {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    padding: var(--space-4);
+    border: 1px dashed var(--border-secondary);
+    border-radius: var(--radius-control);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    text-align: center;
+}
+
+.ai-quick-editor-muted {
+    padding: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+}
+
+.ai-quick-editor-restore {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-soft);
+}
+
+.ai-quick-editor-add {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-2);
+    border: 1px dashed var(--border-soft);
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--text-xs);
+    text-align: left;
+    cursor: default;
+}
+
+.ai-quick-editor-add:hover {
+    color: var(--accent);
+    border-color: rgba(var(--accent-rgb), 0.28);
+    background: rgba(var(--accent-rgb), 0.06);
+}
+
+.ai-quick-editor-add span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-quick-editor-add svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
 }
 
 /* ============================================
@@ -958,6 +1178,12 @@
         padding: var(--space-2) var(--space-3);
     }
 
+    .ai-quick-editor {
+        grid-template-columns: 1fr;
+        max-height: 52vh;
+        padding: var(--space-3);
+    }
+
     .ai-panel-input {
         padding: var(--space-3);
     }
@@ -975,6 +1201,10 @@
 
     .ai-quick-btn span {
         display: none;
+    }
+
+    .ai-quick-manage span {
+        display: inline;
     }
 
     .ai-quick-btn svg {
@@ -1223,7 +1453,10 @@
 
 .ai-suggestion {
     padding: 9px 10px;
-    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
 }
 
 .ai-message {
