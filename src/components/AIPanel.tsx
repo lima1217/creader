@@ -593,7 +593,6 @@ export function AIPanel() {
                                     <button
                                         className="ai-quick-editor-delete"
                                         onClick={() => deleteQuickAction(action.id)}
-                                        title={`Hide ${action.label}`}
                                         aria-label={`Hide ${action.label}`}
                                     >
                                         x
@@ -677,7 +676,7 @@ export function AIPanel() {
                     className={`ai-quick-btn ai-quick-manage ${isQuickActionEditorOpen ? 'active' : ''}`}
                     onClick={openQuickActionEditor}
                     disabled={isLoading}
-                    title="Edit quick actions"
+                    aria-label="Edit quick actions"
                 >
                     <span>Manage</span>
                 </button>
