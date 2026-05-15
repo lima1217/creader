@@ -20,6 +20,8 @@ export function useVirtualList<T>(
     const containerRef = useRef<HTMLDivElement>(null);
     const [scrollTop, setScrollTop] = useState(0);
     const [containerHeight, setContainerHeight] = useState(0);
+    const rafIdRef = useRef<number | null>(null);
+    const pendingScrollTopRef = useRef<number | null>(null);
 
     // Calculate visible range
     const visibleRange = useMemo(() => {
@@ -53,9 +55,16 @@ export function useVirtualList<T>(
 
     // Handle scroll events
     const handleScroll = useCallback(() => {
-        if (containerRef.current) {
-            setScrollTop(containerRef.current.scrollTop);
-        }
+        const el = containerRef.current;
+        if (!el) return;
+        pendingScrollTopRef.current = el.scrollTop;
+        if (rafIdRef.current !== null) return;
+        rafIdRef.current = requestAnimationFrame(() => {
+            rafIdRef.current = null;
+            const next = pendingScrollTopRef.current ?? 0;
+            pendingScrollTopRef.current = null;
+            setScrollTop(prev => (prev === next ? prev : next));
+        });
     }, []);
 
     // Observe container size changes
@@ -77,6 +86,10 @@ export function useVirtualList<T>(
         return () => {
             resizeObserver.disconnect();
             container.removeEventListener('scroll', handleScroll);
+            if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+            }
         };
     }, [handleScroll]);
 

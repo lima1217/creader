@@ -1,50 +1,18 @@
 /* ============================================
-   Toolbar - Enhanced Design System
+   Toolbar
    ============================================ */
 
 .toolbar {
     height: var(--header-height);
-    background: var(--bg-elevated);
-    border-bottom: 1px solid var(--border-primary);
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-secondary);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 var(--space-5);
+    padding: 0 var(--space-4);
     flex-shrink: 0;
     position: relative;
-    backdrop-filter: blur(var(--glass-blur));
     z-index: 100;
-}
-
-/* Top gradient accent line */
-.toolbar::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: var(--gradient-primary);
-    opacity: 0.6;
-}
-
-/* Bottom glow effect on hover */
-.toolbar::after {
-    content: '';
-    position: absolute;
-    bottom: -1px;
-    left: 20%;
-    right: 20%;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.5), transparent);
-    opacity: 0;
-    transition: opacity var(--transition-slow), left var(--transition-slow), right var(--transition-slow);
-}
-
-.toolbar:hover::after {
-    opacity: 1;
-    left: 10%;
-    right: 10%;
 }
 
 /* Layout Sections */
@@ -59,6 +27,7 @@
 .toolbar-left {
     flex: 1;
     min-width: 0;
+    gap: var(--space-3);
 }
 
 .toolbar-center {
@@ -68,7 +37,7 @@
 .toolbar-right {
     flex: 1;
     justify-content: flex-end;
-    gap: var(--space-1);
+    gap: var(--space-2);
 }
 
 /* ============================================
@@ -77,20 +46,13 @@
 .toolbar-book-info {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    margin-left: var(--space-3);
-    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+    min-height: 32px;
+    padding: 0 var(--space-3);
     background: var(--bg-secondary);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-secondary);
-    animation: slideInLeft var(--transition-base) ease;
     max-width: 400px;
-    transition: all var(--transition-base);
-}
-
-.toolbar-book-info:hover {
-    border-color: var(--border-primary);
-    box-shadow: var(--shadow-sm);
 }
 
 .toolbar-book-title {
@@ -100,7 +62,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    letter-spacing: -0.01em;
     flex: 1;
     min-width: 0;
 }
@@ -109,19 +70,10 @@
     font-size: var(--text-xs);
     font-weight: 600;
     color: var(--accent);
-    background: var(--accent-light);
-    padding: var(--space-1) var(--space-3);
+    background: rgba(var(--accent-rgb), 0.08);
+    padding: 2px var(--space-2);
     border-radius: 100px;
-    transition: all var(--transition-base);
     flex-shrink: 0;
-    border: 1px solid transparent;
-}
-
-.toolbar-book-progress:hover {
-    background: var(--accent);
-    color: white;
-    transform: scale(1.05);
-    box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.3);
 }
 
 /* ============================================
@@ -131,17 +83,11 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    padding: var(--space-1) var(--space-2);
+    min-height: 32px;
+    padding: 0 var(--space-1);
     background: var(--bg-secondary);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-secondary);
-    margin-right: var(--space-2);
-    transition: all var(--transition-base);
-}
-
-.toolbar-group:hover {
-    border-color: var(--border-primary);
-    box-shadow: var(--shadow-sm);
 }
 
 .toolbar-group .btn-icon {
@@ -151,8 +97,8 @@
 }
 
 .toolbar-group .btn-icon:hover {
-    background: var(--accent-light);
-    color: var(--accent);
+    background: var(--bg-hover);
+    color: var(--text-primary);
 }
 
 .toolbar-font-size {
@@ -172,59 +118,38 @@
 .toolbar .btn-icon {
     position: relative;
     border-radius: var(--radius-md);
-    padding: var(--space-2);
+    width: 32px;
+    height: 32px;
+    padding: 0;
     color: var(--text-secondary);
-    transition: all var(--transition-base);
+    transition: background-color var(--transition-fast), color var(--transition-fast), filter var(--transition-fast);
     overflow: hidden;
 }
 
-/* Ripple effect background */
-.toolbar .btn-icon::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(circle at center, var(--accent-light) 0%, transparent 70%);
-    opacity: 0;
-    transform: scale(0.5);
-    transition: all var(--transition-base);
-}
-
 .toolbar .btn-icon:hover {
-    color: var(--accent);
-    transform: translateY(-2px);
-}
-
-.toolbar .btn-icon:hover::before {
-    opacity: 1;
-    transform: scale(1.2);
+    background: var(--bg-hover);
+    color: var(--text-primary);
 }
 
 .toolbar .btn-icon:active {
-    transform: translateY(0) scale(0.95);
+    filter: brightness(0.94);
 }
 
 /* ============================================
    Active State Button
    ============================================ */
-.btn-icon.active {
-    background: var(--gradient-primary);
-    color: white;
-    box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.35);
+.toolbar .btn-icon.active {
+    background: var(--accent);
+    color: var(--bg-elevated);
 }
 
-.btn-icon.active::before {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, transparent 100%);
-    opacity: 1;
-    transform: scale(1);
+.toolbar .btn-icon.active::before {
+    display: none;
 }
 
-.btn-icon.active:hover {
-    box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.5);
-    transform: translateY(-2px);
-}
-
-.btn-icon.active:active {
-    transform: translateY(0) scale(0.98);
+.toolbar .btn-icon.active:hover {
+    background: var(--accent-hover);
+    color: var(--bg-elevated);
 }
 
 /* ============================================
@@ -234,25 +159,8 @@
     position: relative;
 }
 
-/* Animated gradient border */
 .toolbar .btn-icon[data-tooltip="AI Assistant"]::after {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: var(--radius-lg);
-    background: var(--gradient-primary);
-    opacity: 0;
-    z-index: -1;
-    transition: opacity var(--transition-base);
-}
-
-.toolbar .btn-icon[data-tooltip="AI Assistant"]:hover::after {
-    opacity: 0.2;
-    animation: subtleGlow 2s ease-in-out infinite;
-}
-
-.toolbar .btn-icon[data-tooltip="AI Assistant"].active::after {
-    opacity: 0;
+    display: none;
 }
 
 /* ============================================
@@ -310,5 +218,111 @@
 
     .toolbar-divider {
         margin: 0 var(--space-1);
+    }
+}
+
+/* ============================================
+   Paper Workspace Toolbar Refinement
+   ============================================ */
+.toolbar {
+    background: var(--bg-panel);
+    border-bottom-color: var(--border-secondary);
+    padding: 0 var(--space-3);
+}
+
+.toolbar-left {
+    gap: var(--space-2);
+}
+
+.toolbar-right {
+    gap: 6px;
+}
+
+.toolbar-book-info {
+    min-height: 32px;
+    max-width: min(440px, 44vw);
+    background: var(--bg-control);
+    border-color: var(--border-soft);
+    border-radius: var(--radius-control);
+    padding: 0 10px;
+}
+
+.toolbar-book-title {
+    font-weight: 520;
+    color: var(--text-primary);
+}
+
+.toolbar-book-progress {
+    min-width: 38px;
+    text-align: center;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: var(--radius-control);
+    font-variant-numeric: tabular-nums;
+}
+
+.toolbar-group {
+    min-height: 34px;
+    gap: 2px;
+    padding: 1px;
+    background: var(--bg-control);
+    border-color: var(--border-soft);
+    border-radius: calc(var(--radius-control) + 2px);
+}
+
+.toolbar-view-group,
+.toolbar-tool-group {
+    background: transparent;
+    border-color: transparent;
+}
+
+.toolbar .btn-icon,
+.toolbar-group .btn-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-control);
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.toolbar .btn-icon:hover,
+.toolbar-group .btn-icon:hover {
+    background: var(--bg-control-hover);
+    color: var(--text-primary);
+}
+
+.toolbar .btn-icon:active {
+    transform: scale(0.96);
+    filter: none;
+}
+
+.toolbar .btn-icon.active {
+    background: var(--accent);
+    color: var(--bg-elevated);
+}
+
+.toolbar .btn-icon.active:hover {
+    background: var(--accent-hover);
+    color: var(--bg-elevated);
+}
+
+.toolbar-font-size {
+    min-width: 44px;
+    color: var(--text-secondary);
+    font-weight: 560;
+}
+
+.toolbar .btn-icon[data-tooltip="Toggle Theme"]:hover svg,
+.toolbar .btn-icon[data-tooltip="Settings"]:hover svg {
+    transform: none;
+}
+
+@media (max-width: 900px) {
+    .toolbar-book-info {
+        max-width: 260px;
+    }
+
+    .toolbar-right {
+        gap: 4px;
     }
 }

@@ -3,8 +3,7 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": [
-    "main",
-    "ai-assistant"
+    "main"
   ],
   "permissions": [
     "core:default",
@@ -20,7 +19,6 @@
     "core:event:allow-listen",
     "opener:default",
     "dialog:default",
-    "fs:default",
     {
       "identifier": "fs:allow-read-file",
       "allow": [

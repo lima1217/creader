@@ -1,7 +1,11 @@
 import type { ReaderSearchResult } from './types';
+import type { EpubBookLike } from './epubAdapter';
+import { createLogger } from '../../utils/logger';
+
+const logger = createLogger('search');
 
 export async function searchBook(
-  book: any,
+  book: EpubBookLike,
   searchQuery: string,
   isCancelled: () => boolean
 ): Promise<ReaderSearchResult[]> {
@@ -9,6 +13,20 @@ export async function searchBook(
   const query = searchQuery.toLowerCase();
 
   if (!book?.spine) return results;
+
+  const extractTextFromDocLike = (doc: unknown): string => {
+    if (!doc) return '';
+    if (typeof doc === 'string') {
+      const parser = new DOMParser();
+      const parsedDoc = parser.parseFromString(doc, 'text/html');
+      return parsedDoc.body?.textContent || '';
+    }
+    if (doc instanceof Document) {
+      return doc.body?.textContent || doc.documentElement?.textContent || '';
+    }
+    const anyDoc = doc as any;
+    return anyDoc.body?.textContent || anyDoc.documentElement?.textContent || '';
+  };
 
   const spineItems = book.spine.spineItems || book.spine.items || [];
   for (let i = 0; i < spineItems.length; i++) {
@@ -25,59 +43,57 @@ export async function searchBook(
           if (findResults && findResults.length > 0) {
             for (const fr of findResults.slice(0, 3)) {
               results.push({
-                cfi: fr.cfi || item.href,
+                cfi: fr.cfi ?? item.href ?? item.url ?? `section_${i}`,
                 excerpt: fr.excerpt || searchQuery,
                 section: item.idref || `Chapter ${i + 1}`,
               });
             }
             continue;
           }
-        } catch {
+        } catch (error) {
+          logger.debug('item.find failed', error);
         }
       }
 
       if (item.load) {
         try {
-          let doc = null;
+          let doc: unknown = null;
           try {
             doc = await item.load(book.load?.bind(book));
-          } catch {
+          } catch (error) {
+            logger.debug('item.load(loader) failed', error);
           }
 
           if (!doc && item.document) doc = item.document;
 
-          if (doc) {
-            if (doc.body) text = doc.body.textContent || '';
-            else if (doc.documentElement) text = doc.documentElement.textContent || '';
-          }
-        } catch {
+          text = extractTextFromDocLike(doc);
+        } catch (error) {
+          logger.debug('item.load failed', error);
         }
       }
 
       if (!text && book.archive) {
         const href = item.href || item.url;
 
-        if (book.archive.getText) {
+        if (href && book.archive.getText) {
           try {
             const content = await book.archive.getText(href);
             if (content) {
-              const parser = new DOMParser();
-              const parsedDoc = parser.parseFromString(content, 'text/html');
-              text = parsedDoc.body?.textContent || '';
+              text = extractTextFromDocLike(content);
             }
-          } catch {
+          } catch (error) {
+            logger.debug('archive.getText failed', { href }, error);
           }
         }
 
-        if (!text && book.archive.request) {
+        if (!text && href && book.archive.request) {
           try {
             const content = await book.archive.request(href, 'text');
             if (content) {
-              const parser = new DOMParser();
-              const parsedDoc = parser.parseFromString(content, 'text/html');
-              text = parsedDoc.body?.textContent || '';
+              text = extractTextFromDocLike(content);
             }
-          } catch {
+          } catch (error) {
+            logger.debug('archive.request failed', { href }, error);
           }
         }
       }
@@ -85,14 +101,9 @@ export async function searchBook(
       if (!text && book.load && item.href) {
         try {
           const content = await book.load(item.href);
-          if (typeof content === 'string') {
-            const parser = new DOMParser();
-            const parsedDoc = parser.parseFromString(content, 'text/html');
-            text = parsedDoc.body?.textContent || '';
-          } else if (content && content.body) {
-            text = content.body.textContent || '';
-          }
-        } catch {
+          text = extractTextFromDocLike(content);
+        } catch (error) {
+          logger.debug('book.load failed', { href: item.href }, error);
         }
       }
 
@@ -129,10 +140,12 @@ export async function searchBook(
       if (item.unload) {
         try {
           item.unload();
-        } catch {
+        } catch (error) {
+          logger.debug('item.unload failed', error);
         }
       }
-    } catch {
+    } catch (error) {
+      logger.warn('search section failed', { index: i, href: item?.href ?? item?.url }, error);
     }
   }
 

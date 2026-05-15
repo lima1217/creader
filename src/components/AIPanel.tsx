@@ -1,19 +1,23 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { invoke, Channel } from '@tauri-apps/api/core';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { emit, listen } from '@tauri-apps/api/event';
-import { useApp } from '../stores/AppContext';
+import { useAI, useLibrary, useUI } from '../stores/AppContext';
+import { isTauriRuntime } from '../utils/tauri';
+import { createLogger } from '../utils/logger';
+import { perfMark, perfMeasure } from '../utils/perf';
 import type { ChatMessage } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
 // Import from refactored modules
 import {
-    SendIcon, AILogoIcon, SparkleIcon, CloseIcon, TrashIcon, BookIcon,
-    QuoteIcon, ChevronDownIcon, CopyIcon, CheckIcon, PopoutIcon, StopIcon,
-    ExplainIcon, DeconstructIcon, InferenceIcon, TranslateIcon
+    SendIcon, AILogoIcon, SparkleIcon, TrashIcon, BookIcon,
+    QuoteIcon, ChevronDownIcon, CopyIcon, CheckIcon, StopIcon,
 } from './ai/icons';
 import { FormatMessage } from './ai/MarkdownRenderer';
+import { quickActions } from './ai/quickActions';
 import type { AIProviderInfo, ChatRequest, StreamEvent } from './ai/types';
 import './AIPanel.css';
+import './AIPanelMarkdown.css';
+
+const logger = createLogger('AIPanel');
 
 // Note: Icons, Types, and FormatMessage are now imported from ./ai/ modules
 
@@ -22,32 +26,45 @@ import './AIPanel.css';
 // ============================================
 
 export function AIPanel() {
+    const { isAIPanelOpen } = useUI();
     const {
-        isAIPanelOpen,
-        setAIPanelOpen,
         chatMessages,
         addChatMessage,
         clearChat,
-        currentBook,
         currentChapterContent,
         selectedText,
         setSelectedText,
-        settings,
-    } = useApp();
+        accumulatedTexts,
+        removeAccumulatedText,
+        clearAccumulatedTexts,
+    } = useAI();
+    const { currentBook } = useLibrary();
+    const isTauri = isTauriRuntime();
 
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [streamingContent, setStreamingContent] = useState('');
+    const streamingContentRef = useRef('');
     const [providers, setProviders] = useState<AIProviderInfo[]>([]);
     const [selectedProvider, setSelectedProvider] = useState<string>('claude');
     const [showProviderDropdown, setShowProviderDropdown] = useState(false);
-    const [selectedModel, setSelectedModel] = useState<string>('sonnet');
+    const [selectedModel, setSelectedModel] = useState<string>('opus');
     const [showModelDropdown, setShowModelDropdown] = useState(false);
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-    const [isDetached, setIsDetached] = useState(false);
     const [panelWidth, setPanelWidth] = useState(AI_PANEL_WIDTH);
     const [isResizing, setIsResizing] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
+    const isAutoScrollEnabledRef = useRef(true);
+    const scrollRafRef = useRef<number | null>(null);
+    const pendingScrollBehaviorRef = useRef<ScrollBehavior>('auto');
+    const pendingPanelWidthRef = useRef<number | null>(null);
+    const panelWidthRafRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        streamingContentRef.current = streamingContent;
+    }, [streamingContent]);
+
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const panelRef = useRef<HTMLElement>(null);
 
@@ -64,7 +81,14 @@ export function AIPanel() {
             // Calculate width from right edge of window
             const newWidth = window.innerWidth - e.clientX;
             // Clamp between min and max width
-            setPanelWidth(Math.max(AI_PANEL_MIN_WIDTH, Math.min(AI_PANEL_MAX_WIDTH, newWidth)));
+            pendingPanelWidthRef.current = Math.max(AI_PANEL_MIN_WIDTH, Math.min(AI_PANEL_MAX_WIDTH, newWidth));
+            if (panelWidthRafRef.current !== null) return;
+            panelWidthRafRef.current = requestAnimationFrame(() => {
+                panelWidthRafRef.current = null;
+                const next = pendingPanelWidthRef.current;
+                pendingPanelWidthRef.current = null;
+                if (typeof next === 'number') setPanelWidth(next);
+            });
         };
 
         const handleMouseUp = () => {
@@ -83,101 +107,84 @@ export function AIPanel() {
             document.removeEventListener('mouseup', handleMouseUp);
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
+            if (panelWidthRafRef.current !== null) {
+                cancelAnimationFrame(panelWidthRafRef.current);
+                panelWidthRafRef.current = null;
+            }
         };
     }, [isResizing]);
 
-    // Auto-scroll to bottom
+    const scheduleScrollToBottom = useCallback((behavior: ScrollBehavior) => {
+        pendingScrollBehaviorRef.current = behavior;
+        if (scrollRafRef.current !== null) return;
+        scrollRafRef.current = requestAnimationFrame(() => {
+            scrollRafRef.current = null;
+            messagesEndRef.current?.scrollIntoView({ behavior: pendingScrollBehaviorRef.current });
+        });
+    }, []);
+
+    const handleMessagesScroll = useCallback(() => {
+        const el = messagesContainerRef.current;
+        if (!el) return;
+        const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+        isAutoScrollEnabledRef.current = distanceToBottom < 80;
+    }, []);
+
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [chatMessages]);
+        if (!isAutoScrollEnabledRef.current) return;
+        scheduleScrollToBottom('auto');
+    }, [chatMessages, scheduleScrollToBottom]);
 
-    // Listen for dock request from detached window
     useEffect(() => {
-        let unlisten: (() => void) | undefined;
+        if (!isAutoScrollEnabledRef.current) return;
+        if (!isLoading) return;
+        if (!streamingContent) return;
+        scheduleScrollToBottom('auto');
+    }, [isLoading, streamingContent, scheduleScrollToBottom]);
 
-        const setup = async () => {
-            unlisten = await listen('ai-dock-request', () => {
-                setIsDetached(false);
-                setAIPanelOpen(true);
-            });
-        };
-
-        setup();
-
+    useEffect(() => {
         return () => {
-            if (unlisten) unlisten();
+            if (scrollRafRef.current !== null) {
+                cancelAnimationFrame(scrollRafRef.current);
+                scrollRafRef.current = null;
+            }
         };
-    }, [setAIPanelOpen]);
-
-    // Listen for window ready and send context
-    useEffect(() => {
-        let unlisten: (() => void) | undefined;
-
-        const setup = async () => {
-            unlisten = await listen('ai-window-ready', async () => {
-                // Send current context to the detached window
-                await emit('ai-context-update', {
-                    bookTitle: currentBook?.title,
-                    selectedText: selectedText,
-                    chapterContent: currentChapterContent,
-                    theme: settings.theme,
-                });
-                // Sync chat history
-                await emit('ai-chat-sync', chatMessages);
-            });
-        };
-
-        setup();
-
-        return () => {
-            if (unlisten) unlisten();
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Only setup once
-
-    // Push context updates to detached window when context changes
-    useEffect(() => {
-        if (isDetached) {
-            emit('ai-context-update', {
-                bookTitle: currentBook?.title,
-                selectedText: selectedText,
-                chapterContent: currentChapterContent,
-                theme: settings.theme,
-            });
-        }
-    }, [isDetached, currentBook?.title, selectedText, currentChapterContent, settings.theme]);
-
-    // Sync chat history to detached window when messages change
-    useEffect(() => {
-        if (isDetached) {
-            emit('ai-chat-sync', chatMessages);
-        }
-    }, [isDetached, chatMessages]);
+    }, []);
 
     // Focus input when panel opens
     useEffect(() => {
-        if (isAIPanelOpen && !isDetached) {
+        if (isAIPanelOpen) {
             inputRef.current?.focus();
-            checkAIAvailability();
-            loadSavedProvider();
+            if (isTauri) {
+                checkAIAvailability();
+                loadSavedProvider();
+            } else {
+                setProviders([
+                    { id: 'claude', name: 'Claude', model: 'sonnet', available: false },
+                    { id: 'opencode', name: 'OpenCode', model: 'default', available: false },
+                    { id: 'codex', name: 'Codex', model: 'default', available: false },
+                ]);
+            }
         }
-    }, [isAIPanelOpen, isDetached]);
+    }, [isAIPanelOpen, isTauri]);
 
     // Load saved provider from backend
     const loadSavedProvider = async () => {
         try {
+            if (!isTauri) return;
             const saved = await invoke<string | null>('get_ai_provider');
             if (saved) {
                 setSelectedProvider(saved);
             }
         } catch (e) {
-            console.error('Failed to load saved provider:', e);
+            logger.error('Failed to load saved provider:', e);
         }
     };
 
     // Check which AI CLIs are available
     const checkAIAvailability = async () => {
         try {
+            if (!isTauri) return;
             const available = await invoke<AIProviderInfo[]>('check_ai_availability');
             setProviders(available);
             const currentAvailable = available.find(p => p.id === selectedProvider && p.available);
@@ -188,7 +195,7 @@ export function AIPanel() {
                 }
             }
         } catch (e) {
-            console.error('Failed to check AI availability:', e);
+            logger.error('Failed to check AI availability:', e);
             setProviders([]);
         }
     };
@@ -196,6 +203,7 @@ export function AIPanel() {
     // Refresh AI availability
     const refreshAIAvailability = async () => {
         try {
+            if (!isTauri) return;
             const available = await invoke<AIProviderInfo[]>('refresh_ai_availability');
             setProviders(available);
             const firstAvailable = available.find(p => p.available);
@@ -203,7 +211,7 @@ export function AIPanel() {
                 handleProviderChange(firstAvailable.id);
             }
         } catch (e) {
-            console.error('Failed to refresh AI availability:', e);
+            logger.error('Failed to refresh AI availability:', e);
         }
     };
 
@@ -212,9 +220,10 @@ export function AIPanel() {
         setSelectedProvider(providerId);
         setShowProviderDropdown(false);
         try {
+            if (!isTauri) return;
             await invoke('set_ai_provider', { provider: providerId });
         } catch (e) {
-            console.error('Failed to set provider:', e);
+            logger.error('Failed to set provider:', e);
         }
     };
 
@@ -235,67 +244,29 @@ export function AIPanel() {
             setCopiedMessageId(messageId);
             setTimeout(() => setCopiedMessageId(null), 2000);
         } catch {
-            console.error('Failed to copy message');
+            logger.warn('Failed to copy message');
         }
     }, []);
-
-    // Pop out AI panel to separate window
-    const handlePopout = async () => {
-        try {
-            // Create new window for AI panel
-            const aiWindow = new WebviewWindow('ai-assistant', {
-                url: '/ai-window.html',
-                title: 'AI Assistant',
-                width: 420,
-                height: 600,
-                minWidth: 320,
-                minHeight: 400,
-                center: false,
-                x: 100,
-                y: 100,
-                resizable: true,
-                alwaysOnTop: true,
-                decorations: true,
-                transparent: false,
-            });
-
-            aiWindow.once('tauri://created', async () => {
-                // Mark as detached and close embedded panel
-                setIsDetached(true);
-                setAIPanelOpen(false);
-
-                // Give the new window time to set up its listeners, then send context
-                await new Promise(resolve => setTimeout(resolve, 200));
-                await emit('ai-context-update', {
-                    bookTitle: currentBook?.title,
-                    selectedText: selectedText,
-                    chapterContent: currentChapterContent,
-                    theme: settings.theme,
-                });
-                await emit('ai-chat-sync', chatMessages);
-            });
-
-            aiWindow.once('tauri://error', (e) => {
-                console.error('Failed to create AI window:', e);
-            });
-        } catch (error) {
-            console.error('Failed to pop out AI panel:', error);
-        }
-    };
-
 
     const sendMessage = async () => {
         if (!input.trim() || isLoading) return;
 
-        // Reset cancel flag before starting
-        await invoke('reset_ai_cancel');
+        // Combine selected text and accumulated texts as context
+        const allContext: string[] = [];
+        if (selectedText) {
+            allContext.push(selectedText);
+        }
+        if (accumulatedTexts.length > 0) {
+            allContext.push(...accumulatedTexts);
+        }
+        const combinedContext = allContext.length > 0 ? allContext.join('\n\n---\n\n') : undefined;
 
         const userMessage: ChatMessage = {
             id: Date.now().toString(),
             role: 'user',
             content: input.trim(),
             timestamp: Date.now(),
-            context: selectedText || undefined,
+            context: combinedContext,
         };
 
         addChatMessage(userMessage);
@@ -303,11 +274,27 @@ export function AIPanel() {
         setInput('');
         setIsLoading(true);
         setStreamingContent('');
+        const perfKey = `ai:sendMessage:${userMessage.id}`;
+        perfMark(`${perfKey}:start`);
 
         try {
+            if (!isTauri) {
+                const assistantMessage: ChatMessage = {
+                    id: (Date.now() + 1).toString(),
+                    role: 'assistant',
+                    content: `（Web 预览模式）你发送了：\n\n${messageToSend}\n\n可以直接选中这段文字验证选中高亮效果。`,
+                    timestamp: Date.now(),
+                };
+                addChatMessage(assistantMessage);
+                setIsLoading(false);
+                return;
+            }
+
+            await invoke('reset_ai_cancel');
+
             const request: ChatRequest = {
                 message: messageToSend,
-                context: selectedText || undefined,
+                context: combinedContext,
                 book_title: currentBook?.title,
                 chapter_content: currentChapterContent || undefined,
                 history: chatMessages.slice(-10).map(m => ({
@@ -320,7 +307,25 @@ export function AIPanel() {
             // Create a channel to receive streaming events
             const onEvent = new Channel<StreamEvent>();
             let fullContent = '';
+            let pendingChunks: string[] = [];
+            let flushRaf: number | null = null;
             let streamComplete = false;
+
+            const finalizeContent = () => {
+                if (pendingChunks.length > 0) {
+                    fullContent += pendingChunks.join('');
+                    pendingChunks = [];
+                }
+                return fullContent;
+            };
+
+            const scheduleFlush = () => {
+                if (flushRaf !== null) return;
+                flushRaf = requestAnimationFrame(() => {
+                    flushRaf = null;
+                    setStreamingContent(finalizeContent());
+                });
+            };
 
             onEvent.onmessage = (event: StreamEvent) => {
                 switch (event.event) {
@@ -328,16 +333,22 @@ export function AIPanel() {
                         // Stream started, content will come in chunks
                         break;
                     case 'chunk':
-                        fullContent += event.data.text;
-                        setStreamingContent(fullContent);
+                        pendingChunks.push(event.data.text);
+                        scheduleFlush();
                         break;
                     case 'done':
                         streamComplete = true;
+                        if (flushRaf !== null) {
+                            cancelAnimationFrame(flushRaf);
+                            flushRaf = null;
+                        }
+                        perfMeasure(perfKey, `${perfKey}:start`, `${perfKey}:done`);
+                        const finalContent = event.data.fullText || finalizeContent();
                         // Add the complete message to chat history
                         const assistantMessage: ChatMessage = {
                             id: (Date.now() + 1).toString(),
                             role: 'assistant',
-                            content: event.data.fullText || fullContent,
+                            content: finalContent,
                             timestamp: Date.now(),
                         };
                         addChatMessage(assistantMessage);
@@ -349,15 +360,22 @@ export function AIPanel() {
                         break;
                     case 'error':
                         streamComplete = true;
+                        if (flushRaf !== null) {
+                            cancelAnimationFrame(flushRaf);
+                            flushRaf = null;
+                        }
+                        perfMeasure(perfKey, `${perfKey}:start`, `${perfKey}:error`);
+                        const providerPrefix = event.data.provider ? `[${event.data.provider}] ` : '';
                         const errorMessage: ChatMessage = {
                             id: (Date.now() + 1).toString(),
                             role: 'assistant',
-                            content: event.data.message,
+                            content: `${providerPrefix}${event.data.message}`,
                             timestamp: Date.now(),
                         };
                         addChatMessage(errorMessage);
                         setStreamingContent('');
                         setIsLoading(false);
+                        setInput(messageToSend);
                         break;
                 }
             };
@@ -366,11 +384,12 @@ export function AIPanel() {
             await invoke('chat_with_ai_streaming', { request, onEvent });
 
             // Safety check: if stream didn't complete, ensure we clean up
-            if (!streamComplete && fullContent) {
+            if (!streamComplete && (fullContent || pendingChunks.length > 0)) {
+                perfMeasure(perfKey, `${perfKey}:start`, `${perfKey}:fallback`);
                 const assistantMessage: ChatMessage = {
                     id: (Date.now() + 1).toString(),
                     role: 'assistant',
-                    content: fullContent,
+                    content: finalizeContent(),
                     timestamp: Date.now(),
                 };
                 addChatMessage(assistantMessage);
@@ -378,16 +397,17 @@ export function AIPanel() {
                 setIsLoading(false);
             }
         } catch (error) {
-            console.error('AI error:', error);
+            logger.error('AI error:', error);
             const errorMessage: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: `Sorry, I encountered an error: ${error}\n\nPlease make sure you have one of the following AI CLIs installed and configured:\n- claude (Anthropic Claude)\n- gemini (Google Gemini)\n- openai (OpenAI)\n- droid (Factory Droid)`,
+                content: `Sorry, I encountered an error: ${error}\n\nPlease make sure you have one of the following AI CLIs installed and configured:\n- claude (Anthropic Claude)\n- opencode (OpenCode)\n- codex (Codex CLI)`,
                 timestamp: Date.now(),
             };
             addChatMessage(errorMessage);
             setStreamingContent('');
             setIsLoading(false);
+            setInput(messageToSend);
         }
     };
 
@@ -398,9 +418,15 @@ export function AIPanel() {
         }
     };
 
+
     // Stop AI generation
     const stopGeneration = async () => {
         try {
+            if (!isTauri) {
+                setStreamingContent('');
+                setIsLoading(false);
+                return;
+            }
             await invoke('cancel_ai_streaming');
             // Give the backend a moment to process the cancel
             // If streaming doesn't stop within 500ms, force stop on frontend
@@ -410,8 +436,8 @@ export function AIPanel() {
                     const stoppedMessage: ChatMessage = {
                         id: (Date.now() + 1).toString(),
                         role: 'assistant',
-                        content: streamingContent
-                            ? `${streamingContent}\n\n[Generation stopped by user]`
+                        content: streamingContentRef.current
+                            ? `${streamingContentRef.current}\n\n[Generation stopped by user]`
                             : '[Generation stopped by user]',
                         timestamp: Date.now(),
                     };
@@ -421,103 +447,51 @@ export function AIPanel() {
                 }
             }, 500);
         } catch (error) {
-            console.error('Failed to cancel AI streaming:', error);
+            logger.error('Failed to cancel AI streaming:', error);
             // Force stop on error
             setStreamingContent('');
             setIsLoading(false);
         }
     };
 
-    // Quick action buttons with icons - 解释、拆解、推演、翻译
-    const quickActions = [
-        {
-            label: '解释',
-            prompt: `请针对以下选取的内容进行解释：
+    // Note: We still mount and run hooks while detached so the
+    // window-bridge sync effects keep working. The actual embedded UI is
+    // conditionally rendered at the end of the component.
+    const shouldRenderEmbeddedPanel = isAIPanelOpen;
 
-## 要求
+    const renderedMessages = useMemo(() => {
+        if (!shouldRenderEmbeddedPanel) return null;
+        return chatMessages.map(msg => (
+            <div key={msg.id} className={`ai-message ai-message-${msg.role}`}>
+                {msg.context && (
+                    <div className="ai-message-context">
+                        <QuoteIcon />
+                        <span>"{msg.context.slice(0, 100)}{msg.context.length > 100 ? '...' : ''}"</span>
+                    </div>
+                )}
+                <div className="ai-message-content">
+                    {msg.role === 'assistant' ? (
+                        <FormatMessage content={msg.content} />
+                    ) : (
+                        msg.content
+                    )}
+                </div>
+                {msg.role === 'assistant' && (
+                    <div className="ai-message-actions">
+                        <button
+                            className={`ai-message-copy ${copiedMessageId === msg.id ? 'copied' : ''}`}
+                            onClick={() => copyMessage(msg.id, msg.content)}
+                            title={copiedMessageId === msg.id ? 'Copied!' : 'Copy message'}
+                        >
+                            {copiedMessageId === msg.id ? <CheckIcon /> : <CopyIcon />}
+                        </button>
+                    </div>
+                )}
+            </div>
+        ));
+    }, [shouldRenderEmbeddedPanel, chatMessages, copiedMessageId, copyMessage]);
 
-### 1. 数学化解释
-请先用数学语言（包括集合论、逻辑符号、函数映射等）精确描述以下机制的核心要素和关系。
-
-### 2. LEAN形式化
-再用LEAN证明助手的语法，将上述机制形式化表达，包括：
-- 定义相关的类型和结构
-- 陈述关键定理或性质
-- 提供证明思路（如适用）
-
-请确保解释既严谨又易于理解，适当添加自然语言的说明来辅助理解形式化内容。`,
-            icon: <ExplainIcon />
-        },
-        {
-            label: '拆解',
-            prompt: `请针对以下选取的内容进行知识拆解：
-
-## 元知识分析
-- **前提假设**：这段话基于哪些前提？
-- **可靠性评估**：这个知识有多确定？来源可信吗？
-- **忽视的脉络**：忽视了哪些重要的背景或脉络？
-- **适用性判断**：这个知识在什么情境下有效？有什么边界条件？
-- **反例探索**：你能提出反例吗？
-
-## 陈述性知识
-- **事实性知识**：涉及的具体事实、数据、事件
-- **概念性知识**：涉及的概念、定义、分类、原理
-
-## 程序性知识
-- **技能**：蕴含的操作技能或能力
-- **方法**：描述的方法论、步骤或策略
-
-请对每个维度进行分析，若某维度不适用，请说明原因。`,
-            icon: <DeconstructIcon />
-        },
-        {
-            label: '推演',
-            prompt: `请针对以下选取的内容进行多路径推演：
-
-## 要求
-使用 Inference（推理）模拟这个问题的多条可能路径：
-
-### 1. 识别核心命题
-提取内容中的核心论断或问题
-
-### 2. 多路径推演
-为每条路径提供：
-- **路径名称**：简洁的描述
-- **推理链**：逐步的推理过程
-- **假设条件**：该路径依赖的假设
-- **结论**：该路径得出的结论
-- **可信度评估**：对该路径结论的可信度评分(1-10)
-
-### 3. 路径比较
-- 比较各路径的优劣
-- 识别关键分歧点
-- 给出综合判断
-
-请至少提供3条不同的推理路径，展示思维的多样性和深度。`,
-            icon: <InferenceIcon />
-        },
-        {
-            label: '翻译',
-            prompt: `请将以下选取的内容翻译为简体中文：
-
-## 翻译要求
-1. 确保翻译忠实于源文本，每个句子都翻译得准确流畅
-2. 确保在翻译过程中不遗漏任何部分，每个细节都必须包含
-3. 大数字必须按照简体中文规范正确翻译
-4. 保留原文语域（Preserve the original register）
-
-## 翻译指示
-1. 仔细分析和深入理解源文本的内容、语境、情感和文化细微差别
-2. 根据翻译要求将源文本准确翻译成简体中文
-3. 确保翻译准确、自然、流畅，适合目标受众
-4. 根据文化语言规范调整表达，但不改变原意
-
-请直接输出翻译结果，如有必要可以在最后添加简短的译者注释。`,
-            icon: <TranslateIcon />
-        },
-    ];
-
-    if (!isAIPanelOpen) return null;
+    if (!shouldRenderEmbeddedPanel) return null;
 
     return (
         <aside
@@ -566,6 +540,15 @@ export function AIPanel() {
                             </div>
                         )}
                     </div>
+                    {isTauri && (
+                        <button
+                            className="btn btn-ghost btn-icon"
+                            onClick={refreshAIAvailability}
+                            title="Refresh AI availability"
+                        >
+                            ↻
+                        </button>
+                    )}
                     {/* Claude Model Selector - only shown when Claude is selected */}
                     {selectedProvider === 'claude' && (
                         <div className="ai-model-selector">
@@ -602,31 +585,17 @@ export function AIPanel() {
                         </div>
                     )}
                     <button
-                        className="btn btn-ghost btn-icon ai-popout-btn"
-                        onClick={handlePopout}
-                        title="Open in separate window"
-                    >
-                        <PopoutIcon />
-                    </button>
-                    <button
                         className="btn btn-ghost btn-icon"
                         onClick={clearChat}
                         title="Clear chat"
                     >
                         <TrashIcon />
                     </button>
-                    <button
-                        className="btn btn-ghost btn-icon"
-                        onClick={() => setAIPanelOpen(false)}
-                        title="Close"
-                    >
-                        <CloseIcon />
-                    </button>
                 </div>
             </div>
 
             {/* Context indicator */}
-            {(currentBook || selectedText) && (
+            {(currentBook || selectedText || accumulatedTexts.length > 0) && (
                 <div className="ai-context-bar">
                     {currentBook && (
                         <div className="ai-context-item">
@@ -647,17 +616,47 @@ export function AIPanel() {
                             </button>
                         </div>
                     )}
+                    {accumulatedTexts.length > 0 && (
+                        <div className="ai-context-accumulated">
+                            <div className="ai-accumulated-header">
+                                <span className="ai-accumulated-label">Accumulated ({accumulatedTexts.length})</span>
+                                <button
+                                    className="ai-context-clear-all"
+                                    onClick={clearAccumulatedTexts}
+                                    title="Clear all accumulated texts"
+                                >
+                                    Clear all
+                                </button>
+                            </div>
+                            <div className="ai-accumulated-list">
+                                {accumulatedTexts.map((text, index) => (
+                                    <div key={index} className="ai-accumulated-item">
+                                        <span className="ai-accumulated-text">
+                                            {text.slice(0, 60)}{text.length > 60 ? '...' : ''}
+                                        </span>
+                                        <button
+                                            className="ai-context-clear"
+                                            onClick={() => removeAccumulatedText(index)}
+                                            title="Remove this text"
+                                        >
+                                            x
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
-            <div className="ai-panel-messages">
+            <div className="ai-panel-messages" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
                 {chatMessages.length === 0 ? (
                     <div className="ai-panel-empty">
                         <SparkleIcon />
                         <p>Ask me anything about your book...</p>
                         {!providers.some(p => p.available) && (
                             <div className="ai-warning">
-                                <p>No AI CLI detected. Please install claude, gemini, or openai CLI.</p>
+                                <p>No AI CLI detected. Please install claude, opencode, or codex CLI.</p>
                                 <button className="btn btn-ghost btn-sm" onClick={refreshAIAvailability}>
                                     Refresh
                                 </button>
@@ -676,41 +675,14 @@ export function AIPanel() {
                         </div>
                     </div>
                 ) : (
-                    chatMessages.map(msg => (
-                        <div key={msg.id} className={`ai-message ai-message-${msg.role}`}>
-                            {msg.context && (
-                                <div className="ai-message-context">
-                                    <QuoteIcon />
-                                    <span>"{msg.context.slice(0, 100)}{msg.context.length > 100 ? '...' : ''}"</span>
-                                </div>
-                            )}
-                            <div className="ai-message-content">
-                                {msg.role === 'assistant' ? (
-                                    <FormatMessage content={msg.content} />
-                                ) : (
-                                    msg.content
-                                )}
-                            </div>
-                            {msg.role === 'assistant' && (
-                                <div className="ai-message-actions">
-                                    <button
-                                        className={`ai-message-copy ${copiedMessageId === msg.id ? 'copied' : ''}`}
-                                        onClick={() => copyMessage(msg.id, msg.content)}
-                                        title={copiedMessageId === msg.id ? 'Copied!' : 'Copy message'}
-                                    >
-                                        {copiedMessageId === msg.id ? <CheckIcon /> : <CopyIcon />}
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    ))
+                    renderedMessages
                 )}
                 {isLoading && (
                     <div className="ai-message ai-message-assistant ai-message-streaming">
                         <div className="ai-message-content">
                             {streamingContent ? (
                                 <>
-                                    <FormatMessage content={streamingContent} />
+                                    <pre className="ai-streaming-text">{streamingContent}</pre>
                                     <span className="streaming-cursor">|</span>
                                 </>
                             ) : (

@@ -1,20 +1,57 @@
-export async function loadOrGenerateLocations(book: any, bookId: string): Promise<void> {
-  if (!book?.locations) return;
+import type { EpubBookLike } from './epubAdapter';
+import { STORES } from '../Db';
+import { idbGet, idbPut } from '../idb';
 
-  const key = `creader-locations:${bookId}`;
-  const saved = localStorage.getItem(key);
+export async function loadLocationsIfAvailable(book: EpubBookLike, bookId: string): Promise<boolean> {
+  if (!book?.locations) return false;
 
-  if (saved && typeof book.locations.load === 'function') {
-    await book.locations.load(saved);
-    return;
+  const key = `locations:${bookId}`;
+  const legacyKey = `creader-locations:${bookId}`;
+
+  const saved = await idbGet<string>(STORES.locations, key);
+
+  const legacy = !saved ? localStorage.getItem(legacyKey) : null;
+  const toLoad = saved ?? legacy;
+
+  if (toLoad && typeof book.locations.load === 'function') {
+    await book.locations.load(toLoad);
+    if (legacy) localStorage.removeItem(legacyKey);
+    return true;
   }
 
-  if (typeof book.locations.generate !== 'function') return;
+  return false;
+}
+
+export async function generateAndPersistLocations(book: EpubBookLike, bookId: string): Promise<boolean> {
+  if (!book?.locations) return false;
+
+  const key = `locations:${bookId}`;
+  const legacyKey = `creader-locations:${bookId}`;
+
+  if (typeof book.locations.generate !== 'function') return false;
+
+  try {
+    if (typeof book.locations.length === 'function' && book.locations.length() > 0) {
+      return true;
+    }
+  } catch {
+  }
+
   await book.locations.generate(1600);
 
-  if (typeof book.locations.save !== 'function') return;
+  if (typeof book.locations.save !== 'function') return false;
   const serialized = book.locations.save();
   if (typeof serialized === 'string' && serialized.length > 0) {
-    localStorage.setItem(key, serialized);
+    await idbPut(STORES.locations, key, serialized);
+    localStorage.removeItem(legacyKey);
+    return true;
   }
+
+  return false;
+}
+
+export async function loadOrGenerateLocations(book: EpubBookLike, bookId: string): Promise<void> {
+  const loaded = await loadLocationsIfAvailable(book, bookId);
+  if (loaded) return;
+  await generateAndPersistLocations(book, bookId);
 }

@@ -30,90 +30,94 @@
   overflow: hidden;
 }
 
-/* ============================================
-   Drag and Drop Overlay - Premium Design
-   ============================================ */
 .drop-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(var(--accent-rgb), 0.06);
-  backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--bg-reader) 76%, rgba(0, 0, 0, 0.16));
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  animation: fadeIn 200ms ease;
 }
 
 .drop-overlay-content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.5rem;
-  padding: 4rem 5rem;
-  background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-secondary) 100%);
-  border: 2px dashed var(--accent);
-  border-radius: var(--radius-2xl);
+  gap: var(--space-3);
+  min-width: min(360px, calc(100vw - 64px));
+  padding: var(--space-8) var(--space-10);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg-reader));
+  border: 1px dashed var(--border-accent);
+  border-radius: var(--radius-surface);
   color: var(--accent);
-  box-shadow:
-    var(--shadow-xl),
-    0 0 80px rgba(var(--accent-rgb), 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  animation: pulseScale 2s ease-in-out infinite;
-}
-
-.drop-overlay-content svg {
-  opacity: 0.9;
-  animation: bounce 1.5s ease-in-out infinite;
-  filter: drop-shadow(0 4px 8px rgba(var(--accent-rgb), 0.3));
+  box-shadow: var(--shadow-float);
 }
 
 .drop-overlay-content p {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: 500;
   margin: 0;
-  letter-spacing: -0.02em;
-  background: var(--gradient-primary);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
 }
 
 .drop-overlay-hint {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  margin-top: -0.5rem;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.drop-book-stack {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 7px;
+  height: 92px;
+  margin-bottom: var(--space-1);
+}
+
+.drop-book-stack span {
+  display: block;
+  width: 42px;
+  border-radius: 5px;
+  background:
+    linear-gradient(90deg, rgba(var(--accent-rgb), 0.16), transparent 10px),
+    var(--bg-elevated);
+  box-shadow:
+    inset 0 0 0 1px var(--border-secondary),
+    0 7px 14px rgba(48, 43, 36, 0.07);
+}
+
+.drop-book-stack span:nth-child(1) {
+  height: 76px;
+  transform: rotate(-4deg);
+}
+
+.drop-book-stack span:nth-child(2) {
+  height: 88px;
+  background:
+    linear-gradient(90deg, rgba(156, 109, 30, 0.16), transparent 10px),
+    var(--bg-elevated);
+}
+
+.drop-book-stack span:nth-child(3) {
+  height: 70px;
+  transform: rotate(3deg);
+  background:
+    linear-gradient(90deg, rgba(62, 125, 91, 0.16), transparent 10px),
+    var(--bg-elevated);
 }
 
 /* ============================================
-   Theme Transition Animation
+   Theme Transition Animation (Simplified)
    ============================================ */
+/* Only apply transitions to the root element for theme switches */
 [data-theme] {
-  transition:
-    background-color 400ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 400ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 400ms cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 400ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Smooth transition for all themed elements */
-[data-theme] *:not(.no-transition) {
-  transition:
-    background-color 400ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 300ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 300ms cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Override for elements that should NOT have color transitions */
-.no-color-transition {
-  transition: transform var(--transition-base), opacity var(--transition-base) !important;
+  transition: background-color 200ms ease;
 }
 
 /* ============================================
@@ -160,21 +164,20 @@ textarea:focus-visible {
 
 /* Smooth hover lift for interactive cards */
 .interactive-lift {
-  transition: transform var(--transition-base), box-shadow var(--transition-base);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .interactive-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  background: var(--bg-hover);
 }
 
 .interactive-lift:active {
-  transform: translateY(0);
+  filter: brightness(0.96);
 }
 
 /* Subtle press effect for buttons */
 .press-effect:active {
-  transform: scale(0.98);
+  filter: brightness(0.94);
 }
 
 /* ============================================
@@ -183,13 +186,11 @@ textarea:focus-visible {
 .app-loading-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(var(--bg-primary), 0.8);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  animation: fadeIn 200ms ease;
 }
 
 .app-loading-content {
@@ -220,38 +221,112 @@ textarea:focus-visible {
 .import-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--bg-reader) 72%, rgba(0, 0, 0, 0.18));
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1001;
-  animation: fadeIn 200ms ease;
 }
 
 .import-overlay-content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-8);
-  background: var(--bg-elevated);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
+  gap: var(--space-2);
+  min-width: 260px;
+  padding: var(--space-6) var(--space-8);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg-reader));
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-float);
 }
 
-.import-overlay-content .loading-spinner {
-  width: 40px;
-  height: 40px;
+.import-book-mark {
+  width: 42px;
+  height: 64px;
+  margin-bottom: var(--space-2);
+  border-radius: 5px;
+  background:
+    linear-gradient(90deg, rgba(var(--accent-rgb), 0.16), transparent 10px),
+    var(--bg-elevated);
+  box-shadow:
+    inset 0 0 0 1px var(--border-secondary),
+    0 8px 16px rgba(48, 43, 36, 0.07);
+  animation: importBookPulse 1s ease-in-out infinite;
 }
 
 .import-overlay-content p {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: var(--text-sm);
   font-weight: 500;
   margin: 0;
 }
 
+.import-overlay-content span {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
 .app.importing {
   pointer-events: none;
+}
+
+.app-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: color-mix(in srgb, var(--bg-reader) 74%, rgba(0, 0, 0, 0.22));
+}
+
+.app-dialog {
+  width: min(360px, 100%);
+  padding: var(--space-5);
+  background: color-mix(in srgb, var(--bg-elevated) 90%, var(--bg-reader));
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-popover);
+}
+
+.app-dialog h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.app-dialog p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+@keyframes importBookPulse {
+  0%,
+  100% {
+    opacity: 0.68;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-book-mark {
+    animation: none;
+  }
 }

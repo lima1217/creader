@@ -1,0 +1,148 @@
+.reader-selection-toolbar {
+    position: fixed;
+    transform: translate(-50%, -100%);
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    z-index: 100;
+    animation: toolbarFadeIn 0.15s ease-out;
+    user-select: none;
+}
+
+@keyframes toolbarFadeIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -90%);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, -100%);
+    }
+}
+
+.reader-selection-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    cursor: default;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    white-space: nowrap;
+}
+
+.reader-selection-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.reader-selection-btn:first-child {
+    color: var(--accent);
+}
+
+.reader-selection-btn:first-child:hover {
+    background: rgba(var(--accent-rgb), 0.1);
+}
+
+.reader-selection-btn-close {
+    color: var(--text-muted);
+    padding: var(--space-2);
+}
+
+.reader-selection-btn-close:hover {
+    color: var(--text-primary);
+    background: rgba(255, 0, 0, 0.1);
+}
+
+.reader-selection-btn svg {
+    flex-shrink: 0;
+}
+
+.reader-selection-hint {
+    position: fixed;
+    transform: translate(-50%, 0);
+    padding: var(--space-2) var(--space-3);
+    background: var(--accent);
+    color: var(--bg-elevated);
+    font-size: var(--text-xs);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    z-index: 99;
+    animation: hintFadeIn 0.3s ease-out;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+@keyframes hintFadeIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -8px);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+/* ============================================
+   Paper Selection Toolbar Refinement
+   ============================================ */
+.reader-selection-toolbar {
+    gap: 2px;
+    padding: 3px;
+    background: var(--bg-elevated);
+    border-color: var(--border-secondary);
+    border-radius: var(--radius-surface);
+    box-shadow: var(--shadow-popover);
+    animation: toolbarFadeIn 120ms ease-out;
+}
+
+.reader-selection-btn {
+    min-height: 30px;
+    padding: 0 9px;
+    border-radius: var(--radius-control);
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.reader-selection-btn:hover {
+    background: var(--bg-control);
+    color: var(--text-primary);
+}
+
+.reader-selection-btn:first-child {
+    color: var(--accent);
+}
+
+.reader-selection-btn:first-child:hover {
+    background: var(--accent-soft);
+}
+
+.reader-selection-btn-close {
+    width: 30px;
+    padding: 0;
+}
+
+.reader-selection-btn-close:hover {
+    color: var(--error);
+    background: var(--error-light);
+}
+
+.reader-selection-hint {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-surface);
+    box-shadow: var(--shadow-float);
+}

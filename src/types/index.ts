@@ -6,11 +6,15 @@ export interface BookCategory {
   createdAt: number;
 }
 
+// Book file format
+export type BookFormat = 'epub';
+
 // Book metadata
 export interface Book {
   id: string;
   title: string;
   author: string;
+  format?: BookFormat; // File format - optional for backwards compatibility
   cover?: string; // base64 or file path
   coverKey?: string;
   filePath: string;
@@ -26,6 +30,9 @@ export interface ReadingProgress {
   percentage: number;
   currentChapter?: string;
 }
+
+export type BookProgressUpdate =
+  | { kind: 'epub'; currentCfi: string; percentage: number };
 
 // Library state
 export interface Library {
@@ -44,6 +51,7 @@ export interface Settings {
   fontFamily: string;
   lineHeight: number; // 1.4-2.0
   allowEpubScripts: boolean;
+  allowAIDangerousPermissions: boolean;
 }
 
 // AI Chat message

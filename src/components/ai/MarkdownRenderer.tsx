@@ -5,6 +5,9 @@
 
 import React, { useState } from 'react';
 import { CopyIcon, CheckIcon } from './icons';
+import { createLogger } from '../../utils/logger';
+
+const logger = createLogger('MarkdownRenderer');
 
 // ============================================
 // Types
@@ -269,7 +272,7 @@ export function CodeBlock({ code, language }: { code: string; language: string }
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch {
-            console.error('Failed to copy code');
+            logger.warn('Failed to copy code');
         }
     };
 

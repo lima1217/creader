@@ -2,6 +2,7 @@ export const STORAGE_KEYS = {
   settings: 'creader-settings',
   library: 'creader-library',
   chat: 'creader-chat',
+  progress: 'creader-progress',
   syncMeta: 'creader-sync-meta',
   deviceId: 'creader-device-id',
 } as const;

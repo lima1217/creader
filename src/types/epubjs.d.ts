@@ -23,6 +23,8 @@ declare module 'epubjs' {
         spread?: 'none' | 'always' | 'auto';
         flow?: 'paginated' | 'scrolled' | 'scrolled-doc';
         manager?: 'default' | 'continuous';
+        allowScriptedContent?: boolean;
+        sandbox?: string[];
     }
 
     export interface Rendition {
@@ -54,5 +56,8 @@ declare module 'epubjs' {
         };
     }
 
-    export default function ePub(url: string, options?: Record<string, unknown>): Book;
+    export default function ePub(
+        urlOrData: string | ArrayBuffer | Uint8Array,
+        options?: Record<string, unknown>
+    ): Book;
 }

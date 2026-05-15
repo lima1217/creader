@@ -1,21 +1,27 @@
 import { useState, useCallback, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { AppProvider, useApp } from './stores/AppContext';
+import { AppProvider, useLibrary } from './stores/AppContext';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { Reader } from './components/Reader';
 import { AIPanel } from './components/AIPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { extractEpubMetadata } from './utils/epub';
-import { saveCover } from './services/CoverStore';
+import { AppDialogProvider, useAppDialog } from './components/AppDialog';
+import { importBookFromPath } from './services/BookImportService';
+import { isTauriRuntime } from './utils/tauri';
+import { createLogger } from './utils/logger';
 import type { Book } from './types';
 import './index.css';
 import './App.css';
 import './components/ErrorBoundary.css';
 
+const logger = createLogger('App');
+const importLogger = createLogger('Import');
+
 function AppContent() {
-  const { addBook, library } = useApp();
+  const { addBook, library } = useLibrary();
+  const { notice } = useAppDialog();
   const [isImporting, setIsImporting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -23,62 +29,36 @@ function AppContent() {
   const importBook = useCallback(async (filePath: string) => {
     if (isImporting) return;
 
-    // Check if file is already in library
-    if (library.books.some(b => b.filePath === filePath)) {
-      console.log('Book already in library:', filePath);
+    const existingFilePaths = new Set(library.books.map(b => b.filePath));
+    if (existingFilePaths.has(filePath)) {
+      importLogger.debug('Book already in library:', filePath);
       return;
     }
 
     try {
       setIsImporting(true);
+      importLogger.debug('Starting import process for:', filePath);
 
-      // Generate book ID first
-      const bookId = Date.now().toString();
-
-      // Copy the file to the app's books directory
-      let finalPath = filePath;
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const result = await invoke<{ new_path: string; book_id: string }>('import_book_to_library', {
-          sourcePath: filePath,
-          bookId: bookId,
-        });
-        finalPath = result.new_path;
-        console.log('Book copied to:', finalPath);
-      } catch (copyError) {
-        console.warn('Failed to copy book to library, using original path:', copyError);
-        // Continue with original path as fallback
+      const result = await importBookFromPath({
+        filePath,
+        existingFilePaths,
+      });
+      if (result.status === 'skipped') {
+        importLogger.debug('Import skipped:', result.reason);
+        return;
       }
 
-      // Extract metadata from EPUB (use the final path)
-      const metadata = await extractEpubMetadata(finalPath);
-
-      let coverKey: string | undefined;
-      if (metadata.coverBlob) {
-        try {
-          await saveCover(bookId, metadata.coverBlob);
-          coverKey = bookId;
-        } catch (e) {
-          console.error('Failed to persist cover:', e);
-        }
-      }
-
-      const newBook: Book = {
-        id: bookId,
-        title: metadata.title,
-        author: metadata.author,
-        coverKey,
-        filePath: finalPath,
-        addedAt: Date.now(),
-        progress: {
-          currentCfi: '',
-          percentage: 0,
-        },
-      };
-
+      const newBook: Book = result.book;
+      importLogger.debug('Adding book to library:', newBook);
       addBook(newBook);
+      importLogger.debug('Import completed successfully');
     } catch (error) {
-      console.error('Failed to import book:', error);
+      importLogger.error('Failed to import book:', error);
+      if (error instanceof Error) importLogger.debug('Error details:', error.message, error.stack);
+      notice({
+        title: 'Could not import EPUB',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
     } finally {
       setIsImporting(false);
     }
@@ -93,7 +73,7 @@ function AppContent() {
       const selected = await open({
         multiple: false,
         filters: [{
-          name: 'EPUB',
+          name: 'EPUB books',
           extensions: ['epub']
         }]
       });
@@ -102,12 +82,13 @@ function AppContent() {
         await importBook(selected);
       }
     } catch (error) {
-      console.error('Failed to open file dialog:', error);
+      logger.error('Failed to open file dialog:', error);
     }
   };
 
   // Setup drag and drop listeners for Tauri
   useEffect(() => {
+    if (!isTauriRuntime()) return;
     let unlisten: (() => void) | undefined;
 
     const setupDragDrop = async () => {
@@ -124,16 +105,19 @@ function AppContent() {
             setIsDragging(false);
             const paths = event.payload.paths;
             if (paths && paths.length > 0) {
-              // Filter for .epub files
-              const epubFiles = paths.filter((p: string) => p.toLowerCase().endsWith('.epub'));
-              if (epubFiles.length > 0) {
-                importBook(epubFiles[0]);
+              // Filter for supported file types
+              const supportedFiles = paths.filter((p: string) => {
+                const lower = p.toLowerCase();
+                return lower.endsWith('.epub');
+              });
+              if (supportedFiles.length > 0) {
+                importBook(supportedFiles[0]);
               }
             }
           }
         });
       } catch (error) {
-        console.error('Failed to setup drag-drop:', error);
+        logger.error('Failed to setup drag-drop:', error);
       }
     };
 
@@ -152,20 +136,22 @@ function AppContent() {
       {isImporting && (
         <div className="import-overlay">
           <div className="import-overlay-content">
-            <div className="loading-spinner" />
-            <p>Importing book...</p>
+            <div className="import-book-mark" aria-hidden="true" />
+            <p>Adding EPUB to library</p>
+            <span>Reading the cover, title, and author.</span>
           </div>
         </div>
       )}
       {isDragging && (
         <div className="drop-overlay">
           <div className="drop-overlay-content">
-            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            <p>Drop EPUB file here</p>
+            <div className="drop-book-stack" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <p>Drop EPUB into your library</p>
+            <span className="drop-overlay-hint">Only .epub files are added to CReader</span>
           </div>
         </div>
       )}
@@ -190,7 +176,9 @@ function AppContent() {
 function App() {
   return (
     <AppProvider>
-      <AppContent />
+      <AppDialogProvider>
+        <AppContent />
+      </AppDialogProvider>
     </AppProvider>
   );
 }

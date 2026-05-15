@@ -4,7 +4,7 @@
 
 ## 背景与目标
 
-本仓库为 Tauri 2.x + Vite/React/TypeScript + epub.js 的本地 EPUB 阅读器，并在 Rust 后端通过本机 CLI（droid/claude/gemini/openai）提供 AI 助手能力。
+本仓库为 Tauri 2.x + Vite/React/TypeScript + epub.js 的本地 EPUB 阅读器，并在 Rust 后端通过本机 CLI（codex/claude/gemini/opencode）提供 AI 助手能力。
 
 本次改动目标：
 - 收紧桌面 WebView 的安全边界，降低“恶意 EPUB / 恶意 AI 输出”带来的攻击面
@@ -14,7 +14,7 @@
 
 ## 改动摘要（给非研发同学）
 
-- 更安全：不再允许 AI 输出注入 HTML 执行；默认禁用 EPUB 内脚本；不再允许前端读取全盘任意文件
+- 更安全：不再允许 AI 输出注入 HTML 执行；EPUB scripts 默认开启但提供单本书安全模式；不再允许前端读取全盘任意文件
 - 更稳：AI 调用加入超时并改为异步；阅读进度与章节内容提取做节流；搜索可取消
 - 更轻：封面不再用 base64 塞进 localStorage，改存 IndexedDB；locations 生成结果缓存
 - 更好维护：新增统一存储层 LocalStore；Reader 的 locations/search 逻辑下沉为模块
@@ -27,13 +27,13 @@
 风险来源：
 - CSP 被关闭会放大 XSS/注入风险
 - FS 权限过宽（允许读取 `/**`）会使一旦发生注入即有“全盘文件读取”后果
-- EPUB 渲染允许脚本执行，恶意 EPUB 可利用脚本进行更复杂攻击
+- EPUB scripts 默认开启以支持选中文本上下文，但恶意 EPUB 仍可能利用脚本造成渲染异常
 - AI 输出使用 HTML 注入渲染（dangerouslySetInnerHTML），模型输出若包含 HTML 会直入 DOM
 
 落地措施：
 - 配置 CSP（不再为 null）：`src-tauri/tauri.conf.json`
 - 收紧 FS capability（移除 `/**`）：`src-tauri/capabilities/default.json`
-- 禁用 EPUB 脚本：`src/components/Reader.tsx`
+- EPUB scripts 默认开启，并在加载失败时提供无脚本安全模式：`src/components/EPUBReader.tsx`、`src/components/reader/useEpubBookLifecycle.ts`
 - 移除 AI HTML 注入，改为安全的文本节点解析渲染：`src/components/AIPanel.tsx`
 
 ### 2) 稳定性/性能（P1）
@@ -63,9 +63,9 @@
 - 文件：`src-tauri/capabilities/default.json`
 - 变化：移除允许读取 `/**`，保留 HOME/DOCUMENT/DESKTOP/DOWNLOAD 等范围
 
-3) EPUB 脚本禁用
-- 文件：`src/components/Reader.tsx`
-- 变化：`allowScriptedContent` 设置为 `false`
+3) EPUB scripts 默认开启 + 安全模式
+- 文件：`src/components/EPUBReader.tsx`、`src/components/reader/useEpubBookLifecycle.ts`
+- 变化：默认 `allowScriptedContent`，加载异常时可对当前书临时关闭 scripts 重新打开
 
 4) AI 消息渲染安全化
 - 文件：`src/components/AIPanel.tsx`
@@ -106,7 +106,7 @@
 - 文件：`src/services/LocalStore.ts`
 - 变化：
   - 引入“带版本 Envelope”的序列化格式（同时兼容旧的非 Envelope 数据）
-  - SyncService 与 AppContext 共用同一份 storage keys 与 load/save
+  - AppContext 等模块共用同一份 storage keys 与 load/save
 
 2) Reader 逻辑模块化
 - 文件：
@@ -156,4 +156,3 @@
 - 存储/封面：`src/services/LocalStore.ts`、`src/services/CoverStore.ts`、`src/stores/AppContext.tsx`
 - Reader 模块：`src/services/reader/*`、`src/components/Reader.tsx`
 - 测试：`vitest.config.ts`、`src/services/LocalStore.test.ts`
-

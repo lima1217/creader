@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use tauri::ipc::Channel;
 use tauri::Manager;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -15,7 +18,57 @@ static SELECTED_PROVIDER: Mutex<Option<String>> = Mutex::new(None);
 static AI_AVAILABILITY_CACHE: Mutex<Option<Vec<AIProviderInfo>>> = Mutex::new(None);
 // Global cancel flag for AI streaming requests
 static AI_CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
+static AI_ALLOW_DANGEROUS_PERMISSIONS: AtomicBool = AtomicBool::new(false);
 const AI_TIMEOUT_SECS: u64 = 60;
+const AI_AVAILABILITY_TIMEOUT_SECS: u64 = 5;
+
+static COMMAND_PATH_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+fn command_path_cache() -> &'static Mutex<HashMap<String, String>> {
+    COMMAND_PATH_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn clear_command_path_cache() {
+    if let Ok(mut cache) = command_path_cache().lock() {
+        cache.clear();
+    }
+}
+
+fn configure_command_path(cmd: &mut TokioCommand, cmd_path: &str) {
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Some(parent) = Path::new(cmd_path).parent() {
+        let p = parent.to_string_lossy().to_string();
+        if !p.is_empty() {
+            parts.push(p);
+        }
+    }
+
+    // Common GUI-app PATH gaps on macOS.
+    parts.push("/opt/homebrew/bin".to_string());
+    parts.push("/usr/local/bin".to_string());
+    parts.push("/usr/bin".to_string());
+    parts.push("/bin".to_string());
+
+    if let Ok(existing) = std::env::var("PATH") {
+        if !existing.is_empty() {
+            parts.push(existing);
+        }
+    }
+
+    // De-duplicate while preserving order.
+    let mut seen = std::collections::HashSet::<String>::new();
+    parts.retain(|p| seen.insert(p.clone()));
+
+    cmd.env("PATH", parts.join(":"));
+}
+
+fn new_ai_command(cmd_name: &str) -> TokioCommand {
+    let cmd_path = find_command(cmd_name);
+    let mut cmd = TokioCommand::new(&cmd_path);
+    configure_command_path(&mut cmd, &cmd_path);
+    cmd
+}
 
 // Greet command (keep for testing)
 #[tauri::command]
@@ -26,10 +79,9 @@ fn greet(name: &str) -> String {
 // AI Provider enum
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AIProvider {
-    Droid,  // Factory Droid with GLM-4.7
+    Codex,  // Codex CLI
     Claude, // Claude Code CLI
     Gemini,
-    OpenAI,
 }
 
 // Chat request structure
@@ -70,7 +122,10 @@ pub enum StreamEvent {
     /// Stream completed successfully
     Done { full_text: String },
     /// An error occurred
-    Error { message: String },
+    Error {
+        message: String,
+        provider: Option<String>,
+    },
 }
 
 // Build a rich prompt with context
@@ -145,6 +200,12 @@ fn build_prompt(request: &ChatRequest) -> String {
 
 // Find command in common paths (GUI apps don't inherit shell PATH)
 fn find_command(cmd: &str) -> String {
+    if let Ok(cache) = command_path_cache().lock() {
+        if let Some(found) = cache.get(cmd) {
+            return found.clone();
+        }
+    }
+
     // Get home directory - try multiple methods
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -162,7 +223,7 @@ fn find_command(cmd: &str) -> String {
 
     // Build list of paths to check - prioritize common locations
     let mut paths = vec![
-        format!("{}/.local/bin/{}", home, cmd), // ~/.local/bin (Factory Droid)
+        format!("{}/.local/bin/{}", home, cmd), // ~/.local/bin (Codex CLI)
         format!("{}/.cargo/bin/{}", home, cmd), // Cargo installs
         format!("{}/.bun/bin/{}", home, cmd),   // Bun installs
     ];
@@ -195,12 +256,19 @@ fn find_command(cmd: &str) -> String {
 
     for path in &paths {
         if std::path::Path::new(path).exists() {
+            if let Ok(mut cache) = command_path_cache().lock() {
+                cache.insert(cmd.to_string(), path.clone());
+            }
             return path.clone();
         }
     }
 
     // Fallback to just the command name (might work if PATH is set)
-    cmd.to_string()
+    let fallback = cmd.to_string();
+    if let Ok(mut cache) = command_path_cache().lock() {
+        cache.insert(cmd.to_string(), fallback.clone());
+    }
+    fallback
 }
 
 async fn run_with_timeout(mut cmd: TokioCommand) -> Option<std::process::Output> {
@@ -210,15 +278,11 @@ async fn run_with_timeout(mut cmd: TokioCommand) -> Option<std::process::Output>
         .ok()
 }
 
-// Try Factory Droid CLI with GLM-4.7 model
-async fn try_droid(prompt: &str) -> Option<String> {
-    let droid_cmd = find_command("droid");
+// Try Codex CLI
+async fn try_codex(prompt: &str) -> Option<String> {
     let output = run_with_timeout({
-        let mut cmd = TokioCommand::new(&droid_cmd);
-        cmd.arg("exec")
-            .arg("--model")
-            .arg("custom:glm-4.7")
-            .arg(prompt);
+        let mut cmd = new_ai_command("codex");
+        cmd.arg("-p").arg(prompt);
         cmd
     })
     .await?;
@@ -234,9 +298,9 @@ async fn try_droid(prompt: &str) -> Option<String> {
 
 // Try Gemini CLI
 async fn try_gemini(prompt: &str) -> Option<String> {
-    let gemini_cmd = find_command("gemini");
+    // Deprecated: kept for compatibility if older state still references gemini.
     let output = run_with_timeout({
-        let mut cmd = TokioCommand::new(&gemini_cmd);
+        let mut cmd = new_ai_command("gemini");
         cmd.arg("-p").arg(prompt);
         cmd
     })
@@ -251,12 +315,32 @@ async fn try_gemini(prompt: &str) -> Option<String> {
     None
 }
 
+async fn try_opencode(prompt: &str) -> Option<String> {
+    let output = run_with_timeout({
+        let mut cmd = new_ai_command("opencode");
+        cmd.arg("run").arg(prompt);
+        cmd
+    })
+    .await?;
+
+    if output.status.success() {
+        let response = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !response.is_empty() {
+            return Some(response);
+        }
+    }
+
+    None
+}
+
 // Try Claude CLI
 async fn try_claude(prompt: &str, model: Option<&str>) -> Option<String> {
-    let claude_cmd = find_command("claude");
     let output = run_with_timeout({
-        let mut cmd = TokioCommand::new(&claude_cmd);
+        let mut cmd = new_ai_command("claude");
         cmd.arg("-p").arg(prompt);
+        if AI_ALLOW_DANGEROUS_PERMISSIONS.load(Ordering::Relaxed) {
+            cmd.arg("--dangerously-skip-permissions");
+        }
         // Add model parameter if specified
         if let Some(m) = model {
             cmd.arg("--model").arg(m);
@@ -280,15 +364,16 @@ async fn try_claude_streaming(
     model: Option<&str>,
     on_event: &Channel<StreamEvent>,
 ) -> Option<String> {
-    let claude_cmd = find_command("claude");
-
-    let mut cmd = TokioCommand::new(&claude_cmd);
+    let mut cmd = new_ai_command("claude");
     cmd.arg("-p")
         .arg(prompt)
         .arg("--output-format")
         .arg("stream-json")
         .arg("--verbose")
         .arg("--include-partial-messages");
+    if AI_ALLOW_DANGEROUS_PERMISSIONS.load(Ordering::Relaxed) {
+        cmd.arg("--dangerously-skip-permissions");
+    }
 
     // Add model parameter if specified
     if let Some(m) = model {
@@ -379,97 +464,73 @@ async fn try_claude_streaming(
     }
 }
 
-// Try OpenAI CLI
-async fn try_openai(prompt: &str) -> Option<String> {
-    let openai_cmd = find_command("openai");
-    let output = run_with_timeout({
-        let mut cmd = TokioCommand::new(openai_cmd);
-        cmd.arg("api")
-            .arg("chat.completions.create")
-            .arg("-m")
-            .arg("gpt-4")
-            .arg("-g")
-            .arg("user")
-            .arg(prompt);
-        cmd
-    })
-    .await?;
-
-    if output.status.success() {
-        let response = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !response.is_empty() {
-            return Some(response);
-        }
-    }
-    None
+async fn check_cli_available(mut cmd: TokioCommand) -> bool {
+    timeout(
+        Duration::from_secs(AI_AVAILABILITY_TIMEOUT_SECS),
+        cmd.output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .map(|o| o.status.success())
+    .unwrap_or(false)
 }
 
-// Helper function to perform actual AI availability check
-fn do_check_ai_availability() -> Vec<AIProviderInfo> {
-    let mut providers = Vec::new();
-
-    // Check Factory Droid (GLM-4.7)
-    let droid_cmd = find_command("droid");
-    let droid_available = StdCommand::new(&droid_cmd)
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    providers.push(AIProviderInfo {
-        id: "droid".to_string(),
-        name: "Factory Droid".to_string(),
-        model: "GLM-4.7".to_string(),
-        available: droid_available,
+async fn do_check_ai_availability() -> Vec<AIProviderInfo> {
+    let codex_task = tokio::spawn(async move {
+        check_cli_available({
+            let mut cmd = new_ai_command("codex");
+            cmd.arg("--version");
+            cmd
+        })
+        .await
+    });
+    let claude_task = tokio::spawn(async move {
+        check_cli_available({
+            let mut cmd = new_ai_command("claude");
+            cmd.arg("--version");
+            cmd
+        })
+        .await
+    });
+    let opencode_task = tokio::spawn(async move {
+        check_cli_available({
+            let mut cmd = new_ai_command("opencode");
+            cmd.arg("--version");
+            cmd
+        })
+        .await
     });
 
-    // Check Claude CLI
-    let claude_cmd = find_command("claude");
-    let claude_available = StdCommand::new(&claude_cmd)
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    providers.push(AIProviderInfo {
-        id: "claude".to_string(),
-        name: "Claude Code".to_string(),
-        model: "Claude".to_string(),
-        available: claude_available,
-    });
+    let codex_available = codex_task.await.unwrap_or(false);
+    let claude_available = claude_task.await.unwrap_or(false);
+    let opencode_available = opencode_task.await.unwrap_or(false);
 
-    // Check Gemini CLI
-    let gemini_cmd = find_command("gemini");
-    let gemini_available = StdCommand::new(&gemini_cmd)
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    providers.push(AIProviderInfo {
-        id: "gemini".to_string(),
-        name: "Google Gemini".to_string(),
-        model: "Gemini".to_string(),
-        available: gemini_available,
-    });
-
-    // Check OpenAI CLI
-    let openai_cmd = find_command("openai");
-    let openai_available = StdCommand::new(&openai_cmd)
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    providers.push(AIProviderInfo {
-        id: "openai".to_string(),
-        name: "OpenAI".to_string(),
-        model: "GPT-4".to_string(),
-        available: openai_available,
-    });
-
-    providers
+    vec![
+        AIProviderInfo {
+            id: "codex".to_string(),
+            name: "Codex CLI".to_string(),
+            model: "Codex".to_string(),
+            available: codex_available,
+        },
+        AIProviderInfo {
+            id: "claude".to_string(),
+            name: "Claude Code".to_string(),
+            model: "Claude".to_string(),
+            available: claude_available,
+        },
+        AIProviderInfo {
+            id: "opencode".to_string(),
+            name: "OpenCode".to_string(),
+            model: "OpenCode".to_string(),
+            available: opencode_available,
+        },
+    ]
 }
 
 // Check which AI CLIs are available and return detailed info (uses cache after first call)
 #[tauri::command]
-fn check_ai_availability() -> Vec<AIProviderInfo> {
+async fn check_ai_availability() -> Vec<AIProviderInfo> {
     // Try to return cached result first
     if let Ok(cache) = AI_AVAILABILITY_CACHE.lock() {
         if let Some(ref cached) = *cache {
@@ -478,7 +539,7 @@ fn check_ai_availability() -> Vec<AIProviderInfo> {
     }
 
     // Perform actual check
-    let providers = do_check_ai_availability();
+    let providers = do_check_ai_availability().await;
 
     // Cache the result
     if let Ok(mut cache) = AI_AVAILABILITY_CACHE.lock() {
@@ -490,8 +551,9 @@ fn check_ai_availability() -> Vec<AIProviderInfo> {
 
 // Force refresh AI availability check (clears cache and re-checks)
 #[tauri::command]
-fn refresh_ai_availability() -> Vec<AIProviderInfo> {
-    let providers = do_check_ai_availability();
+async fn refresh_ai_availability() -> Vec<AIProviderInfo> {
+    clear_command_path_cache();
+    let providers = do_check_ai_availability().await;
 
     // Update cache
     if let Ok(mut cache) = AI_AVAILABILITY_CACHE.lock() {
@@ -510,7 +572,7 @@ fn get_ai_provider() -> Option<String> {
 // Set AI provider
 #[tauri::command]
 fn set_ai_provider(provider: String) -> Result<(), String> {
-    let valid_providers = ["droid", "claude", "gemini", "openai"];
+    let valid_providers = ["codex", "claude", "opencode", "gemini"];
     if !valid_providers.contains(&provider.as_str()) {
         return Err(format!(
             "Invalid provider: {}. Valid options: {:?}",
@@ -524,6 +586,16 @@ fn set_ai_provider(provider: String) -> Result<(), String> {
     } else {
         Err("Failed to set provider".to_string())
     }
+}
+
+#[tauri::command]
+fn get_ai_allow_dangerous_permissions() -> bool {
+    AI_ALLOW_DANGEROUS_PERMISSIONS.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+fn set_ai_allow_dangerous_permissions(allow: bool) {
+    AI_ALLOW_DANGEROUS_PERMISSIONS.store(allow, Ordering::Relaxed);
 }
 
 // Cancel ongoing AI streaming request
@@ -567,8 +639,8 @@ async fn chat_with_ai_advanced(request: ChatRequest) -> Result<String, String> {
 
     // Try the selected provider first
     match provider.as_str() {
-        "droid" => {
-            if let Some(response) = try_droid(&prompt).await {
+        "codex" => {
+            if let Some(response) = try_codex(&prompt).await {
                 return Ok(response);
             }
         }
@@ -577,13 +649,13 @@ async fn chat_with_ai_advanced(request: ChatRequest) -> Result<String, String> {
                 return Ok(response);
             }
         }
-        "gemini" => {
-            if let Some(response) = try_gemini(&prompt).await {
+        "opencode" => {
+            if let Some(response) = try_opencode(&prompt).await {
                 return Ok(response);
             }
         }
-        "openai" => {
-            if let Some(response) = try_openai(&prompt).await {
+        "gemini" => {
+            if let Some(response) = try_gemini(&prompt).await {
                 return Ok(response);
             }
         }
@@ -592,19 +664,19 @@ async fn chat_with_ai_advanced(request: ChatRequest) -> Result<String, String> {
 
     // Fallback: try other providers if selected one fails
     let fallback_order = match provider.as_str() {
-        "droid" => vec!["claude", "gemini", "openai"],
-        "claude" => vec!["droid", "gemini", "openai"],
-        "gemini" => vec!["droid", "claude", "openai"],
-        "openai" => vec!["droid", "claude", "gemini"],
-        _ => vec!["droid", "claude", "gemini", "openai"],
+        "codex" => vec!["claude", "opencode"],
+        "claude" => vec!["codex", "opencode"],
+        "opencode" => vec!["codex", "claude"],
+        "gemini" => vec!["codex", "claude", "opencode"],
+        _ => vec!["codex", "claude", "opencode"],
     };
 
     for fallback in fallback_order {
         let response = match fallback {
-            "droid" => try_droid(&prompt).await,
+            "codex" => try_codex(&prompt).await,
             "claude" => try_claude(&prompt, request.model.as_deref()).await,
+            "opencode" => try_opencode(&prompt).await,
             "gemini" => try_gemini(&prompt).await,
-            "openai" => try_openai(&prompt).await,
             _ => None,
         };
         if let Some(response) = response {
@@ -612,7 +684,7 @@ async fn chat_with_ai_advanced(request: ChatRequest) -> Result<String, String> {
         }
     }
 
-    Err("No AI CLI available. Please install one of: droid (Factory), claude, gemini, or openai CLI.".to_string())
+    Err("No AI CLI available. Please install one of: codex, claude, gemini, or opencode CLI.".to_string())
 }
 
 // Streaming chat with AI using Tauri Channel
@@ -646,10 +718,10 @@ async fn chat_with_ai_streaming(
     }
 
     let result = match provider.as_str() {
-        "droid" => try_droid(&prompt).await,
+        "codex" => try_codex(&prompt).await,
         "claude" => try_claude(&prompt, request.model.as_deref()).await, // Non-streaming fallback
+        "opencode" => try_opencode(&prompt).await,
         "gemini" => try_gemini(&prompt).await,
-        "openai" => try_openai(&prompt).await,
         _ => None,
     };
 
@@ -676,11 +748,11 @@ async fn chat_with_ai_streaming(
 
     // Try fallback providers
     let fallback_order = match provider.as_str() {
-        "droid" => vec!["claude", "gemini", "openai"],
-        "claude" => vec!["droid", "gemini", "openai"],
-        "gemini" => vec!["droid", "claude", "openai"],
-        "openai" => vec!["droid", "claude", "gemini"],
-        _ => vec!["claude", "droid", "gemini", "openai"],
+        "codex" => vec!["claude", "opencode"],
+        "claude" => vec!["codex", "opencode"],
+        "opencode" => vec!["codex", "claude"],
+        "gemini" => vec!["codex", "claude", "opencode"],
+        _ => vec!["claude", "codex", "opencode"],
     };
 
     for fallback in fallback_order {
@@ -702,10 +774,10 @@ async fn chat_with_ai_streaming(
         }
 
         let result = match fallback {
-            "droid" => try_droid(&prompt).await,
+            "codex" => try_codex(&prompt).await,
             "claude" => try_claude(&prompt, request.model.as_deref()).await,
+            "opencode" => try_opencode(&prompt).await,
             "gemini" => try_gemini(&prompt).await,
-            "openai" => try_openai(&prompt).await,
             _ => None,
         };
 
@@ -732,8 +804,9 @@ async fn chat_with_ai_streaming(
     }
 
     let _ = on_event.send(StreamEvent::Error {
-        message: "No AI CLI available. Please install claude, gemini, openai, or droid CLI."
+        message: "No AI CLI available. Please install codex, claude, or opencode CLI."
             .to_string(),
+        provider: Some(provider),
     });
 
     Err("No AI CLI available".to_string())
@@ -746,9 +819,7 @@ pub struct ImportBookResult {
     pub book_id: String,
 }
 
-// Get the books directory path in app data
-#[tauri::command]
-fn get_books_directory(app: tauri::AppHandle) -> Result<String, String> {
+fn ensure_books_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -756,12 +827,77 @@ fn get_books_directory(app: tauri::AppHandle) -> Result<String, String> {
 
     let books_dir = app_data_dir.join("books");
 
-    // Create the directory if it doesn't exist
     if !books_dir.exists() {
         std::fs::create_dir_all(&books_dir)
             .map_err(|e| format!("Failed to create books directory: {}", e))?;
     }
 
+    std::fs::canonicalize(&books_dir)
+        .map_err(|e| format!("Failed to resolve books directory: {}", e))
+}
+
+fn canonicalize_if_exists(path: &Path) -> Option<PathBuf> {
+    std::fs::canonicalize(path).ok()
+}
+
+fn allowed_read_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
+    if let Ok(dir) = app.path().document_dir() {
+        if let Some(canon) = canonicalize_if_exists(&dir) {
+            roots.push(canon);
+        }
+    }
+    if let Ok(dir) = app.path().desktop_dir() {
+        if let Some(canon) = canonicalize_if_exists(&dir) {
+            roots.push(canon);
+        }
+    }
+    if let Ok(dir) = app.path().download_dir() {
+        if let Some(canon) = canonicalize_if_exists(&dir) {
+            roots.push(canon);
+        }
+    }
+
+    if let Ok(books_dir) = ensure_books_dir(app) {
+        roots.push(books_dir);
+    }
+
+    roots
+}
+
+fn is_supported_book_extension(path: &Path) -> bool {
+    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    matches!(ext.to_ascii_lowercase().as_str(), "epub")
+}
+
+fn is_under_any_root(candidate: &Path, roots: &[PathBuf]) -> bool {
+    roots.iter().any(|root| candidate.starts_with(root))
+}
+
+fn validate_book_path_inner(app: &tauri::AppHandle, file_path: &str) -> bool {
+    let candidate = Path::new(file_path);
+    if !candidate.exists() || !candidate.is_file() {
+        return false;
+    }
+    if !is_supported_book_extension(candidate) {
+        return false;
+    }
+
+    let allowed_roots = allowed_read_roots(app);
+    let candidate = match std::fs::canonicalize(candidate) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    is_under_any_root(&candidate, &allowed_roots)
+}
+
+// Get the books directory path in app data
+#[tauri::command]
+fn get_books_directory(app: tauri::AppHandle) -> Result<String, String> {
+    let books_dir = ensure_books_dir(&app)?;
     books_dir
         .to_str()
         .map(|s| s.to_string())
@@ -775,11 +911,24 @@ fn import_book_to_library(
     source_path: String,
     book_id: String,
 ) -> Result<ImportBookResult, String> {
-    let source = std::path::Path::new(&source_path);
+    let source = Path::new(&source_path);
 
     // Verify source file exists
     if !source.exists() {
         return Err(format!("Source file does not exist: {}", source_path));
+    }
+    if !source.is_file() {
+        return Err(format!("Source path is not a file: {}", source_path));
+    }
+    if !is_supported_book_extension(source) {
+        return Err("Unsupported book file type. Only EPUB is supported.".to_string());
+    }
+
+    let allowed_roots = allowed_read_roots(&app);
+    let source_canon = std::fs::canonicalize(source)
+        .map_err(|e| format!("Failed to resolve source path: {}", e))?;
+    if !is_under_any_root(&source_canon, &allowed_roots) {
+        return Err("Refusing to import file outside allowed directories".to_string());
     }
 
     // Get the file name
@@ -796,19 +945,7 @@ fn import_book_to_library(
         .unwrap_or("epub");
     let new_file_name = format!("{}_{}.{}", book_id, sanitize_filename(file_name), extension);
 
-    // Get the books directory
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-
-    let books_dir = app_data_dir.join("books");
-
-    // Create the directory if it doesn't exist
-    if !books_dir.exists() {
-        std::fs::create_dir_all(&books_dir)
-            .map_err(|e| format!("Failed to create books directory: {}", e))?;
-    }
+    let books_dir = ensure_books_dir(&app)?;
 
     let dest_path = books_dir.join(&new_file_name);
 
@@ -821,6 +958,95 @@ fn import_book_to_library(
         .to_string();
 
     Ok(ImportBookResult { new_path, book_id })
+}
+
+// Validate if a book file exists at the given path
+#[tauri::command]
+fn validate_book_path(app: tauri::AppHandle, file_path: String) -> bool {
+    validate_book_path_inner(&app, &file_path)
+}
+
+#[tauri::command]
+fn validate_book_paths(app: tauri::AppHandle, file_paths: Vec<String>) -> Vec<bool> {
+    file_paths
+        .iter()
+        .map(|p| validate_book_path_inner(&app, p))
+        .collect()
+}
+
+// Result for finding a book in the library
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FindBookResult {
+    pub found: bool,
+    pub path: Option<String>,
+}
+
+// Try to find a book file in the app's books directory by book_id or filename pattern
+#[tauri::command]
+fn find_book_in_library(
+    app: tauri::AppHandle,
+    book_id: String,
+    original_filename: Option<String>,
+) -> Result<FindBookResult, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+
+    let books_dir = app_data_dir.join("books");
+
+    if !books_dir.exists() {
+        return Ok(FindBookResult {
+            found: false,
+            path: None,
+        });
+    }
+
+    // First, try to find by book_id prefix
+    if let Ok(entries) = std::fs::read_dir(&books_dir) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            // Check if file starts with the book_id
+            if file_name.starts_with(&format!("{}_", book_id)) {
+                if let Some(path_str) = entry.path().to_str() {
+                    return Ok(FindBookResult {
+                        found: true,
+                        path: Some(path_str.to_string()),
+                    });
+                }
+            }
+        }
+    }
+
+    // Second, try to find by original filename (partial match)
+    if let Some(orig_name) = original_filename {
+        // Extract the base name without extension
+        let orig_base = orig_name
+            .rsplit_once('.')
+            .map(|(n, _)| n)
+            .unwrap_or(&orig_name);
+        let sanitized = sanitize_filename(orig_base);
+
+        if let Ok(entries) = std::fs::read_dir(&books_dir) {
+            for entry in entries.flatten() {
+                let file_name = entry.file_name().to_string_lossy().to_string();
+                // Check if file contains the sanitized original name
+                if file_name.contains(&sanitized) {
+                    if let Some(path_str) = entry.path().to_str() {
+                        return Ok(FindBookResult {
+                            found: true,
+                            path: Some(path_str.to_string()),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(FindBookResult {
+        found: false,
+        path: None,
+    })
 }
 
 // Delete a book file from the library
@@ -892,11 +1118,16 @@ pub fn run() {
             refresh_ai_availability,
             get_ai_provider,
             set_ai_provider,
+            get_ai_allow_dangerous_permissions,
+            set_ai_allow_dangerous_permissions,
             cancel_ai_streaming,
             reset_ai_cancel,
             get_books_directory,
             import_book_to_library,
-            delete_book_file
+            delete_book_file,
+            validate_book_path,
+            validate_book_paths,
+            find_book_in_library
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -905,6 +1136,59 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "creader_test_{}_{}_{}",
+            name,
+            std::process::id(),
+            nanos
+        ))
+    }
+
+    #[test]
+    fn supported_extensions() {
+        assert!(is_supported_book_extension(Path::new("a.epub")));
+        assert!(is_supported_book_extension(Path::new("a.EPUB")));
+        assert!(!is_supported_book_extension(Path::new("a.pdf")));
+        assert!(!is_supported_book_extension(Path::new("a.md")));
+        assert!(!is_supported_book_extension(Path::new("a.markdown")));
+        assert!(!is_supported_book_extension(Path::new("a.txt")));
+        assert!(!is_supported_book_extension(Path::new("a")));
+    }
+
+    #[test]
+    fn under_any_root_matches_canonical_paths() {
+        let root1 = unique_temp_dir("root1");
+        let root2 = unique_temp_dir("root2");
+        std::fs::create_dir_all(&root1).unwrap();
+        std::fs::create_dir_all(&root2).unwrap();
+
+        let nested = root1.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        let file = nested.join("book.epub");
+        std::fs::write(&file, b"test").unwrap();
+
+        let roots = vec![
+            std::fs::canonicalize(&root1).unwrap(),
+            std::fs::canonicalize(&root2).unwrap(),
+        ];
+        let candidate = std::fs::canonicalize(&file).unwrap();
+        assert!(is_under_any_root(&candidate, &roots));
+
+        let outside = unique_temp_dir("outside").join("x.epub");
+        std::fs::create_dir_all(outside.parent().unwrap()).unwrap();
+        std::fs::write(&outside, b"test").unwrap();
+        let outside = std::fs::canonicalize(&outside).unwrap();
+        assert!(!is_under_any_root(&outside, &roots));
+
+        let _ = std::fs::remove_dir_all(&root1);
+        let _ = std::fs::remove_dir_all(&root2);
+    }
 
     #[test]
     fn build_prompt_includes_context_and_truncates() {

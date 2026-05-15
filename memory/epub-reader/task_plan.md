@@ -38,19 +38,19 @@
 
 ### Phase 5: AI 对话功能 ✅
 - [x] 5.1 设计 AI 对话面板 UI
-- [x] 5.2 实现终端 AI 调用接口 (Droid/Claude/Gemini/OpenAI CLI)
+- [x] 5.2 实现终端 AI 调用接口 (Codex/Claude/Gemini/OpenCode CLI)
 - [x] 5.3 上下文关联（当前阅读内容、选中文本）
 - [x] 5.4 对话历史管理 (localStorage 持久化)
 - [x] 5.5 快捷键支持 (选中文本后按'a'打开AI面板)
-- [x] 5.6 AI 提供商切换功能 (支持 Factory Droid/Claude/Gemini/OpenAI)
+- [x] 5.6 AI 提供商切换功能 (支持 Codex/Claude/Gemini/OpenCode)
 
 ### Phase 6: 核心功能完善 ✅
 - [x] 6.1 修复 GUI 应用 CLI 路径查找问题
 - [x] 6.2 修复中文 UTF-8 字符边界截断问题
 - [x] 6.3 修复 Claude CLI 参数兼容性问题 (移除 --no-markdown)
-- [x] 6.4 将默认 AI 从 Droid 改为 Claude Code
+- [x] 6.4 将默认 AI 从 Codex 改为 Claude Code
 - [x] 6.5 清理调试日志代码
-- [x] 6.6 创建 SyncService 同步服务层架构
+- [x] 6.6 统一 LocalStore 存储读写层
 - [x] 6.7 文档编写 (README.md)
 - [x] 6.8 打包测试（macOS） - CReader.app 已生成
 
@@ -99,13 +99,13 @@
 | Provider | CLI Command | Model | Notes |
 |----------|-------------|-------|-------|
 | Claude Code | `claude -p` | Claude | **默认首选** |
-| Factory Droid | `droid exec --model custom:glm-4.7` | GLM-4.7 | 备选 |
+| Codex CLI | `codex -p` | Codex | 备选 |
 | Google Gemini | `gemini -p` | Gemini | 需安装 Gemini CLI |
-| OpenAI | `openai api chat.completions.create` | GPT-4 | 需安装 OpenAI CLI |
+| OpenCode | `opencode run` | OpenCode | 需安装 OpenCode CLI |
 
 ## CLI Path Search Locations
 GUI 应用会在以下路径搜索 CLI 工具:
-- `~/.local/bin/` (Factory Droid)
+- `~/.local/bin/` (Codex CLI)
 - `~/.cargo/bin/` (Cargo 安装)
 - `~/.bun/bin/` (Bun 安装)
 - `~/.nvm/versions/node/*/bin/` (NVM Node - Claude/Gemini 通常在这里)
@@ -158,7 +158,7 @@ GUI 应用会在以下路径搜索 CLI 工具:
   - 添加了 `chat_with_ai_streaming` Tauri 命令，使用 `tauri::ipc::Channel` 发送流式事件
   - 前端使用 `Channel` API 实时接收并渲染 AI 响应
   - 添加了流式光标动画 (打字机效果)
-  - 其他提供商 (Droid/Gemini/OpenAI) 回退到非流式模式
+  - 其他提供商 (Codex/Gemini/OpenCode) 回退到非流式模式
 - **可拆分磁吸式 AI 窗口:**
   - 使用 Tauri `WebviewWindow` 创建独立 AI 窗口
   - 支持将 AI 面板从主窗口拆分出来成为悬浮窗口
@@ -168,7 +168,7 @@ GUI 应用会在以下路径搜索 CLI 工具:
   - 添加了可拖动窗口头部 (data-tauri-drag-region)
 - **AI 模块调试和修复:**
   - 修复了 Claude CLI 调用参数问题（移除不支持的 `--no-markdown` 选项）
-  - 将默认 AI 提供商从 Factory Droid 改为 Claude Code
+  - 将默认 AI 提供商从 Codex 改为 Claude Code
   - 清理了所有调试日志代码，保持终端输出整洁
   - 优化了 AI 可用性检测逻辑
 
@@ -184,4 +184,3 @@ GUI 应用会在以下路径搜索 CLI 工具:
 - 中文字符截断 panic (已解决: 使用 is_char_boundary 安全截断)
 - Claude CLI `--no-markdown` 参数不支持 (已解决: 移除该参数)
 - 独立AI窗口停止按钮无效 (已解决: 添加前端超时保护机制)
-

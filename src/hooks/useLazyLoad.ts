@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('useLazyLoad');
 
 interface UseLazyLoadOptions {
     rootMargin?: string;
@@ -81,7 +84,7 @@ export function useBatchCoverLoader(options: UseBatchCoverLoaderOptions) {
                         results[id] = url;
                     }
                 } catch (e) {
-                    console.warn('Failed to load cover:', id, e);
+                    logger.warn('Failed to load cover:', id, e);
                 }
             })
         );

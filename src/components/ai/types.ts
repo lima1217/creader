@@ -24,7 +24,7 @@ export type StreamEvent =
     | { event: 'started'; data: { provider: string } }
     | { event: 'chunk'; data: { text: string } }
     | { event: 'done'; data: { fullText: string } }
-    | { event: 'error'; data: { message: string } };
+    | { event: 'error'; data: { message: string; provider?: string } };
 
 // Quick action button configuration
 export interface QuickAction {

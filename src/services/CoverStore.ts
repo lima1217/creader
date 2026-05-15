@@ -1,74 +1,55 @@
-const DB_NAME = 'creader';
-const DB_VERSION = 1;
-const STORE_NAME = 'covers';
+import { STORES } from './Db';
+import { createLogger } from '../utils/logger';
+import { idbDelete, idbGet, idbPut } from './idb';
 
-let dbPromise: Promise<IDBDatabase> | null = null;
+const STORE_NAME = STORES.covers;
 const urlCache = new Map<string, string>();
-
-function getDb(): Promise<IDBDatabase> {
-  if (dbPromise) return dbPromise;
-
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-  return dbPromise;
-}
+const logger = createLogger('CoverStore');
+const MAX_URL_CACHE_ENTRIES = 200;
 
 export async function saveCover(bookId: string, blob: Blob): Promise<void> {
-  const db = await getDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.put(blob, bookId);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+  logger.debug('Saving cover for book:', bookId, ', blob size:', blob.size, 'bytes');
+  revokeCoverUrl(bookId);
+  await idbPut(STORE_NAME, bookId, blob);
+  logger.debug('Cover saved successfully for:', bookId);
 }
 
 export async function loadCover(bookId: string): Promise<Blob | null> {
-  const db = await getDb();
-  return await new Promise<Blob | null>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.get(bookId);
-    req.onsuccess = () => resolve((req.result as Blob | undefined) ?? null);
-    req.onerror = () => reject(req.error);
-  });
+  logger.debug('Loading cover for book:', bookId);
+  const result = await idbGet<Blob>(STORE_NAME, bookId);
+  logger.debug('Cover loaded for:', bookId, ', found:', !!result, result ? `, size: ${result.size} bytes` : '');
+  return result;
 }
 
 export async function deleteCover(bookId: string): Promise<void> {
-  const db = await getDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.delete(bookId);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+  revokeCoverUrl(bookId);
+  await idbDelete(STORE_NAME, bookId);
 }
 
 export async function getCoverUrl(bookId: string): Promise<string | null> {
+  logger.debug('Getting cover URL for:', bookId);
   const cached = urlCache.get(bookId);
-  if (cached) return cached;
+  if (cached) {
+    logger.debug('Using cached URL for:', bookId);
+    return cached;
+  }
 
   const blob = await loadCover(bookId);
-  if (!blob) return null;
+  if (!blob) {
+    logger.debug('No blob found for:', bookId);
+    return null;
+  }
 
   const url = URL.createObjectURL(blob);
   urlCache.set(bookId, url);
+  while (urlCache.size > MAX_URL_CACHE_ENTRIES) {
+    const oldestKey = urlCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    const oldestUrl = urlCache.get(oldestKey);
+    if (oldestUrl) URL.revokeObjectURL(oldestUrl);
+    urlCache.delete(oldestKey);
+  }
+  logger.debug('Created object URL for:', bookId, ', URL:', url);
   return url;
 }
 

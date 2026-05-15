@@ -1,51 +1,19 @@
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { useApp } from '../stores/AppContext';
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { useLibrary, useUI, useBookProgress } from '../stores/AppContext';
 import type { Book, BookCategory } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
 import { BOOK_ITEM_HEIGHT, CATEGORY_COLORS } from '../constants';
+import { useVirtualList } from '../hooks/useVirtualList';
+import { useAppDialog } from './AppDialog';
+import {
+    EditIcon,
+    FolderIcon,
+    PlusIcon,
+    SidebarBookIcon as BookIcon,
+    TagIcon,
+    TrashIcon,
+} from './icons/icons';
 import './Sidebar.css';
-
-// Icons as simple SVG components
-const BookIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-    </svg>
-);
-
-const PlusIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="12" y1="5" x2="12" y2="19" />
-        <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-);
-
-const TrashIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="3 6 5 6 21 6" />
-        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-    </svg>
-);
-
-const EditIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-    </svg>
-);
-
-const FolderIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </svg>
-);
-
-const TagIcon = () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-        <line x1="7" y1="7" x2="7.01" y2="7" />
-    </svg>
-);
 
 interface SidebarProps {
     onImportBook: () => void;
@@ -115,21 +83,22 @@ function LazyBookCover({ book, coverUrls }: { book: Book; coverUrls: Record<stri
 }
 
 export function Sidebar({ onImportBook }: SidebarProps) {
+    const { confirm } = useAppDialog();
     const {
         library,
         currentBook,
         setCurrentBook,
         removeBook,
         updateBook,
-        isSidebarOpen,
         addCategory,
         removeCategory,
         updateCategory,
         setBookCategory
-    } = useApp();
+    } = useLibrary();
+    const { bookProgressById } = useBookProgress();
+    const { isSidebarOpen } = useUI();
 
     const [coverUrls] = useState<Record<string, string>>({});
-    const [bookToDelete, setBookToDelete] = useState<string | null>(null);
     const [bookToEdit, setBookToEdit] = useState<EditBookState | null>(null);
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -137,11 +106,6 @@ export function Sidebar({ onImportBook }: SidebarProps) {
     const [newCategoryName, setNewCategoryName] = useState('');
     const [newCategoryColor, setNewCategoryColor] = useState<string>(CATEGORY_COLORS[0]);
     const [bookForCategory, setBookForCategory] = useState<string | null>(null);
-    const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
-
-    const listContainerRef = useRef<HTMLDivElement>(null);
-    const [scrollTop, setScrollTop] = useState(0);
-    const [containerHeight, setContainerHeight] = useState(0);
 
     // Safely access categories with fallback
     const categories = library.categories || [];
@@ -180,84 +144,31 @@ export function Sidebar({ onImportBook }: SidebarProps) {
         return library.books.filter(b => b.categoryId === selectedCategoryId);
     }, [library.books, selectedCategoryId]);
 
-    // Virtual list calculations
-    const visibleRange = useMemo(() => {
-        const overscan = 3;
-        const start = Math.max(0, Math.floor(scrollTop / BOOK_ITEM_HEIGHT) - overscan);
-        const visibleCount = Math.ceil(containerHeight / BOOK_ITEM_HEIGHT);
-        const end = Math.min(filteredBooks.length - 1, start + visibleCount + overscan * 2);
-        return { start, end };
-    }, [scrollTop, containerHeight, filteredBooks.length]);
-
-    const virtualItems = useMemo(() => {
-        const result: Array<{ index: number; book: Book; style: React.CSSProperties }> = [];
-        for (let i = visibleRange.start; i <= visibleRange.end && i < filteredBooks.length; i++) {
-            result.push({
-                index: i,
-                book: filteredBooks[i],
-                style: {
-                    position: 'absolute',
-                    top: i * BOOK_ITEM_HEIGHT,
-                    left: 0,
-                    right: 0,
-                    height: BOOK_ITEM_HEIGHT,
-                },
-            });
-        }
-        return result;
-    }, [filteredBooks, visibleRange]);
-
-    const totalHeight = filteredBooks.length * BOOK_ITEM_HEIGHT;
-
-    // Handle scroll for virtual list
-    const handleScroll = useCallback(() => {
-        if (listContainerRef.current) {
-            setScrollTop(listContainerRef.current.scrollTop);
-        }
-    }, []);
-
-    // Observe container size
-    useEffect(() => {
-        const container = listContainerRef.current;
-        if (!container) return;
-
-        const resizeObserver = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                setContainerHeight(entry.contentRect.height);
-            }
-        });
-
-        resizeObserver.observe(container);
-        setContainerHeight(container.clientHeight);
-        container.addEventListener('scroll', handleScroll, { passive: true });
-
-        return () => {
-            resizeObserver.disconnect();
-            container.removeEventListener('scroll', handleScroll);
-        };
-    }, [handleScroll]);
+    const { containerRef: listContainerRef, virtualItems, totalHeight } = useVirtualList(filteredBooks, {
+        itemHeight: BOOK_ITEM_HEIGHT,
+        overscan: 3,
+    });
 
     const handleBookClick = (book: Book) => {
         setCurrentBook(book);
     };
 
-    const handleDeleteBook = (e: React.MouseEvent, bookId: string) => {
+    const handleDeleteBook = async (e: React.MouseEvent, bookId: string) => {
         e.stopPropagation();
-        setBookToDelete(bookId);
-    };
 
-    const confirmDelete = () => {
-        if (bookToDelete) {
-            removeBook(bookToDelete);
-            if (currentBook?.id === bookToDelete) {
+        const shouldDelete = await confirm({
+            title: 'Remove book',
+            message: 'Remove this book from your library? The EPUB file will stay on disk.',
+            confirmLabel: 'Remove',
+            tone: 'danger',
+        });
+
+        if (shouldDelete) {
+            removeBook(bookId);
+            if (currentBook?.id === bookId) {
                 setCurrentBook(null);
             }
-            setBookToDelete(null);
         }
-    };
-
-    const cancelDelete = () => {
-        setBookToDelete(null);
     };
 
     const handleEditBook = (e: React.MouseEvent, book: Book) => {
@@ -307,23 +218,22 @@ export function Sidebar({ onImportBook }: SidebarProps) {
         setShowCategoryModal(true);
     };
 
-    const handleDeleteCategory = (e: React.MouseEvent, categoryId: string) => {
+    const handleDeleteCategory = async (e: React.MouseEvent, categoryId: string) => {
         e.stopPropagation();
-        setCategoryToDelete(categoryId);
-    };
 
-    const confirmDeleteCategory = () => {
-        if (categoryToDelete) {
-            removeCategory(categoryToDelete);
-            if (selectedCategoryId === categoryToDelete) {
+        const shouldDelete = await confirm({
+            title: 'Delete category',
+            message: 'Books in this category will become uncategorized.',
+            confirmLabel: 'Delete',
+            tone: 'danger',
+        });
+
+        if (shouldDelete) {
+            removeCategory(categoryId);
+            if (selectedCategoryId === categoryId) {
                 setSelectedCategoryId(null);
             }
-            setCategoryToDelete(null);
         }
-    };
-
-    const cancelDeleteCategory = () => {
-        setCategoryToDelete(null);
     };
 
     const confirmCategoryModal = () => {
@@ -358,42 +268,6 @@ export function Sidebar({ onImportBook }: SidebarProps) {
 
     return (
         <aside className="sidebar">
-            {/* Delete Confirmation Modal */}
-            {bookToDelete && (
-                <div className="modal-overlay" onClick={cancelDelete}>
-                    <div className="modal" onClick={e => e.stopPropagation()}>
-                        <h3>Delete Book</h3>
-                        <p>Are you sure you want to remove this book from your library?</p>
-                        <div className="modal-actions">
-                            <button className="btn btn-secondary" onClick={cancelDelete}>
-                                Cancel
-                            </button>
-                            <button className="btn btn-danger" onClick={confirmDelete}>
-                                Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Delete Category Confirmation Modal */}
-            {categoryToDelete && (
-                <div className="modal-overlay" onClick={cancelDeleteCategory}>
-                    <div className="modal" onClick={e => e.stopPropagation()}>
-                        <h3>Delete Category</h3>
-                        <p>Are you sure you want to delete this category? Books in this category will become uncategorized.</p>
-                        <div className="modal-actions">
-                            <button className="btn btn-secondary" onClick={cancelDeleteCategory}>
-                                Cancel
-                            </button>
-                            <button className="btn btn-danger" onClick={confirmDeleteCategory}>
-                                Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* Edit Book Modal */}
             {bookToEdit && (
                 <div className="modal-overlay" onClick={cancelEdit}>
@@ -594,70 +468,75 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                             <BookIcon />
                         </div>
                         <h4>No books yet</h4>
-                        <p>Import your first EPUB to get started</p>
+                        <p>Import your first book to get started</p>
                         <button className="btn btn-primary" onClick={onImportBook}>
                             <PlusIcon />
-                            <span>Import EPUB</span>
+                            <span>Import Book</span>
                         </button>
                     </div>
                 ) : (
                     <div className="book-list-virtual" style={{ height: totalHeight, position: 'relative' }}>
-                        {virtualItems.map(({ book, style }) => (
-                            <div
-                                key={book.id}
-                                className={`book-item ${currentBook?.id === book.id ? 'active' : ''}`}
-                                style={style}
-                                onClick={() => handleBookClick(book)}
-                            >
-                                <LazyBookCover book={book} coverUrls={coverUrls} />
-                                <div className="book-info">
-                                    <span className="book-title">{book.title}</span>
-                                    <span className="book-author">{book.author || 'Unknown'}</span>
-                                    {book.categoryId && (
-                                        <span
-                                            className="book-category-badge"
-                                            style={{
-                                                backgroundColor: categories.find(c => c.id === book.categoryId)?.color || 'var(--text-muted)',
-                                                opacity: 0.8
-                                            }}
-                                        >
-                                            {categories.find(c => c.id === book.categoryId)?.name || ''}
+                        {virtualItems.map(({ item: book, style }) => {
+                            const percentage = bookProgressById[book.id]?.percentage ?? book.progress.percentage;
+                            return (
+                                <div
+                                    key={book.id}
+                                    className={`book-item ${currentBook?.id === book.id ? 'active' : ''}`}
+                                    style={style}
+                                    onClick={() => handleBookClick(book)}
+                                >
+                                    <LazyBookCover book={book} coverUrls={coverUrls} />
+                                    <div className="book-info">
+                                        <span className="book-title-row">
+                                            <span className="book-title">{book.title}</span>
                                         </span>
-                                    )}
-                                    {book.progress.percentage > 0 && (
-                                        <div className="book-progress">
-                                            <div
-                                                className="book-progress-bar"
-                                                style={{ width: `${book.progress.percentage}%` }}
-                                            />
-                                        </div>
-                                    )}
+                                        <span className="book-author">{book.author || 'Unknown'}</span>
+                                        {book.categoryId && (
+                                            <span
+                                                className="book-category-badge"
+                                                style={{
+                                                    backgroundColor: categories.find(c => c.id === book.categoryId)?.color || 'var(--text-muted)',
+                                                    opacity: 0.8
+                                                }}
+                                            >
+                                                {categories.find(c => c.id === book.categoryId)?.name || ''}
+                                            </span>
+                                        )}
+                                        {percentage > 0 && (
+                                            <div className="book-progress">
+                                                <div
+                                                    className="book-progress-bar"
+                                                    style={{ width: `${percentage}%` }}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="book-actions">
+                                        <button
+                                            className="btn btn-ghost btn-icon book-action-btn"
+                                            onClick={(e) => handleSetBookCategory(e, book.id)}
+                                            title="Set category"
+                                        >
+                                            <TagIcon />
+                                        </button>
+                                        <button
+                                            className="btn btn-ghost btn-icon book-edit"
+                                            onClick={(e) => handleEditBook(e, book)}
+                                            title="Edit book info"
+                                        >
+                                            <EditIcon />
+                                        </button>
+                                        <button
+                                            className="btn btn-ghost btn-icon book-delete"
+                                            onClick={(e) => handleDeleteBook(e, book.id)}
+                                            title="Remove book"
+                                        >
+                                            <TrashIcon />
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="book-actions">
-                                    <button
-                                        className="btn btn-ghost btn-icon book-action-btn"
-                                        onClick={(e) => handleSetBookCategory(e, book.id)}
-                                        title="Set category"
-                                    >
-                                        <TagIcon />
-                                    </button>
-                                    <button
-                                        className="btn btn-ghost btn-icon book-edit"
-                                        onClick={(e) => handleEditBook(e, book)}
-                                        title="Edit book info"
-                                    >
-                                        <EditIcon />
-                                    </button>
-                                    <button
-                                        className="btn btn-ghost btn-icon book-delete"
-                                        onClick={(e) => handleDeleteBook(e, book.id)}
-                                        title="Remove book"
-                                    >
-                                        <TrashIcon />
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>

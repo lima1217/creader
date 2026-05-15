@@ -48,7 +48,7 @@
 
 ### 方案 1: 终端 CLI 调用
 - 通过 Tauri 的 Shell 命令执行 CLI
-- 支持: Claude CLI, Gemini CLI, OpenAI CLI
+- 支持: Claude CLI, Gemini CLI, Codex CLI
 - 优点: 灵活，用户可自定义 AI
 
 ### 方案 2: API 直接调用

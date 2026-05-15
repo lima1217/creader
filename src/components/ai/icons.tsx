@@ -100,6 +100,13 @@ export const QuoteIcon = () => (
     </svg>
 );
 
+export const PlusIcon = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+);
+
 export const ChevronDownIcon = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <polyline points="6 9 12 15 18 9" />
@@ -119,13 +126,12 @@ export const CheckIcon = () => (
     </svg>
 );
 
-// Popout Icon for detaching AI panel
-export const PopoutIcon = () => (
+export const DockIcon = () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="3" width="18" height="18" rx="2" />
-        <line x1="9" y1="3" x2="9" y2="21" />
-        <polyline points="14 8 18 8 18 12" />
-        <line x1="18" y1="8" x2="12" y2="14" />
+        <line x1="15" y1="3" x2="15" y2="21" />
+        <polyline points="10 12 6 12" />
+        <polyline points="10 8 6 12 10 16" />
     </svg>
 );
 
