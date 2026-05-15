@@ -6,10 +6,11 @@
     height: var(--header-height);
     background: var(--bg-primary);
     border-bottom: 1px solid var(--border-secondary);
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    justify-content: space-between;
-    padding: 0 var(--space-4);
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
     flex-shrink: 0;
     position: relative;
     z-index: 100;
@@ -25,17 +26,18 @@
 }
 
 .toolbar-left {
-    flex: 1;
+    justify-self: start;
     min-width: 0;
     gap: var(--space-3);
 }
 
 .toolbar-center {
-    flex-shrink: 0;
+    justify-self: center;
 }
 
 .toolbar-right {
-    flex: 1;
+    justify-self: end;
+    min-width: 0;
     justify-content: flex-end;
     gap: var(--space-2);
 }
@@ -47,10 +49,10 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    min-height: 32px;
+    min-height: var(--control-size);
     padding: 0 var(--space-3);
     background: var(--bg-secondary);
-    border-radius: var(--radius-md);
+    border-radius: var(--control-radius);
     border: 1px solid var(--border-secondary);
     max-width: 400px;
 }
@@ -83,15 +85,15 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    min-height: 32px;
+    min-height: var(--control-size);
     padding: 0 var(--space-1);
     background: var(--bg-secondary);
-    border-radius: var(--radius-md);
+    border-radius: calc(var(--control-radius) + 2px);
     border: 1px solid var(--border-secondary);
 }
 
 .toolbar-group .btn-icon {
-    border-radius: var(--radius-md);
+    border-radius: var(--control-radius);
     padding: var(--space-1);
     color: var(--text-secondary);
 }
@@ -117,12 +119,12 @@
    ============================================ */
 .toolbar .btn-icon {
     position: relative;
-    border-radius: var(--radius-md);
-    width: 32px;
-    height: 32px;
+    border-radius: var(--control-radius);
+    width: var(--control-size);
+    height: var(--control-size);
     padding: 0;
     color: var(--text-secondary);
-    transition: background-color var(--transition-fast), color var(--transition-fast), filter var(--transition-fast);
+    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
     overflow: hidden;
 }
 
@@ -132,7 +134,8 @@
 }
 
 .toolbar .btn-icon:active {
-    filter: brightness(0.94);
+    transform: scale(0.96);
+    filter: none;
 }
 
 /* ============================================
@@ -235,15 +238,15 @@
 }
 
 .toolbar-right {
-    gap: 6px;
+    gap: var(--space-2);
 }
 
 .toolbar-book-info {
-    min-height: 32px;
+    min-height: var(--control-size);
     max-width: min(440px, 44vw);
     background: var(--bg-control);
     border-color: var(--border-soft);
-    border-radius: var(--radius-control);
+    border-radius: var(--control-radius);
     padding: 0 10px;
 }
 
@@ -262,27 +265,31 @@
 }
 
 .toolbar-group {
-    min-height: 34px;
+    min-height: calc(var(--control-size) + 2px);
     gap: 2px;
     padding: 1px;
     background: var(--bg-control);
     border-color: var(--border-soft);
-    border-radius: calc(var(--radius-control) + 2px);
+    border-radius: calc(var(--control-radius) + 3px);
 }
 
-.toolbar-view-group,
+.toolbar-view-group {
+    background: var(--bg-control);
+    border-color: var(--border-soft);
+}
+
 .toolbar-tool-group {
-    background: transparent;
-    border-color: transparent;
+    background: var(--bg-control);
+    border-color: var(--border-soft);
 }
 
 .toolbar .btn-icon,
 .toolbar-group .btn-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-control);
+    width: var(--control-size);
+    height: var(--control-size);
+    border-radius: var(--control-radius);
     color: var(--text-secondary);
-    transition: background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast);
+    transition: background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .toolbar .btn-icon:hover,
@@ -307,7 +314,7 @@
 }
 
 .toolbar-font-size {
-    min-width: 44px;
+    min-width: 46px;
     color: var(--text-secondary);
     font-weight: 560;
 }

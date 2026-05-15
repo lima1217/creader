@@ -3,12 +3,12 @@ import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import {
     CoffeeIcon,
-    MenuIcon,
     MinusIcon,
     MoonIcon,
     PlusIcon,
     SearchIcon,
     SunIcon,
+    TocSidebarIcon,
     ToolbarAIIcon,
 } from './icons/icons';
 import './Toolbar.css';
@@ -56,7 +56,7 @@ export function Toolbar() {
                     onClick={() => setSidebarOpen(!isSidebarOpen)}
                     title={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
                 >
-                    <MenuIcon />
+                    <TocSidebarIcon />
                 </button>
 
                 {currentBook && (

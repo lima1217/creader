@@ -60,7 +60,9 @@
   --header-height: 48px;
   --ai-panel-width: 360px;
   --reader-gutter: clamp(20px, 4vw, 56px);
-  --control-size: 32px;
+  --control-size: 34px;
+  --control-size-compact: 30px;
+  --control-radius: 7px;
 }
 
 [data-theme="light"] {
@@ -283,15 +285,17 @@ a:hover {
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
+  min-height: var(--control-size);
   font-size: var(--text-sm);
   font-weight: 500;
-  border-radius: var(--radius-md);
+  border-radius: var(--control-radius);
   border: none;
   cursor: default;
-  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
   font-family: inherit;
   position: relative;
   overflow: hidden;
+  touch-action: manipulation;
 }
 
 .btn:disabled {
@@ -300,7 +304,13 @@ a:hover {
 }
 
 .btn:active:not(:disabled) {
-  filter: brightness(0.94);
+  transform: scale(0.97);
+  filter: none;
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.14);
 }
 
 .btn-primary {
@@ -334,8 +344,10 @@ a:hover {
 }
 
 .btn-icon {
-  padding: var(--space-2);
-  border-radius: var(--radius-md);
+  width: var(--control-size);
+  height: var(--control-size);
+  padding: 0;
+  border-radius: var(--control-radius);
 }
 
 .btn-icon:hover:not(:disabled) {
@@ -1016,13 +1028,13 @@ li {
 }
 
 .btn {
-  min-height: 32px;
-  border-radius: var(--radius-control);
-  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast), filter var(--transition-fast);
+  min-height: var(--control-size);
+  border-radius: var(--control-radius);
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
   filter: none;
 }
 

@@ -598,7 +598,7 @@
 .ai-quick-actions {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: 4px;
     padding: var(--space-3) var(--space-4);
     background: var(--bg-primary);
     border-top: 1px solid var(--border-secondary);
@@ -614,16 +614,18 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
+    justify-content: center;
+    gap: 6px;
+    min-height: var(--control-size);
+    padding: 0 10px;
     font-size: var(--text-xs);
     font-weight: 500;
     color: var(--text-secondary);
     background: rgba(48, 43, 36, 0.04);
     border: 1px solid var(--border-secondary);
-    border-radius: var(--radius-md);
+    border-radius: var(--control-radius);
     cursor: default;
-    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
     white-space: nowrap;
 }
 
@@ -636,6 +638,10 @@
 .ai-quick-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+}
+
+.ai-quick-btn:active:not(:disabled) {
+    transform: scale(0.97);
 }
 
 .ai-quick-btn svg {
@@ -1495,16 +1501,19 @@
 
 
 .ai-quick-actions {
-    padding: 9px var(--space-3);
+    padding: 8px var(--space-3);
     border-top-color: var(--border-secondary);
+    background: var(--bg-panel);
 }
 
 .ai-quick-btn {
-    padding: 7px 9px;
+    min-height: var(--control-size-compact);
+    padding: 0 9px;
+    border-radius: var(--control-radius);
 }
 
 .ai-panel-input {
-    padding: 10px var(--space-3) var(--space-3);
+    padding: 9px var(--space-3) var(--space-3);
     border-top-color: var(--border-secondary);
 }
 
