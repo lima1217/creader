@@ -2,8 +2,6 @@
 
 一个基于 Tauri 2.x 的本地轻量级 EPUB 阅读器，支持书库管理、阅读进度追踪、多种主题，以及内嵌 AI 对话助手。
 
-![CReader](./docs/screenshot.png)
-
 ## 功能特性
 
 ### 核心阅读功能
