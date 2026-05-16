@@ -20,6 +20,10 @@ const defaultSettings: Settings = {
     lineHeight: 1.6,
     allowEpubScripts: true,
     allowAIDangerousPermissions: false,
+    readingMemoryPath: undefined,
+    readingMemoryAutoIngest: true,
+    aiProvider: 'claude',
+    aiModel: 'opus',
 };
 
 // App state context

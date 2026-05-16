@@ -32,6 +32,12 @@
 - **文字选择**: 选中文字直接询问 AI
 - **对话历史**: 本地持久化保存
 
+### Reading Memory
+- **本地 Markdown 仓库**: 可在工具栏选择 Reading Memory 文件夹
+- **自动沉淀**: AI 回答有书籍上下文时会无感写入 `inbox/`
+- **外部可编辑**: 仓库可直接用 Obsidian、Typora、VS Code 等 Markdown 工具打开
+- **可追溯**: 每条笔记保留书籍、作者、章节、进度和 EPUB CFI 等来源信息
+
 ## 更新日志
 
 ### v0.1.1 (2026-05-16)
@@ -127,6 +133,7 @@ creader/
 - [ ] 批注和高亮
 - [ ] 书签管理
 - [ ] 阅读统计
+- [ ] Reading Memory lint agent 工作流
 
 ## 设计理念
 

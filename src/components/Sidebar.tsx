@@ -9,14 +9,17 @@ import {
     EditIcon,
     FolderIcon,
     PlusIcon,
+    SettingsIcon,
     SidebarBookIcon as BookIcon,
     TagIcon,
+    TocSidebarIcon,
     TrashIcon,
 } from './icons/icons';
 import './Sidebar.css';
 
 interface SidebarProps {
     onImportBook: () => void;
+    onOpenSettings: () => void;
 }
 
 interface EditBookState {
@@ -82,7 +85,7 @@ function LazyBookCover({ book, coverUrls }: { book: Book; coverUrls: Record<stri
     );
 }
 
-export function Sidebar({ onImportBook }: SidebarProps) {
+export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
     const { confirm } = useAppDialog();
     const {
         library,
@@ -96,13 +99,14 @@ export function Sidebar({ onImportBook }: SidebarProps) {
         setBookCategory
     } = useLibrary();
     const { bookProgressById } = useBookProgress();
-    const { isSidebarOpen } = useUI();
+    const { isSidebarOpen, setSidebarOpen } = useUI();
 
     const [coverUrls] = useState<Record<string, string>>({});
     const [bookToEdit, setBookToEdit] = useState<EditBookState | null>(null);
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [editingCategory, setEditingCategory] = useState<BookCategory | null>(null);
+    const [isTagsOpen, setTagsOpen] = useState(true);
     const [newCategoryName, setNewCategoryName] = useState('');
     const [newCategoryColor, setNewCategoryColor] = useState<string>(CATEGORY_COLORS[0]);
     const [bookForCategory, setBookForCategory] = useState<string | null>(null);
@@ -389,12 +393,16 @@ export function Sidebar({ onImportBook }: SidebarProps) {
             )}
 
             <div className="sidebar-header">
-                <h2 className="sidebar-title">
-                    <BookIcon />
-                    <span>书库</span>
-                </h2>
+                <button
+                    className="btn btn-ghost btn-icon sidebar-toggle-btn"
+                    onClick={() => setSidebarOpen(false)}
+                    title="隐藏侧栏"
+                    aria-label="隐藏侧栏"
+                >
+                    <TocSidebarIcon />
+                </button>
                 <div className="sidebar-header-actions">
-                    <button className="btn btn-secondary btn-icon" onClick={handleAddCategory} title="新增分类">
+                    <button className="btn btn-secondary btn-icon" onClick={handleAddCategory} title="新增标签" aria-label="新增标签">
                         <FolderIcon />
                     </button>
                     <button className="btn btn-primary btn-icon sidebar-import-btn" onClick={onImportBook} title="导入 EPUB" aria-label="导入 EPUB">
@@ -406,59 +414,84 @@ export function Sidebar({ onImportBook }: SidebarProps) {
             {/* Category Filter */}
             <div className="sidebar-categories">
                 <button
-                    className={`category-filter-item ${!selectedCategoryId || selectedCategoryId === 'all' ? 'active' : ''}`}
+                    className={`category-filter-item category-primary-item ${!selectedCategoryId || selectedCategoryId === 'all' ? 'active' : ''}`}
                     onClick={() => setSelectedCategoryId(null)}
                 >
+                    <BookIcon />
                     <span className="category-filter-name">全部书籍</span>
                     <span className="category-filter-count">{library.books.length}</span>
                 </button>
 
-                {groupedBooks.uncategorized.length > 0 && (
-                    <button
-                        className={`category-filter-item ${selectedCategoryId === 'uncategorized' ? 'active' : ''}`}
-                        onClick={() => setSelectedCategoryId('uncategorized')}
+                <div className="category-section">
+                    <div
+                        role="button"
+                        tabIndex={0}
+                        className={`category-filter-item category-primary-item ${isTagsOpen ? 'expanded' : ''}`}
+                        onClick={() => setTagsOpen(open => !open)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setTagsOpen(open => !open);
+                            }
+                        }}
                     >
-                        <span className="category-filter-name">未分类</span>
-                        <span className="category-filter-count">{groupedBooks.uncategorized.length}</span>
-                    </button>
-                )}
-
-                {categories.map(category => (
-                    <div key={category.id} className="category-filter-group">
-                        <div
-                            role="button"
-                            tabIndex={0}
-                            className={`category-filter-item ${selectedCategoryId === category.id ? 'active' : ''}`}
-                            onClick={() => setSelectedCategoryId(category.id)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    setSelectedCategoryId(category.id);
-                                }
-                            }}
-                        >
-                            <span className="category-color" style={{ backgroundColor: category.color }} />
-                            <span className="category-filter-name">{category.name}</span>
-                            <span className="category-filter-count">{groupedBooks[category.id]?.length || 0}</span>
-                            <div className="category-actions">
-                                <button
-                                    className="btn btn-ghost btn-icon-sm"
-                                    onClick={(e) => handleEditCategory(e, category)}
-                                    title="编辑分类"
-                                >
-                                    <EditIcon />
-                                </button>
-                                <button
-                                    className="btn btn-ghost btn-icon-sm"
-                                    onClick={(e) => handleDeleteCategory(e, category.id)}
-                                    title="删除分类"
-                                >
-                                    <TrashIcon />
-                                </button>
-                            </div>
-                        </div>
+                        <TagIcon />
+                        <span className="category-filter-name">标签</span>
+                        <span className="category-filter-count">{categories.length}</span>
                     </div>
-                ))}
+
+                    {isTagsOpen && (
+                        <div className="category-children">
+                            {groupedBooks.uncategorized.length > 0 && (
+                                <button
+                                    className={`category-filter-item category-child-item ${selectedCategoryId === 'uncategorized' ? 'active' : ''}`}
+                                    onClick={() => setSelectedCategoryId('uncategorized')}
+                                >
+                                    <span className="category-color category-color-muted" />
+                                    <span className="category-filter-name">未分类</span>
+                                    <span className="category-filter-count">{groupedBooks.uncategorized.length}</span>
+                                </button>
+                            )}
+
+                            {categories.map(category => (
+                                <div key={category.id} className="category-filter-group">
+                                    <div
+                                        role="button"
+                                        tabIndex={0}
+                                        className={`category-filter-item category-child-item ${selectedCategoryId === category.id ? 'active' : ''}`}
+                                        onClick={() => setSelectedCategoryId(category.id)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                setSelectedCategoryId(category.id);
+                                            }
+                                        }}
+                                    >
+                                        <span className="category-color" style={{ backgroundColor: category.color }} />
+                                        <span className="category-filter-name">{category.name}</span>
+                                        <span className="category-filter-count">{groupedBooks[category.id]?.length || 0}</span>
+                                        <div className="category-actions">
+                                            <button
+                                                className="btn btn-ghost btn-icon-sm"
+                                                onClick={(e) => handleEditCategory(e, category)}
+                                                title="编辑分类"
+                                            >
+                                                <EditIcon />
+                                            </button>
+                                            <button
+                                                className="btn btn-ghost btn-icon-sm"
+                                                onClick={(e) => handleDeleteCategory(e, category.id)}
+                                                title="删除分类"
+                                            >
+                                                <TrashIcon />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
 
             <div className="sidebar-content" ref={listContainerRef}>
@@ -545,11 +578,11 @@ export function Sidebar({ onImportBook }: SidebarProps) {
             <div className="sidebar-footer">
                 <span className="book-count">
                     {filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'}
-                    {selectedCategoryId && selectedCategoryId !== 'all' && ` in ${selectedCategoryId === 'uncategorized'
-                        ? '未分类'
-                        : categories.find(c => c.id === selectedCategoryId)?.name || ''
-                        }`}
                 </span>
+                <button className="sidebar-settings-btn" onClick={onOpenSettings}>
+                    <SettingsIcon />
+                    <span>设置</span>
+                </button>
             </div>
         </aside>
     );

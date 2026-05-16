@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use std::process::Stdio;
@@ -100,6 +101,20 @@ pub struct ChatRequest {
 pub struct ChatHistoryItem {
     pub role: String,
     pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadingMemoryIngestRequest {
+    pub root_path: String,
+    pub title: String,
+    pub body: String,
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadingMemoryIngestResult {
+    pub note_path: String,
+    pub log_path: String,
 }
 
 // AI Provider info for frontend
@@ -1103,6 +1118,134 @@ fn sanitize_filename(name: &str) -> String {
         .to_string()
 }
 
+fn ensure_directory(path: &Path) -> Result<PathBuf, String> {
+    if !path.exists() {
+        std::fs::create_dir_all(path).map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+    if !path.is_dir() {
+        return Err("Path is not a directory".to_string());
+    }
+    std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve directory: {}", e))
+}
+
+fn markdown_slug(input: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for c in input.chars().flat_map(|c| c.to_lowercase()) {
+        let keep = c.is_alphanumeric() || c == '-' || c == '_';
+        if keep {
+            out.push(c);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "reading-memory-note".to_string()
+    } else {
+        trimmed.chars().take(72).collect()
+    }
+}
+
+fn timestamp_millis() -> Result<u128, String> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .map_err(|e| format!("System clock error: {}", e))
+}
+
+#[tauri::command]
+fn ensure_reading_memory_repository(root_path: String) -> Result<String, String> {
+    let root = ensure_directory(Path::new(&root_path))?;
+    for dir in [
+        "inbox",
+        "books",
+        "concepts",
+        "questions",
+        "claims",
+        "sources",
+        ".reading-memory",
+    ] {
+        std::fs::create_dir_all(root.join(dir))
+            .map_err(|e| format!("Failed to create {}: {}", dir, e))?;
+    }
+
+    let index_path = root.join("index.md");
+    if !index_path.exists() {
+        std::fs::write(
+            &index_path,
+            "# Reading Memory\n\n- [[inbox]] captures automatic CReader ingestions.\n- `books/`, `concepts/`, `questions/`, and `claims/` are maintained by you or a lint agent.\n",
+        )
+        .map_err(|e| format!("Failed to write index.md: {}", e))?;
+    }
+
+    let rules_path = root.join(".reading-memory").join("lint-rules.md");
+    if !rules_path.exists() {
+        std::fs::write(
+            &rules_path,
+            "# Reading Memory Lint Rules\n\n- Preserve source metadata and original excerpts.\n- Merge duplicate notes by `dedupe_key`.\n- Promote high-quality inbox notes into `books/`, `concepts/`, `questions/`, or `claims/`.\n- Mark low-value notes as `status: archived` instead of deleting them during routine lint.\n",
+        )
+        .map_err(|e| format!("Failed to write lint-rules.md: {}", e))?;
+    }
+
+    root.to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Invalid repository path encoding".to_string())
+}
+
+#[tauri::command]
+fn ingest_reading_memory_note(
+    request: ReadingMemoryIngestRequest,
+) -> Result<ReadingMemoryIngestResult, String> {
+    let root = ensure_directory(Path::new(&request.root_path))?;
+    let inbox_dir = root.join("inbox");
+    let meta_dir = root.join(".reading-memory");
+    std::fs::create_dir_all(&inbox_dir).map_err(|e| format!("Failed to create inbox: {}", e))?;
+    std::fs::create_dir_all(&meta_dir)
+        .map_err(|e| format!("Failed to create metadata directory: {}", e))?;
+
+    let millis = timestamp_millis()?;
+    let slug = markdown_slug(&request.title);
+    let filename = format!("{}-{}.md", millis, slug);
+    let note_path = inbox_dir.join(filename);
+
+    let mut body = request.body;
+    if !body.ends_with('\n') {
+        body.push('\n');
+    }
+    std::fs::write(&note_path, body).map_err(|e| format!("Failed to write note: {}", e))?;
+
+    let log_path = meta_dir.join("ingestion-log.jsonl");
+    let mut log_entry = serde_json::json!({
+        "created_at_ms": millis,
+        "note_path": note_path.to_string_lossy(),
+        "title": request.title,
+        "metadata": request.metadata,
+    });
+    if let Some(obj) = log_entry.as_object_mut() {
+        obj.insert("source_app".to_string(), serde_json::json!("CReader"));
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| format!("Failed to open ingestion log: {}", e))?;
+    writeln!(file, "{}", log_entry).map_err(|e| format!("Failed to append ingestion log: {}", e))?;
+
+    Ok(ReadingMemoryIngestResult {
+        note_path: note_path
+            .to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "Invalid note path encoding".to_string())?,
+        log_path: log_path
+            .to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "Invalid log path encoding".to_string())?,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1127,7 +1270,9 @@ pub fn run() {
             delete_book_file,
             validate_book_path,
             validate_book_paths,
-            find_book_in_library
+            find_book_in_library,
+            ensure_reading_memory_repository,
+            ingest_reading_memory_note
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1159,6 +1304,15 @@ mod tests {
         assert!(!is_supported_book_extension(Path::new("a.markdown")));
         assert!(!is_supported_book_extension(Path::new("a.txt")));
         assert!(!is_supported_book_extension(Path::new("a")));
+    }
+
+    #[test]
+    fn markdown_slug_has_safe_fallback() {
+        assert_eq!(
+            markdown_slug("机会成本 / Decision Quality"),
+            "机会成本-decision-quality"
+        );
+        assert_eq!(markdown_slug("!!!"), "reading-memory-note");
     }
 
     #[test]

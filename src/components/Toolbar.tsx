@@ -80,14 +80,16 @@ export function Toolbar() {
     return (
         <header className="toolbar">
             <div className="toolbar-left">
-                <button
-                    className="btn btn-ghost btn-icon"
-                    onClick={() => setSidebarOpen(!isSidebarOpen)}
-                    title={isSidebarOpen ? '隐藏侧栏' : '显示侧栏'}
-                >
-                    <TocSidebarIcon />
-                </button>
-
+                {!isSidebarOpen && (
+                    <button
+                        className="btn btn-ghost btn-icon toolbar-sidebar-restore"
+                        onClick={() => setSidebarOpen(true)}
+                        title="显示侧栏"
+                        aria-label="显示侧栏"
+                    >
+                        <TocSidebarIcon />
+                    </button>
+                )}
                 {currentBook && (
                     <div className="toolbar-book-info">
                         <span className="toolbar-book-title">{currentBook.title}</span>

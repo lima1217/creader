@@ -28,7 +28,7 @@
 .toolbar-left {
     justify-self: start;
     min-width: 0;
-    gap: var(--space-3);
+    gap: var(--space-2);
 }
 
 .toolbar-center {
@@ -360,6 +360,18 @@
 .toolbar-left {
     justify-content: flex-start;
     overflow: hidden;
+}
+
+.toolbar-sidebar-restore {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-soft);
+    background: color-mix(in srgb, var(--bg-control) 80%, transparent);
+}
+
+.toolbar-sidebar-restore:hover {
+    color: var(--text-primary);
+    background: var(--bg-control-hover);
 }
 
 .toolbar-center,

@@ -52,6 +52,10 @@ export interface Settings {
   lineHeight: number; // 1.4-2.0
   allowEpubScripts: boolean;
   allowAIDangerousPermissions: boolean;
+  readingMemoryPath?: string;
+  readingMemoryAutoIngest: boolean;
+  aiProvider: string;
+  aiModel: string;
 }
 
 // AI Chat message

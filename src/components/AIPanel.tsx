@@ -1,24 +1,22 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { invoke, Channel } from '@tauri-apps/api/core';
-import { useAI, useLibrary, useUI } from '../stores/AppContext';
+import { useAI, useBookProgress, useLibrary, useSettings, useUI } from '../stores/AppContext';
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
 import { perfMark, perfMeasure } from '../utils/perf';
-import { loadStored, saveStored, STORAGE_KEYS } from '../services/LocalStore';
+import { ingestReadingMemoryNote } from '../services/ReadingMemory';
 import type { ChatMessage } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
 // Import from refactored modules
 import {
-    SendIcon, AILogoIcon, SparkleIcon, TrashIcon, BookIcon,
-    QuoteIcon, PlusIcon, ChevronDownIcon, CopyIcon, CheckIcon, StopIcon,
+    SendIcon, AILogoIcon, TrashIcon, BookIcon,
+    QuoteIcon, CopyIcon, CheckIcon, StopIcon,
 } from './ai/icons';
 import { FormatMessage } from './ai/MarkdownRenderer';
 import {
-    defaultQuickActions,
-    getMissingDefaultQuickActions,
     hydrateQuickActions,
-    normalizeQuickActions,
-    renderQuickActionIcon,
+    loadQuickActionConfigs,
+    QUICK_ACTIONS_CHANGED_EVENT,
 } from './ai/quickActions';
 import { createOnceCommitter } from './ai/streamCommit';
 import type { QuickActionConfig } from './ai/quickActions';
@@ -48,6 +46,8 @@ export function AIPanel() {
         clearAccumulatedTexts,
     } = useAI();
     const { currentBook } = useLibrary();
+    const { bookProgressById } = useBookProgress();
+    const { settings } = useSettings();
     const isTauri = isTauriRuntime();
 
     const [input, setInput] = useState('');
@@ -55,19 +55,9 @@ export function AIPanel() {
     const [streamingContent, setStreamingContent] = useState('');
     const streamingContentRef = useRef('');
     const [providers, setProviders] = useState<AIProviderInfo[]>([]);
-    const [selectedProvider, setSelectedProvider] = useState<string>('claude');
-    const [showProviderDropdown, setShowProviderDropdown] = useState(false);
-    const [selectedModel, setSelectedModel] = useState<string>('opus');
-    const [showModelDropdown, setShowModelDropdown] = useState(false);
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-    const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(() => {
-        const stored = loadStored<unknown>(STORAGE_KEYS.quickActions, defaultQuickActions);
-        return normalizeQuickActions(stored);
-    });
-    const [isQuickActionEditorOpen, setQuickActionEditorOpen] = useState(false);
+    const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(loadQuickActionConfigs);
     const [showQuickActionOverflow, setShowQuickActionOverflow] = useState(false);
-    const [editingActionId, setEditingActionId] = useState<string | null>(null);
-    const [quickActionDraft, setQuickActionDraft] = useState({ label: '', prompt: '' });
     const [panelWidth, setPanelWidth] = useState(AI_PANEL_WIDTH);
     const [isResizing, setIsResizing] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -84,19 +74,21 @@ export function AIPanel() {
     }, [streamingContent]);
 
     useEffect(() => {
-        saveStored(STORAGE_KEYS.quickActions, quickActionConfigs);
-    }, [quickActionConfigs]);
+        const reloadQuickActions = () => setQuickActionConfigs(loadQuickActionConfigs());
+        window.addEventListener(QUICK_ACTIONS_CHANGED_EVENT, reloadQuickActions);
+        window.addEventListener('storage', reloadQuickActions);
+        return () => {
+            window.removeEventListener(QUICK_ACTIONS_CHANGED_EVENT, reloadQuickActions);
+            window.removeEventListener('storage', reloadQuickActions);
+        };
+    }, []);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const panelRef = useRef<HTMLElement>(null);
 
     const quickActions = useMemo(() => hydrateQuickActions(quickActionConfigs), [quickActionConfigs]);
-    const visibleQuickActions = useMemo(() => quickActions.slice(0, 4), [quickActions]);
-    const overflowQuickActions = useMemo(() => quickActions.slice(4), [quickActions]);
-    const missingDefaultQuickActions = useMemo(
-        () => getMissingDefaultQuickActions(quickActionConfigs),
-        [quickActionConfigs]
-    );
+    const visibleQuickActions = useMemo(() => quickActions.slice(0, 6), [quickActions]);
+    const overflowQuickActions = useMemo(() => quickActions.slice(6), [quickActions]);
 
     // Handle resize drag
     const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
@@ -187,7 +179,6 @@ export function AIPanel() {
             inputRef.current?.focus();
             if (isTauri) {
                 checkAIAvailability();
-                loadSavedProvider();
             } else {
                 setProviders([
                     { id: 'claude', name: 'Claude', model: 'sonnet', available: false },
@@ -198,32 +189,12 @@ export function AIPanel() {
         }
     }, [isAIPanelOpen, isTauri]);
 
-    // Load saved provider from backend
-    const loadSavedProvider = async () => {
-        try {
-            if (!isTauri) return;
-            const saved = await invoke<string | null>('get_ai_provider');
-            if (saved) {
-                setSelectedProvider(saved);
-            }
-        } catch (e) {
-            logger.error('Failed to load saved provider:', e);
-        }
-    };
-
     // Check which AI CLIs are available
     const checkAIAvailability = async () => {
         try {
             if (!isTauri) return;
             const available = await invoke<AIProviderInfo[]>('check_ai_availability');
             setProviders(available);
-            const currentAvailable = available.find(p => p.id === selectedProvider && p.available);
-            if (!currentAvailable) {
-                const firstAvailable = available.find(p => p.available);
-                if (firstAvailable) {
-                    handleProviderChange(firstAvailable.id);
-                }
-            }
         } catch (e) {
             logger.error('Failed to check AI availability:', e);
             setProviders([]);
@@ -236,35 +207,9 @@ export function AIPanel() {
             if (!isTauri) return;
             const available = await invoke<AIProviderInfo[]>('refresh_ai_availability');
             setProviders(available);
-            const firstAvailable = available.find(p => p.available);
-            if (firstAvailable) {
-                handleProviderChange(firstAvailable.id);
-            }
         } catch (e) {
             logger.error('Failed to refresh AI availability:', e);
         }
-    };
-
-    // Handle provider change
-    const handleProviderChange = async (providerId: string) => {
-        setSelectedProvider(providerId);
-        setShowProviderDropdown(false);
-        try {
-            if (!isTauri) return;
-            await invoke('set_ai_provider', { provider: providerId });
-        } catch (e) {
-            logger.error('Failed to set provider:', e);
-        }
-    };
-
-    // Get current provider info
-    const getCurrentProvider = () => {
-        return providers.find(p => p.id === selectedProvider) || {
-            id: selectedProvider,
-            name: selectedProvider,
-            model: '',
-            available: false
-        };
     };
 
     // Copy message content
@@ -287,49 +232,31 @@ export function AIPanel() {
         await refreshAIAvailability();
     };
 
-    const startEditingQuickAction = (action: QuickActionConfig) => {
-        setEditingActionId(action.id);
-        setQuickActionDraft({ label: action.label, prompt: action.prompt });
-        setQuickActionEditorOpen(true);
-    };
+    const autoIngestReadingMemory = useCallback(async (userMessage: ChatMessage, assistantMessage: ChatMessage) => {
+        if (!isTauri) return;
+        if (!settings.readingMemoryAutoIngest || !settings.readingMemoryPath || !currentBook) return;
 
-    const saveQuickActionDraft = () => {
-        if (!editingActionId) return;
-        const label = quickActionDraft.label.trim();
-        const prompt = quickActionDraft.prompt.trim();
-        if (!label || !prompt) return;
-        setQuickActionConfigs(actions => actions.map(action =>
-            action.id === editingActionId ? { ...action, label, prompt } : action
-        ));
-        setEditingActionId(null);
-    };
-
-    const deleteQuickAction = (actionId: string) => {
-        setQuickActionConfigs(actions => actions.filter(action => action.id !== actionId));
-        if (editingActionId === actionId) {
-            setEditingActionId(null);
-            setQuickActionDraft({ label: '', prompt: '' });
+        try {
+            await ingestReadingMemoryNote({
+                rootPath: settings.readingMemoryPath,
+                book: currentBook,
+                userMessage,
+                assistantMessage,
+                selectedContext: userMessage.context,
+                currentChapter: currentChapterContent,
+                progress: bookProgressById[currentBook.id] || currentBook.progress,
+            });
+        } catch (error) {
+            logger.warn('Reading Memory ingest skipped:', error);
         }
-    };
-
-    const restoreQuickAction = (action: QuickActionConfig) => {
-        setQuickActionConfigs(actions => [...actions, action]);
-        startEditingQuickAction(action);
-    };
-
-    const resetQuickActions = () => {
-        setQuickActionConfigs(defaultQuickActions);
-        setEditingActionId(null);
-        setQuickActionDraft({ label: '', prompt: '' });
-    };
-
-    const openQuickActionEditor = () => {
-        const nextOpen = !isQuickActionEditorOpen;
-        setQuickActionEditorOpen(nextOpen);
-        if (nextOpen && !editingActionId && quickActionConfigs[0]) {
-            startEditingQuickAction(quickActionConfigs[0]);
-        }
-    };
+    }, [
+        bookProgressById,
+        currentBook,
+        currentChapterContent,
+        isTauri,
+        settings.readingMemoryAutoIngest,
+        settings.readingMemoryPath,
+    ]);
 
     const sendMessage = async () => {
         if (!input.trim() || isLoading || isSendingRef.current) return;
@@ -385,7 +312,8 @@ export function AIPanel() {
                     role: m.role,
                     content: m.content,
                 })),
-                model: selectedProvider === 'claude' ? selectedModel : undefined,
+                provider: settings.aiProvider,
+                model: settings.aiProvider === 'claude' ? settings.aiModel : undefined,
             };
 
             // Create a channel to receive streaming events
@@ -411,6 +339,7 @@ export function AIPanel() {
                     timestamp: Date.now(),
                 };
                 addChatMessage(assistantMessage);
+                void autoIngestReadingMemory(userMessage, assistantMessage);
             });
 
             const scheduleFlush = () => {
@@ -576,93 +505,6 @@ export function AIPanel() {
 
     const quickActionControls = (
         <>
-            {isQuickActionEditorOpen && (
-                <div className="ai-quick-editor">
-                    <div className="ai-quick-editor-list">
-                        <div className="ai-quick-editor-list-title">显示的按钮</div>
-                        {quickActionConfigs.length > 0 ? (
-                            quickActionConfigs.map(action => (
-                                <div
-                                    key={action.id}
-                                    className={`ai-quick-editor-item ${editingActionId === action.id ? 'active' : ''}`}
-                                >
-                                    <button
-                                        className="ai-quick-editor-select"
-                                        onClick={() => startEditingQuickAction(action)}
-                                    >
-                                        {renderQuickActionIcon(action.icon)}
-                                        <span>{action.label}</span>
-                                    </button>
-                                    <button
-                                        className="ai-quick-editor-delete"
-                                        onClick={() => deleteQuickAction(action.id)}
-                                        aria-label={`Hide ${action.label}`}
-                                    >
-                                        x
-                                    </button>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="ai-quick-editor-muted">所有快捷按钮都已隐藏。</div>
-                        )}
-                        {missingDefaultQuickActions.length > 0 && (
-                            <div className="ai-quick-editor-restore">
-                                <div className="ai-quick-editor-list-title">恢复隐藏项</div>
-                                {missingDefaultQuickActions.map(action => (
-                                    <button
-                                        key={action.id}
-                                        className="ai-quick-editor-add"
-                                        onClick={() => restoreQuickAction(action)}
-                                    >
-                                        <PlusIcon />
-                                        <span>{action.label}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                    {editingActionId ? (
-                        <div className="ai-quick-editor-form">
-                            <label>
-                                <span>按钮名称</span>
-                                <input
-                                    value={quickActionDraft.label}
-                                    onChange={(e) => setQuickActionDraft(draft => ({ ...draft, label: e.target.value }))}
-                                    placeholder="按钮名称"
-                                />
-                            </label>
-                            <label>
-                                <span>提示词</span>
-                                <textarea
-                                    value={quickActionDraft.prompt}
-                                    onChange={(e) => setQuickActionDraft(draft => ({ ...draft, prompt: e.target.value }))}
-                                    placeholder="提示词"
-                                    rows={6}
-                                />
-                            </label>
-                            <div className="ai-quick-editor-actions">
-                                <button className="btn btn-ghost btn-sm" onClick={resetQuickActions}>
-                                    恢复默认
-                                </button>
-                                <button
-                                    className="btn btn-primary btn-sm"
-                                    onClick={saveQuickActionDraft}
-                                    disabled={!quickActionDraft.label.trim() || !quickActionDraft.prompt.trim()}
-                                >
-                                    Save
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="ai-quick-editor-empty">
-                            <span>选择一个按钮来编辑名称和提示词。</span>
-                            <button className="btn btn-ghost btn-sm" onClick={resetQuickActions}>
-                                恢复默认
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
             <div className="ai-quick-actions">
                 {visibleQuickActions.map(action => (
                     <button
@@ -685,14 +527,6 @@ export function AIPanel() {
                         <span>更多</span>
                     </button>
                 )}
-                <button
-                    className={`ai-quick-btn ai-quick-manage ${isQuickActionEditorOpen ? 'active' : ''}`}
-                    onClick={openQuickActionEditor}
-                    disabled={isLoading}
-                    aria-label="编辑快捷动作"
-                >
-                    <span>设置</span>
-                </button>
                 {showQuickActionOverflow && overflowQuickActions.length > 0 && (
                     <div className="ai-quick-overflow">
                         {overflowQuickActions.map(action => (
@@ -732,73 +566,8 @@ export function AIPanel() {
                 <div className="ai-panel-title">
                     <AILogoIcon size={28} />
                 </div>
+                <div className="ai-panel-motto">原本山川&nbsp;&nbsp;极命草木</div>
                 <div className="ai-panel-actions">
-                    {/* AI Provider Selector */}
-                    <div className="ai-provider-selector">
-                        <button
-                            className="ai-provider-btn"
-                            onClick={() => setShowProviderDropdown(!showProviderDropdown)}
-                            title="切换 AI 提供方"
-                        >
-                            <span className={`ai-provider-dot ${getCurrentProvider().available ? 'available' : 'unavailable'}`} />
-                            <span className="ai-provider-name">{getCurrentProvider().name}</span>
-                            <ChevronDownIcon />
-                        </button>
-                        {showProviderDropdown && (
-                            <div className="ai-provider-dropdown">
-                                {providers.map(provider => (
-                                    <button
-                                        key={provider.id}
-                                        className={`ai-provider-option ${provider.id === selectedProvider ? 'selected' : ''} ${!provider.available ? 'disabled' : ''}`}
-                                        onClick={() => provider.available && handleProviderChange(provider.id)}
-                                        disabled={!provider.available}
-                                    >
-                                        <span className={`ai-provider-dot ${provider.available ? 'available' : 'unavailable'}`} />
-                                        <span className="ai-provider-info">
-                                            <span className="ai-provider-option-name">{provider.name}</span>
-                                            <span className="ai-provider-model">{provider.model}</span>
-                                        </span>
-                                        {provider.id === selectedProvider && <span className="ai-provider-check">v</span>}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                    {/* Claude Model Selector - only shown when Claude is selected */}
-                    {selectedProvider === 'claude' && (
-                        <div className="ai-model-selector">
-                            <button
-                                className="ai-model-btn"
-                                onClick={() => setShowModelDropdown(!showModelDropdown)}
-                                title="选择 Claude 模型"
-                            >
-                                <span className="ai-model-name">{selectedModel}</span>
-                                <ChevronDownIcon />
-                            </button>
-                            {showModelDropdown && (
-                                <div className="ai-model-dropdown">
-                                    {[
-                                        { id: 'sonnet', name: 'Sonnet', desc: 'Fast & capable' },
-                                        { id: 'opus', name: 'Opus', desc: 'Most powerful' },
-                                        { id: 'haiku', name: 'Haiku', desc: 'Fastest' },
-                                    ].map(model => (
-                                        <button
-                                            key={model.id}
-                                            className={`ai-model-option ${model.id === selectedModel ? 'selected' : ''}`}
-                                            onClick={() => {
-                                                setSelectedModel(model.id);
-                                                setShowModelDropdown(false);
-                                            }}
-                                        >
-                                            <span className="ai-model-option-name">{model.name}</span>
-                                            <span className="ai-model-option-desc">{model.desc}</span>
-                                            {model.id === selectedModel && <span className="ai-model-check">v</span>}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
                     <button
                         className="btn btn-ghost btn-icon"
                         onClick={startNewSession}
@@ -868,8 +637,6 @@ export function AIPanel() {
             <div className="ai-panel-messages" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
                 {chatMessages.length === 0 ? (
                     <div className="ai-panel-empty">
-                        <SparkleIcon />
-                        <p>原本山川，极命草木</p>
                         {!providers.some(p => p.available) && (
                             <div className="ai-warning">
                                 <p>未检测到 AI CLI，请安装 claude、opencode 或 codex。</p>
@@ -878,17 +645,6 @@ export function AIPanel() {
                                 </button>
                             </div>
                         )}
-                        <div className="ai-panel-suggestions">
-                            {visibleQuickActions.map(action => (
-                                <button
-                                    key={action.id}
-                                    className="ai-suggestion"
-                                    onClick={() => setInput(action.prompt)}
-                                >
-                                    {action.label}
-                                </button>
-                            ))}
-                        </div>
                     </div>
                 ) : (
                     renderedMessages
@@ -922,7 +678,7 @@ export function AIPanel() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={selectedText ? "询问选中文本…" : "询问这本书…"}
+                    placeholder=""
                     rows={1}
                     disabled={isLoading}
                 />

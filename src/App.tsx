@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { Reader } from './components/Reader';
 import { AIPanel } from './components/AIPanel';
+import { SettingsPanel } from './components/SettingsPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppDialogProvider, useAppDialog } from './components/AppDialog';
 import { importBookFromPath } from './services/BookImportService';
@@ -24,6 +25,7 @@ function AppContent() {
   const { notice } = useAppDialog();
   const [isImporting, setIsImporting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isSettingsOpen, setSettingsOpen] = useState(false);
 
   // Import a book from file path
   const importBook = useCallback(async (filePath: string) => {
@@ -157,7 +159,8 @@ function AppContent() {
       )}
       <div className="app-body">
         <ErrorBoundary>
-          <Sidebar onImportBook={handleImportBook} />
+          <Sidebar onImportBook={handleImportBook} onOpenSettings={() => setSettingsOpen(true)} />
+          <SettingsPanel isOpen={isSettingsOpen} onClose={() => setSettingsOpen(false)} />
         </ErrorBoundary>
         <div className="app-main">
           <Toolbar />

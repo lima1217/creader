@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { loadStored, saveStored, STORAGE_KEYS } from '../../services/LocalStore';
 import { ExplainIcon, DeconstructIcon, InferenceIcon, TranslateIcon } from './icons';
 
 export type QuickActionIcon = 'explain' | 'deconstruct' | 'inference' | 'translate';
@@ -14,6 +15,8 @@ export type QuickAction = Omit<QuickActionConfig, 'icon'> & {
   iconKey: QuickActionIcon;
   icon: ReactNode;
 };
+
+export const QUICK_ACTIONS_CHANGED_EVENT = 'creader:quick-actions-changed';
 
 export const defaultQuickActions: QuickActionConfig[] = [
   {
@@ -133,6 +136,16 @@ export function normalizeQuickActions(value: unknown): QuickActionConfig[] {
       icon: action.icon,
     }))
     .filter(action => action.id && action.label && action.prompt);
+}
+
+export function loadQuickActionConfigs(): QuickActionConfig[] {
+  const stored = loadStored<unknown>(STORAGE_KEYS.quickActions, defaultQuickActions);
+  return normalizeQuickActions(stored);
+}
+
+export function saveQuickActionConfigs(actions: QuickActionConfig[]): void {
+  saveStored(STORAGE_KEYS.quickActions, normalizeQuickActions(actions));
+  window.dispatchEvent(new CustomEvent(QUICK_ACTIONS_CHANGED_EVENT));
 }
 
 export function getMissingDefaultQuickActions(actions: QuickActionConfig[]): QuickActionConfig[] {
