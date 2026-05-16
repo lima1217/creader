@@ -1563,3 +1563,219 @@
     background: var(--error-light);
     border-color: transparent;
 }
+
+
+/* ============================================
+   AI Panel Button Layout Refresh
+   ============================================ */
+.ai-panel {
+    background: color-mix(in srgb, var(--bg-panel) 88%, var(--bg-primary));
+}
+
+.ai-panel-header {
+    height: 52px;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 10px;
+    padding: 0 12px;
+    background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-primary));
+}
+
+.ai-panel-actions {
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.ai-provider-selector,
+.ai-model-selector {
+    margin-right: 0;
+}
+
+.ai-provider-btn,
+.ai-model-btn {
+    min-height: 34px;
+    padding: 0 10px;
+    border-radius: 4px;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.ai-panel-header .btn-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 4px;
+}
+
+.ai-quick-actions {
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+    padding: 10px 12px;
+    max-height: 92px;
+    overflow-y: auto;
+    background: color-mix(in srgb, var(--bg-panel) 84%, var(--bg-primary));
+}
+
+.ai-quick-btn,
+.ai-suggestion {
+    min-height: 34px;
+    border-radius: 4px;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 620;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.ai-quick-btn:hover:not(:disabled),
+.ai-suggestion:hover {
+    background: var(--accent-soft);
+    border-color: var(--border-accent);
+}
+
+.ai-quick-manage {
+    margin-left: 0;
+}
+
+.ai-panel-input {
+    align-items: flex-end;
+    gap: 10px;
+    padding: 12px;
+    background: color-mix(in srgb, var(--bg-panel) 88%, var(--bg-primary));
+}
+
+.ai-panel-input textarea {
+    min-height: 44px;
+    border-radius: 4px;
+    background: var(--bg-elevated);
+}
+
+.ai-panel-input .btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 4px;
+}
+
+.ai-context-clear,
+.ai-context-clear-all,
+.ai-quick-editor-actions .btn-sm {
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+
+/* ============================================
+   AI density and settings refinement
+   ============================================ */
+.ai-panel-header {
+    grid-template-columns: 32px minmax(0, 1fr);
+}
+
+.ai-panel-actions {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.ai-provider-btn,
+.ai-model-btn {
+    max-width: 118px;
+}
+
+.ai-provider-name,
+.ai-model-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-quick-actions {
+    position: relative;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 9px 12px;
+    max-height: none;
+    overflow: visible;
+}
+
+.ai-quick-btn {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 112px;
+}
+
+.ai-quick-btn span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-quick-more.active,
+.ai-quick-manage.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: var(--border-accent);
+}
+
+.ai-quick-overflow {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 12px;
+    z-index: 70;
+    width: 180px;
+    padding: 6px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-lg);
+}
+
+.ai-quick-overflow-btn {
+    width: 100%;
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    text-align: left;
+}
+
+.ai-quick-overflow-btn:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--bg-control-hover);
+}
+
+.ai-quick-overflow-btn svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+}
+
+.ai-panel-suggestions .ai-suggestion:nth-child(n+5) {
+    display: none;
+}
+
+@media (max-width: 1180px) {
+    .ai-provider-name,
+    .ai-model-name {
+        max-width: 64px;
+    }
+
+    .ai-quick-btn {
+        max-width: 86px;
+    }
+}

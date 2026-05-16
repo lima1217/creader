@@ -60,9 +60,9 @@
   --header-height: 48px;
   --ai-panel-width: 360px;
   --reader-gutter: clamp(20px, 4vw, 56px);
-  --control-size: 34px;
-  --control-size-compact: 30px;
-  --control-radius: 7px;
+  --control-size: 38px;
+  --control-size-compact: 32px;
+  --control-radius: 4px;
 }
 
 [data-theme="light"] {
@@ -1074,4 +1074,66 @@ li {
 
 [data-tooltip]::after {
   transition: opacity var(--transition-fast), visibility var(--transition-fast);
+}
+
+
+/* ============================================
+   Command-Bar Button System Refinement
+   Inspired by a compact developer command center: aligned groups,
+   clear primary/secondary hierarchy, and consistent hit targets.
+   ============================================ */
+.btn {
+  min-height: var(--control-size);
+  border-radius: var(--control-radius);
+  border: 1px solid transparent;
+  letter-spacing: -0.005em;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+[data-theme="dark"] .btn-primary {
+  background: var(--accent);
+  color: #0B0D0F;
+  border-color: var(--accent);
+}
+
+[data-theme="sepia"] .btn-primary {
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+[data-theme="dark"] .btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: #0B0D0F;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-control-hover);
+  color: var(--text-primary);
+  border-color: var(--border-accent);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-control-hover);
+}
+
+.btn-sm {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: var(--text-xs);
 }

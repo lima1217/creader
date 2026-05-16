@@ -282,7 +282,7 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                                     value={bookToEdit.title}
                                     onChange={e => setBookToEdit({ ...bookToEdit, title: e.target.value })}
                                     onKeyDown={handleEditKeyDown}
-                                    placeholder="Book title"
+                                    placeholder="书名"
                                     autoFocus
                                 />
                             </div>
@@ -294,16 +294,16 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                                     value={bookToEdit.author}
                                     onChange={e => setBookToEdit({ ...bookToEdit, author: e.target.value })}
                                     onKeyDown={handleEditKeyDown}
-                                    placeholder="Author name"
+                                    placeholder="作者"
                                 />
                             </div>
                         </div>
                         <div className="modal-actions">
                             <button className="btn btn-secondary" onClick={cancelEdit}>
-                                Cancel
+                                取消
                             </button>
                             <button className="btn btn-primary" onClick={confirmEdit}>
-                                Save
+                                保存
                             </button>
                         </div>
                     </div>
@@ -314,7 +314,7 @@ export function Sidebar({ onImportBook }: SidebarProps) {
             {showCategoryModal && (
                 <div className="modal-overlay" onClick={() => setShowCategoryModal(false)}>
                     <div className="modal modal-category" onClick={e => e.stopPropagation()}>
-                        <h3>{editingCategory ? 'Edit Category' : 'New Category'}</h3>
+                        <h3>{editingCategory ? '编辑分类' : '新建分类'}</h3>
                         <div className="modal-form">
                             <div className="form-group">
                                 <label htmlFor="category-name">Name</label>
@@ -324,7 +324,7 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                                     value={newCategoryName}
                                     onChange={e => setNewCategoryName(e.target.value)}
                                     onKeyDown={e => e.key === 'Enter' && confirmCategoryModal()}
-                                    placeholder="Category name"
+                                    placeholder="分类名称"
                                     autoFocus
                                 />
                             </div>
@@ -345,10 +345,10 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                         </div>
                         <div className="modal-actions">
                             <button className="btn btn-secondary" onClick={() => setShowCategoryModal(false)}>
-                                Cancel
+                                取消
                             </button>
                             <button className="btn btn-primary" onClick={confirmCategoryModal} disabled={!newCategoryName.trim()}>
-                                {editingCategory ? 'Save' : 'Create'}
+                                {editingCategory ? '保存' : 'Create'}
                             </button>
                         </div>
                     </div>
@@ -381,7 +381,7 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                         </div>
                         <div className="modal-actions">
                             <button className="btn btn-secondary" onClick={() => setBookForCategory(null)}>
-                                Cancel
+                                取消
                             </button>
                         </div>
                     </div>
@@ -391,13 +391,13 @@ export function Sidebar({ onImportBook }: SidebarProps) {
             <div className="sidebar-header">
                 <h2 className="sidebar-title">
                     <BookIcon />
-                    <span>Library</span>
+                    <span>书库</span>
                 </h2>
                 <div className="sidebar-header-actions">
-                    <button className="btn btn-ghost btn-icon" onClick={handleAddCategory} title="Add category">
+                    <button className="btn btn-secondary btn-icon" onClick={handleAddCategory} title="新增分类">
                         <FolderIcon />
                     </button>
-                    <button className="btn btn-ghost btn-icon" onClick={onImportBook} title="Add book">
+                    <button className="btn btn-primary btn-icon sidebar-import-btn" onClick={onImportBook} title="导入 EPUB" aria-label="导入 EPUB">
                         <PlusIcon />
                     </button>
                 </div>
@@ -409,7 +409,7 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                     className={`category-filter-item ${!selectedCategoryId || selectedCategoryId === 'all' ? 'active' : ''}`}
                     onClick={() => setSelectedCategoryId(null)}
                 >
-                    <span className="category-filter-name">All Books</span>
+                    <span className="category-filter-name">全部书籍</span>
                     <span className="category-filter-count">{library.books.length}</span>
                 </button>
 
@@ -418,7 +418,7 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                         className={`category-filter-item ${selectedCategoryId === 'uncategorized' ? 'active' : ''}`}
                         onClick={() => setSelectedCategoryId('uncategorized')}
                     >
-                        <span className="category-filter-name">Uncategorized</span>
+                        <span className="category-filter-name">未分类</span>
                         <span className="category-filter-count">{groupedBooks.uncategorized.length}</span>
                     </button>
                 )}
@@ -444,14 +444,14 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                                 <button
                                     className="btn btn-ghost btn-icon-sm"
                                     onClick={(e) => handleEditCategory(e, category)}
-                                    title="Edit category"
+                                    title="编辑分类"
                                 >
                                     <EditIcon />
                                 </button>
                                 <button
                                     className="btn btn-ghost btn-icon-sm"
                                     onClick={(e) => handleDeleteCategory(e, category.id)}
-                                    title="Delete category"
+                                    title="删除分类"
                                 >
                                     <TrashIcon />
                                 </button>
@@ -467,11 +467,11 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                         <div className="sidebar-empty-icon">
                             <BookIcon />
                         </div>
-                        <h4>No books yet</h4>
-                        <p>Import your first book to get started</p>
+                        <h4>还没有书籍</h4>
+                        <p>导入第一本书开始阅读</p>
                         <button className="btn btn-primary" onClick={onImportBook}>
                             <PlusIcon />
-                            <span>Import Book</span>
+                            <span>导入书籍</span>
                         </button>
                     </div>
                 ) : (
@@ -522,14 +522,14 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                                         <button
                                             className="btn btn-ghost btn-icon book-edit"
                                             onClick={(e) => handleEditBook(e, book)}
-                                            title="Edit book info"
+                                            title="编辑书籍信息"
                                         >
                                             <EditIcon />
                                         </button>
                                         <button
                                             className="btn btn-ghost btn-icon book-delete"
                                             onClick={(e) => handleDeleteBook(e, book.id)}
-                                            title="Remove book"
+                                            title="移除书籍"
                                         >
                                             <TrashIcon />
                                         </button>
@@ -546,7 +546,7 @@ export function Sidebar({ onImportBook }: SidebarProps) {
                 <span className="book-count">
                     {filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'}
                     {selectedCategoryId && selectedCategoryId !== 'all' && ` in ${selectedCategoryId === 'uncategorized'
-                        ? 'Uncategorized'
+                        ? '未分类'
                         : categories.find(c => c.id === selectedCategoryId)?.name || ''
                         }`}
                 </span>

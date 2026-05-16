@@ -856,3 +856,88 @@
 .reader.toc-open .reader-chapter-action {
     left: calc(340px + var(--space-4)) !important;
 }
+
+
+/* ============================================
+   Reader Floating Button Refresh
+   ============================================ */
+.reader-toc-toggle,
+.reader-chapter-btn,
+.reader-accumulated-btn {
+    border-radius: 4px;
+}
+
+.reader-chapter-btn,
+.reader-accumulated-btn {
+    min-height: 38px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.reader-nav {
+    border-radius: 6px;
+}
+
+.reader:hover .reader-nav:hover {
+    background: var(--bg-control);
+    opacity: 1;
+}
+
+.reader-search {
+    border-radius: 6px;
+}
+
+.reader-search-input-wrapper,
+.reader-search-result,
+.reader-toc-item {
+    border-radius: 4px;
+}
+
+.reader-error-actions .btn {
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+
+/* ============================================
+   Immersive reader chrome
+   ============================================ */
+.reader .reader-nav,
+.reader .reader-toc-toggle,
+.reader .reader-chapter-action,
+.reader .reader-accumulated-indicator {
+    opacity: 0.12;
+    transition: opacity var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.reader:hover .reader-nav,
+.reader:hover .reader-toc-toggle,
+.reader:hover .reader-chapter-action,
+.reader:hover .reader-accumulated-indicator,
+.reader .reader-nav:focus-visible,
+.reader .reader-toc-toggle:focus-visible,
+.reader .reader-chapter-btn:focus-visible,
+.reader .reader-accumulated-btn:focus-visible {
+    opacity: 1;
+}
+
+.reader-search,
+.reader.toc-open .reader-toc-toggle,
+.reader.toc-open .reader-chapter-action {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .reader .reader-nav,
+    .reader .reader-toc-toggle,
+    .reader .reader-chapter-action,
+    .reader .reader-accumulated-indicator {
+        opacity: 1;
+    }
+}

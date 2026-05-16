@@ -146,3 +146,22 @@
     border-radius: var(--radius-surface);
     box-shadow: var(--shadow-float);
 }
+
+
+/* ============================================
+   Selection Button Refresh
+   ============================================ */
+.reader-selection-toolbar,
+.reader-selection-btn,
+.reader-selection-hint {
+    border-radius: 4px;
+}
+
+.reader-selection-btn {
+    min-height: 32px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 620;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}

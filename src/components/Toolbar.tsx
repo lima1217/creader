@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useLibrary, useSettings, useUI, useBookProgress } from '../stores/AppContext';
 import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -18,6 +19,8 @@ export function Toolbar() {
     const { currentBook } = useLibrary();
     const { bookProgressById } = useBookProgress();
     const { isSidebarOpen, setSidebarOpen, isAIPanelOpen, setAIPanelOpen, isSearchOpen, setSearchOpen } = useUI();
+    const [isThemeMenuOpen, setThemeMenuOpen] = useState(false);
+    const themeMenuRef = useRef<HTMLDivElement>(null);
 
     const displayProgress = currentBook ? (bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage ?? 0) : 0;
 
@@ -28,11 +31,37 @@ export function Toolbar() {
         sepia: <CoffeeIcon />,
     };
 
-    const cycleTheme = () => {
-        const currentIndex = themes.indexOf(settings.theme);
-        const nextIndex = (currentIndex + 1) % themes.length;
-        setSettings({ ...settings, theme: themes[nextIndex] });
+    const themeLabels: Record<Theme, string> = {
+        light: '亮色',
+        dark: '暗色',
+        sepia: '护眼',
     };
+
+    const selectTheme = (theme: Theme) => {
+        setSettings({ ...settings, theme });
+        setThemeMenuOpen(false);
+    };
+
+    useEffect(() => {
+        if (!isThemeMenuOpen) return;
+
+        const handlePointerDown = (event: PointerEvent) => {
+            if (themeMenuRef.current && !themeMenuRef.current.contains(event.target as Node)) {
+                setThemeMenuOpen(false);
+            }
+        };
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setThemeMenuOpen(false);
+        };
+
+        document.addEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [isThemeMenuOpen]);
 
     const adjustFontSize = (delta: number) => {
         const newSize = Math.min(24, Math.max(12, settings.fontSize + delta));
@@ -54,7 +83,7 @@ export function Toolbar() {
                 <button
                     className="btn btn-ghost btn-icon"
                     onClick={() => setSidebarOpen(!isSidebarOpen)}
-                    title={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+                    title={isSidebarOpen ? '隐藏侧栏' : '显示侧栏'}
                 >
                     <TocSidebarIcon />
                 </button>
@@ -70,16 +99,11 @@ export function Toolbar() {
             </div>
 
             <div className="toolbar-center">
-                {/* Search can be added here */}
-            </div>
-
-            <div className="toolbar-right">
-                {/* Font Size Controls */}
-                <div className="toolbar-group toolbar-reading-group" aria-label="Reading controls">
+                <div className="toolbar-group toolbar-reading-group" aria-label="阅读控制">
                     <button
                         className="btn btn-ghost btn-icon"
                         onClick={() => adjustFontSize(-1)}
-                        title="Decrease font size"
+                        title="减小字号"
                         disabled={settings.fontSize <= 12}
                     >
                         <MinusIcon />
@@ -88,40 +112,60 @@ export function Toolbar() {
                     <button
                         className="btn btn-ghost btn-icon"
                         onClick={() => adjustFontSize(1)}
-                        title="Increase font size"
+                        title="增大字号"
                         disabled={settings.fontSize >= 24}
                     >
                         <PlusIcon />
                     </button>
+                    <span className="toolbar-group-divider" aria-hidden="true" />
+                    <div className="toolbar-theme-menu" ref={themeMenuRef}>
+                        <button
+                            className={`btn btn-secondary toolbar-action toolbar-theme-button ${isThemeMenuOpen ? 'active' : ''}`}
+                            onClick={() => setThemeMenuOpen(open => !open)}
+                            title={`主题：${themeLabels[settings.theme]}`}
+                            aria-label={`主题：${themeLabels[settings.theme]}`}
+                            aria-haspopup="menu"
+                            aria-expanded={isThemeMenuOpen}
+                        >
+                            {themeIcons[settings.theme]}
+                        </button>
+                        {isThemeMenuOpen && (
+                            <div className="toolbar-theme-dropdown" role="menu">
+                                {themes.map(theme => (
+                                    <button
+                                        key={theme}
+                                        type="button"
+                                        role="menuitemradio"
+                                        aria-checked={settings.theme === theme}
+                                        className={`toolbar-theme-option ${settings.theme === theme ? 'selected' : ''}`}
+                                        onClick={() => selectTheme(theme)}
+                                    >
+                                        {themeIcons[theme]}
+                                        <span>{themeLabels[theme]}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
+            </div>
 
-                <div className="toolbar-group toolbar-view-group" aria-label="View controls">
-                    {/* Theme Toggle */}
+            <div className="toolbar-right">
+                <div className="toolbar-action-group" aria-label="内容工具">
                     <button
-                        className="btn btn-ghost btn-icon"
-                        onClick={cycleTheme}
-                        title={`Theme: ${settings.theme}`}
-                    >
-                        {themeIcons[settings.theme]}
-                    </button>
-
-                </div>
-
-                <div className="toolbar-group toolbar-tool-group" aria-label="Content tools">
-                    {/* Search */}
-                    <button
-                        className={`btn btn-ghost btn-icon ${isSearchOpen ? 'active' : ''}`}
+                        className={`btn btn-secondary toolbar-action ${isSearchOpen ? 'active' : ''}`}
                         onClick={() => setSearchOpen(!isSearchOpen)}
-                        title="Search (Cmd/Ctrl+F)"
+                        title="搜索（Cmd/Ctrl+F）"
+                        aria-label="搜索"
                     >
                         <SearchIcon />
                     </button>
 
-                    {/* AI Chat Toggle */}
                     <button
-                        className={`btn btn-ghost btn-icon ${isAIPanelOpen ? 'active' : ''}`}
+                        className={`btn toolbar-action toolbar-ai-action ${isAIPanelOpen ? 'btn-primary active' : 'btn-secondary'}`}
                         onClick={() => setAIPanelOpen(!isAIPanelOpen)}
-                        title="AI Assistant"
+                        title="AI 助手"
+                        aria-label="AI 助手"
                     >
                         <ToolbarAIIcon />
                     </button>

@@ -30,7 +30,7 @@ export function Reader() {
                         <div className="reader-empty-book reader-empty-book-tertiary" />
                     </div>
                     <h2>Your EPUB shelf is quiet</h2>
-                    <p>Import an EPUB from the library sidebar to begin reading.</p>
+                    <p>从左侧书库导入 EPUB，开始阅读。</p>
                     <p className="reader-empty-formats">EPUB only</p>
                 </div>
             </div>

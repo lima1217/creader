@@ -65,6 +65,7 @@ export function AIPanel() {
         return normalizeQuickActions(stored);
     });
     const [isQuickActionEditorOpen, setQuickActionEditorOpen] = useState(false);
+    const [showQuickActionOverflow, setShowQuickActionOverflow] = useState(false);
     const [editingActionId, setEditingActionId] = useState<string | null>(null);
     const [quickActionDraft, setQuickActionDraft] = useState({ label: '', prompt: '' });
     const [panelWidth, setPanelWidth] = useState(AI_PANEL_WIDTH);
@@ -90,6 +91,8 @@ export function AIPanel() {
     const panelRef = useRef<HTMLElement>(null);
 
     const quickActions = useMemo(() => hydrateQuickActions(quickActionConfigs), [quickActionConfigs]);
+    const visibleQuickActions = useMemo(() => quickActions.slice(0, 4), [quickActions]);
+    const overflowQuickActions = useMemo(() => quickActions.slice(4), [quickActions]);
     const missingDefaultQuickActions = useMemo(
         () => getMissingDefaultQuickActions(quickActionConfigs),
         [quickActionConfigs]
@@ -227,7 +230,7 @@ export function AIPanel() {
         }
     };
 
-    // Refresh AI availability
+    // 刷新 AI availability
     const refreshAIAvailability = async () => {
         try {
             if (!isTauri) return;
@@ -576,7 +579,7 @@ export function AIPanel() {
             {isQuickActionEditorOpen && (
                 <div className="ai-quick-editor">
                     <div className="ai-quick-editor-list">
-                        <div className="ai-quick-editor-list-title">Visible buttons</div>
+                        <div className="ai-quick-editor-list-title">显示的按钮</div>
                         {quickActionConfigs.length > 0 ? (
                             quickActionConfigs.map(action => (
                                 <div
@@ -600,11 +603,11 @@ export function AIPanel() {
                                 </div>
                             ))
                         ) : (
-                            <div className="ai-quick-editor-muted">All quick buttons are hidden.</div>
+                            <div className="ai-quick-editor-muted">所有快捷按钮都已隐藏。</div>
                         )}
                         {missingDefaultQuickActions.length > 0 && (
                             <div className="ai-quick-editor-restore">
-                                <div className="ai-quick-editor-list-title">Restore hidden</div>
+                                <div className="ai-quick-editor-list-title">恢复隐藏项</div>
                                 {missingDefaultQuickActions.map(action => (
                                     <button
                                         key={action.id}
@@ -621,25 +624,25 @@ export function AIPanel() {
                     {editingActionId ? (
                         <div className="ai-quick-editor-form">
                             <label>
-                                <span>Button label</span>
+                                <span>按钮名称</span>
                                 <input
                                     value={quickActionDraft.label}
                                     onChange={(e) => setQuickActionDraft(draft => ({ ...draft, label: e.target.value }))}
-                                    placeholder="Button label"
+                                    placeholder="按钮名称"
                                 />
                             </label>
                             <label>
-                                <span>Prompt</span>
+                                <span>提示词</span>
                                 <textarea
                                     value={quickActionDraft.prompt}
                                     onChange={(e) => setQuickActionDraft(draft => ({ ...draft, prompt: e.target.value }))}
-                                    placeholder="Prompt"
+                                    placeholder="提示词"
                                     rows={6}
                                 />
                             </label>
                             <div className="ai-quick-editor-actions">
                                 <button className="btn btn-ghost btn-sm" onClick={resetQuickActions}>
-                                    Restore defaults
+                                    恢复默认
                                 </button>
                                 <button
                                     className="btn btn-primary btn-sm"
@@ -652,16 +655,16 @@ export function AIPanel() {
                         </div>
                     ) : (
                         <div className="ai-quick-editor-empty">
-                            <span>Select a button to edit its label and prompt.</span>
+                            <span>选择一个按钮来编辑名称和提示词。</span>
                             <button className="btn btn-ghost btn-sm" onClick={resetQuickActions}>
-                                Restore defaults
+                                恢复默认
                             </button>
                         </div>
                     )}
                 </div>
             )}
             <div className="ai-quick-actions">
-                {quickActions.map(action => (
+                {visibleQuickActions.map(action => (
                     <button
                         key={action.id}
                         className="ai-quick-btn"
@@ -672,14 +675,42 @@ export function AIPanel() {
                         <span>{action.label}</span>
                     </button>
                 ))}
+                {overflowQuickActions.length > 0 && (
+                    <button
+                        className={`ai-quick-btn ai-quick-more ${showQuickActionOverflow ? 'active' : ''}`}
+                        onClick={() => setShowQuickActionOverflow(open => !open)}
+                        disabled={isLoading}
+                        aria-label="更多快捷动作"
+                    >
+                        <span>更多</span>
+                    </button>
+                )}
                 <button
                     className={`ai-quick-btn ai-quick-manage ${isQuickActionEditorOpen ? 'active' : ''}`}
                     onClick={openQuickActionEditor}
                     disabled={isLoading}
-                    aria-label="Edit quick actions"
+                    aria-label="编辑快捷动作"
                 >
-                    <span>Manage</span>
+                    <span>设置</span>
                 </button>
+                {showQuickActionOverflow && overflowQuickActions.length > 0 && (
+                    <div className="ai-quick-overflow">
+                        {overflowQuickActions.map(action => (
+                            <button
+                                key={action.id}
+                                className="ai-quick-overflow-btn"
+                                onClick={() => {
+                                    setInput(action.prompt);
+                                    setShowQuickActionOverflow(false);
+                                }}
+                                disabled={isLoading}
+                            >
+                                {action.icon}
+                                <span>{action.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
         </>
     );
@@ -707,7 +738,7 @@ export function AIPanel() {
                         <button
                             className="ai-provider-btn"
                             onClick={() => setShowProviderDropdown(!showProviderDropdown)}
-                            title="Switch AI Provider"
+                            title="切换 AI 提供方"
                         >
                             <span className={`ai-provider-dot ${getCurrentProvider().available ? 'available' : 'unavailable'}`} />
                             <span className="ai-provider-name">{getCurrentProvider().name}</span>
@@ -739,7 +770,7 @@ export function AIPanel() {
                             <button
                                 className="ai-model-btn"
                                 onClick={() => setShowModelDropdown(!showModelDropdown)}
-                                title="Select Claude Model"
+                                title="选择 Claude 模型"
                             >
                                 <span className="ai-model-name">{selectedModel}</span>
                                 <ChevronDownIcon />
@@ -771,7 +802,7 @@ export function AIPanel() {
                     <button
                         className="btn btn-ghost btn-icon"
                         onClick={startNewSession}
-                        title="New session"
+                        title="新会话"
                         disabled={isLoading}
                     >
                         <TrashIcon />
@@ -795,7 +826,7 @@ export function AIPanel() {
                             <button
                                 className="ai-context-clear"
                                 onClick={() => setSelectedText('')}
-                                title="Clear selection"
+                                title="清除选区"
                             >
                                 x
                             </button>
@@ -804,13 +835,13 @@ export function AIPanel() {
                     {accumulatedTexts.length > 0 && (
                         <div className="ai-context-accumulated">
                             <div className="ai-accumulated-header">
-                                <span className="ai-accumulated-label">Accumulated ({accumulatedTexts.length})</span>
+                                <span className="ai-accumulated-label">已累积 ({accumulatedTexts.length})</span>
                                 <button
                                     className="ai-context-clear-all"
                                     onClick={clearAccumulatedTexts}
-                                    title="Clear all accumulated texts"
+                                    title="清除所有累积文本"
                                 >
-                                    Clear all
+                                    全部清除
                                 </button>
                             </div>
                             <div className="ai-accumulated-list">
@@ -822,7 +853,7 @@ export function AIPanel() {
                                         <button
                                             className="ai-context-clear"
                                             onClick={() => removeAccumulatedText(index)}
-                                            title="Remove this text"
+                                            title="移除这段文本"
                                         >
                                             x
                                         </button>
@@ -841,14 +872,14 @@ export function AIPanel() {
                         <p>原本山川，极命草木</p>
                         {!providers.some(p => p.available) && (
                             <div className="ai-warning">
-                                <p>No AI CLI detected. Please install claude, opencode, or codex CLI.</p>
+                                <p>未检测到 AI CLI，请安装 claude、opencode 或 codex。</p>
                                 <button className="btn btn-ghost btn-sm" onClick={refreshAIAvailability}>
-                                    Refresh
+                                    刷新
                                 </button>
                             </div>
                         )}
                         <div className="ai-panel-suggestions">
-                            {quickActions.map(action => (
+                            {visibleQuickActions.map(action => (
                                 <button
                                     key={action.id}
                                     className="ai-suggestion"
@@ -891,7 +922,7 @@ export function AIPanel() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={selectedText ? "Ask about the selected text..." : "Ask about your book..."}
+                    placeholder={selectedText ? "询问选中文本…" : "询问这本书…"}
                     rows={1}
                     disabled={isLoading}
                 />
@@ -899,7 +930,7 @@ export function AIPanel() {
                     <button
                         className="btn btn-danger btn-icon ai-stop-btn"
                         onClick={stopGeneration}
-                        title="Stop generation"
+                        title="停止生成"
                     >
                         <StopIcon />
                     </button>
