@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
@@ -146,6 +148,42 @@ pub struct ReadingMemoryIngestResult {
     pub log_path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadingMemoryDirectIngestRequest {
+    pub root_path: String,
+    pub book_title: String,
+    pub book_author: Option<String>,
+    pub source_chapter: Option<String>,
+    pub source_cfi: Option<String>,
+    pub source_progress: Option<f64>,
+    pub user_question: String,
+    pub selected_excerpt: Option<String>,
+    pub assistant_answer: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadingMemoryDirectIngestResult {
+    pub note_path: String,
+    pub log_path: String,
+    pub skipped: bool,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReadingMemoryDirectDecision {
+    should_ingest: bool,
+    target_dir: Option<String>,
+    title: Option<String>,
+    note_type: Option<String>,
+    summary: Option<String>,
+    body: Option<String>,
+    links: Option<Vec<String>>,
+    confidence: Option<f64>,
+    reason: Option<String>,
+}
+
 // AI Provider info for frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AIProviderInfo {
@@ -282,6 +320,98 @@ fn build_summary_prompt(request: &SummarizeConversationRequest) -> String {
     }
 
     prompt_parts.join("")
+}
+
+fn truncate_for_prompt(value: &str, limit: usize) -> String {
+    let trimmed = value.trim();
+    if trimmed.chars().count() <= limit {
+        return trimmed.to_string();
+    }
+    let mut out: String = trimmed.chars().take(limit).collect();
+    out.push_str("...");
+    out
+}
+
+fn build_reading_memory_direct_prompt(request: &ReadingMemoryDirectIngestRequest) -> String {
+    let excerpt = request
+        .selected_excerpt
+        .as_deref()
+        .map(|s| truncate_for_prompt(s, 1800))
+        .unwrap_or_default();
+    let answer = truncate_for_prompt(&request.assistant_answer, 2600);
+    let question = truncate_for_prompt(&request.user_question, 900);
+
+    format!(
+        r#"你是 CReader 的 Reading Memory 写入审稿员。你的任务是判断这一轮阅读对话是否值得直接写入用户的本地 Markdown 知识仓库。
+
+默认不要写入。只有当内容形成长期可复用的阅读知识对象时才写入，例如：
+- 一个可复用概念、模型、原则、机制、反例、证据链、开放问题或清晰主张。
+- 内容必须能从书籍来源或用户明确问题追溯出来。
+- 如果用户明确要求“记住、保存、沉淀、加入 Reading Memory”，可以放宽门槛。
+
+不要写入：
+- 普通章节总结、继续总结、翻译、润色、闲聊、短期追问、苏格拉底式出题、工具提示词、重复解释。
+- 只是复述 AI 回答全文，没有形成更小的知识对象。
+- 没有来源且只是 AI 临时推断的内容。
+
+如果写入，请选择一个目录：
+- books: 只用于某本书的整体阅读脉络、章节洞见、作者观点索引。
+- concepts: 可跨书复用的概念、模型、原则、机制。
+- questions: 值得长期追踪的开放问题。
+- claims: 明确可争辩、可引用的主张或判断。
+
+只输出 JSON，不要 Markdown 代码块，不要解释。
+JSON schema:
+{{
+  "should_ingest": boolean,
+  "target_dir": "books" | "concepts" | "questions" | "claims" | null,
+  "title": string | null,
+  "note_type": "book" | "concept" | "question" | "claim" | "note" | null,
+  "summary": string | null,
+  "body": string | null,
+  "links": string[],
+  "confidence": number,
+  "reason": string
+}}
+
+字段要求：
+- should_ingest 为 false 时，target_dir/title/body 使用 null，reason 用一句中文说明跳过原因。
+- should_ingest 为 true 时，title 必须短，适合作为 Markdown 文件名；body 用中文写成可直接追加到笔记中的知识块，控制在 120-500 字，不要复制整段回答。
+- body 必须区分“书中内容”和“AI 推断”。
+- confidence 范围 0 到 1，低于 0.7 应该 should_ingest=false。
+
+Book: {book_title}
+Author: {book_author}
+Chapter: {chapter}
+CFI: {cfi}
+Progress: {progress}
+
+Selected source excerpt:
+---
+{excerpt}
+---
+
+User question:
+---
+{question}
+---
+
+Assistant answer:
+---
+{answer}
+---"#,
+        book_title = request.book_title,
+        book_author = request.book_author.as_deref().unwrap_or(""),
+        chapter = request.source_chapter.as_deref().unwrap_or(""),
+        cfi = request.source_cfi.as_deref().unwrap_or(""),
+        progress = request
+            .source_progress
+            .map(|p| format!("{:.2}", p))
+            .unwrap_or_default(),
+        excerpt = excerpt,
+        question = question,
+        answer = answer
+    )
 }
 
 // Find command in common paths (GUI apps don't inherit shell PATH)
@@ -871,6 +1001,53 @@ async fn summarize_ai_conversation(request: SummarizeConversationRequest) -> Res
     Err("No AI CLI available to summarize conversation.".to_string())
 }
 
+async fn run_ai_oneshot_with_fallback(
+    prompt: &str,
+    provider: Option<String>,
+    model: Option<&str>,
+) -> Option<String> {
+    let provider = provider
+        .or_else(|| SELECTED_PROVIDER.lock().ok()?.clone())
+        .unwrap_or_else(|| "claude".to_string());
+
+    let selected = match provider.as_str() {
+        "codex" => try_codex(prompt).await,
+        "claude" => try_claude(prompt, model).await,
+        "opencode" => try_opencode(prompt).await,
+        "hermes" => try_hermes(prompt, model).await,
+        "gemini" => try_gemini(prompt).await,
+        _ => None,
+    };
+    if selected.is_some() {
+        return selected;
+    }
+
+    let fallback_order = match provider.as_str() {
+        "hermes" => vec!["claude", "codex", "opencode"],
+        "codex" => vec!["claude", "hermes", "opencode"],
+        "claude" => vec!["hermes", "codex", "opencode"],
+        "opencode" => vec!["hermes", "codex", "claude"],
+        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
+        _ => vec!["hermes", "codex", "claude", "opencode"],
+    };
+
+    for fallback in fallback_order {
+        let response = match fallback {
+            "hermes" => try_hermes(prompt, model).await,
+            "codex" => try_codex(prompt).await,
+            "claude" => try_claude(prompt, model).await,
+            "opencode" => try_opencode(prompt).await,
+            "gemini" => try_gemini(prompt).await,
+            _ => None,
+        };
+        if response.is_some() {
+            return response;
+        }
+    }
+
+    None
+}
+
 // Streaming chat with AI using Tauri Channel
 #[tauri::command]
 async fn chat_with_ai_streaming(
@@ -1321,6 +1498,155 @@ fn markdown_slug(input: &str) -> String {
     }
 }
 
+fn safe_wiki_title(input: &str) -> String {
+    let cleaned = input
+        .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|', '.'], " ")
+        .replace(['\n', '\r', '\t'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let trimmed: String = cleaned.trim().chars().take(80).collect();
+    if trimmed.is_empty() {
+        "reading-memory".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn allowed_reading_memory_dir(dir: &str) -> Option<&'static str> {
+    match dir.trim() {
+        "books" => Some("books"),
+        "concepts" => Some("concepts"),
+        "questions" => Some("questions"),
+        "claims" => Some("claims"),
+        _ => None,
+    }
+}
+
+fn normalize_note_type(value: Option<&str>, target_dir: &str) -> &'static str {
+    match value.unwrap_or("").trim() {
+        "book" => "book",
+        "concept" => "concept",
+        "question" => "question",
+        "claim" => "claim",
+        "note" => "note",
+        _ => match target_dir {
+            "books" => "book",
+            "concepts" => "concept",
+            "questions" => "question",
+            "claims" => "claim",
+            _ => "note",
+        },
+    }
+}
+
+fn extract_json_object(raw: &str) -> Option<&str> {
+    let start = raw.find('{')?;
+    let end = raw.rfind('}')?;
+    if end <= start {
+        return None;
+    }
+    Some(&raw[start..=end])
+}
+
+fn content_hash(input: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    input.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn build_direct_reading_memory_markdown(
+    request: &ReadingMemoryDirectIngestRequest,
+    decision: &ReadingMemoryDirectDecision,
+    note_type: &str,
+    target_dir: &str,
+) -> String {
+    let source_excerpt = request
+        .selected_excerpt
+        .as_deref()
+        .map(|s| truncate_for_prompt(s, 1800))
+        .unwrap_or_default();
+    let links = decision
+        .links
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|l| safe_wiki_title(&l))
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>();
+    let links_block = if links.is_empty() {
+        format!("- [[{}]]", safe_wiki_title(&request.book_title))
+    } else {
+        links
+            .into_iter()
+            .map(|l| format!("- [[{}]]", l))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let body = decision
+        .body
+        .as_deref()
+        .or(decision.summary.as_deref())
+        .unwrap_or("")
+        .trim();
+
+    format!(
+        r#"
+## CReader Ingestion
+
+```yaml
+type: {note_type}
+source_app: CReader
+source_book: {source_book}
+source_author: {source_author}
+source_chapter: {source_chapter}
+source_cfi: {source_cfi}
+source_progress: {source_progress:.2}
+target_dir: {target_dir}
+confidence: {confidence:.2}
+ingestion_reason: {reason}
+```
+
+### Source
+{source}
+
+### Question
+{question}
+
+### Note
+{body}
+
+### Links
+{links}
+"#,
+        note_type = note_type,
+        source_book = escape_json_string(&request.book_title),
+        source_author = escape_json_string(request.book_author.as_deref().unwrap_or("")),
+        source_chapter = escape_json_string(request.source_chapter.as_deref().unwrap_or("")),
+        source_cfi = escape_json_string(request.source_cfi.as_deref().unwrap_or("")),
+        source_progress = request.source_progress.unwrap_or(0.0),
+        target_dir = target_dir,
+        confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0),
+        reason = escape_json_string(decision.reason.as_deref().unwrap_or("")),
+        source = if source_excerpt.is_empty() {
+            "_No selected excerpt was captured._".to_string()
+        } else {
+            source_excerpt
+                .lines()
+                .map(|line| format!("> {}", line))
+                .collect::<Vec<_>>()
+                .join("\n")
+        },
+        question = request.user_question.trim(),
+        body = body,
+        links = links_block
+    )
+}
+
+fn escape_json_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
+}
+
 fn timestamp_millis() -> Result<u128, String> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1348,7 +1674,7 @@ fn ensure_reading_memory_repository(root_path: String) -> Result<String, String>
     if !index_path.exists() {
         std::fs::write(
             &index_path,
-            "# Reading Memory\n\n- [[inbox]] captures automatic CReader ingestions.\n- `books/`, `concepts/`, `questions/`, and `claims/` are maintained by you or a lint agent.\n",
+            "# Reading Memory\n\n- `books/`, `concepts/`, `questions/`, and `claims/` capture AI-reviewed CReader ingestions.\n- `.reading-memory/ingestion-log.jsonl` records automatic writes for linting and rollback.\n",
         )
         .map_err(|e| format!("Failed to write index.md: {}", e))?;
     }
@@ -1357,7 +1683,7 @@ fn ensure_reading_memory_repository(root_path: String) -> Result<String, String>
     if !rules_path.exists() {
         std::fs::write(
             &rules_path,
-            "# Reading Memory Lint Rules\n\n- Preserve source metadata and original excerpts.\n- Merge duplicate notes by `dedupe_key`.\n- Promote high-quality inbox notes into `books/`, `concepts/`, `questions/`, or `claims/`.\n- Mark low-value notes as `status: archived` instead of deleting them during routine lint.\n",
+            "# Reading Memory Lint Rules\n\n- Preserve source metadata and original excerpts.\n- Merge duplicate notes across `books/`, `concepts/`, `questions/`, and `claims/`.\n- Improve links and headings without removing source traceability.\n- Mark low-value automatic blocks as archived during routine lint instead of deleting them silently.\n",
         )
         .map_err(|e| format!("Failed to write lint-rules.md: {}", e))?;
     }
@@ -1418,6 +1744,156 @@ fn ingest_reading_memory_note(
     })
 }
 
+#[tauri::command]
+async fn ingest_reading_memory_direct(
+    request: ReadingMemoryDirectIngestRequest,
+) -> Result<ReadingMemoryDirectIngestResult, String> {
+    let root = ensure_reading_memory_repository(request.root_path.clone())?;
+    let root = PathBuf::from(root);
+    let meta_dir = root.join(".reading-memory");
+    std::fs::create_dir_all(&meta_dir)
+        .map_err(|e| format!("Failed to create metadata directory: {}", e))?;
+
+    if request.assistant_answer.trim().is_empty()
+        || request.assistant_answer.contains("No AI CLI available")
+        || request.assistant_answer.contains("Generation stopped")
+    {
+        return Ok(ReadingMemoryDirectIngestResult {
+            note_path: String::new(),
+            log_path: meta_dir
+                .join("ingestion-log.jsonl")
+                .to_string_lossy()
+                .to_string(),
+            skipped: true,
+            reason: "assistant answer is empty, failed, or interrupted".to_string(),
+        });
+    }
+
+    let prompt = build_reading_memory_direct_prompt(&request);
+    let raw = match run_ai_oneshot_with_fallback(&prompt, request.provider.clone(), request.model.as_deref()).await {
+        Some(response) => response,
+        None => {
+            return Ok(ReadingMemoryDirectIngestResult {
+                note_path: String::new(),
+                log_path: meta_dir
+                    .join("ingestion-log.jsonl")
+                    .to_string_lossy()
+                    .to_string(),
+                skipped: true,
+                reason: "no AI provider available for Reading Memory ingestion review".to_string(),
+            });
+        }
+    };
+
+    let json_text = extract_json_object(&raw)
+        .ok_or_else(|| "Reading Memory ingestion review did not return JSON".to_string())?;
+    let decision: ReadingMemoryDirectDecision = serde_json::from_str(json_text)
+        .map_err(|e| format!("Failed to parse Reading Memory ingestion JSON: {}", e))?;
+    let confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0);
+    if !decision.should_ingest || confidence < 0.7 {
+        return Ok(ReadingMemoryDirectIngestResult {
+            note_path: String::new(),
+            log_path: meta_dir
+                .join("ingestion-log.jsonl")
+                .to_string_lossy()
+                .to_string(),
+            skipped: true,
+            reason: decision
+                .reason
+                .unwrap_or_else(|| "AI decided not to ingest this turn".to_string()),
+        });
+    }
+
+    let target_dir = decision
+        .target_dir
+        .as_deref()
+        .and_then(allowed_reading_memory_dir)
+        .ok_or_else(|| "AI selected an invalid Reading Memory directory".to_string())?;
+    let title = safe_wiki_title(
+        decision
+            .title
+            .as_deref()
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or(&request.book_title),
+    );
+    let note_type = normalize_note_type(decision.note_type.as_deref(), target_dir);
+    let body_text = decision
+        .body
+        .as_deref()
+        .or(decision.summary.as_deref())
+        .unwrap_or("")
+        .trim();
+    if body_text.is_empty() {
+        return Ok(ReadingMemoryDirectIngestResult {
+            note_path: String::new(),
+            log_path: meta_dir
+                .join("ingestion-log.jsonl")
+                .to_string_lossy()
+                .to_string(),
+            skipped: true,
+            reason: "AI chose ingestion but produced an empty note body".to_string(),
+        });
+    }
+
+    let dir = root.join(target_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {}", target_dir, e))?;
+    let note_path = dir.join(format!("{}.md", title));
+    let new_file = !note_path.exists();
+    let block = build_direct_reading_memory_markdown(&request, &decision, note_type, target_dir);
+    let block_hash = content_hash(&block);
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&note_path)
+        .map_err(|e| format!("Failed to open Reading Memory note: {}", e))?;
+    if new_file {
+        writeln!(file, "# {}\n", title)
+            .map_err(|e| format!("Failed to write Reading Memory title: {}", e))?;
+    }
+    writeln!(file, "\n{}", block)
+        .map_err(|e| format!("Failed to append Reading Memory note: {}", e))?;
+
+    let millis = timestamp_millis()?;
+    let log_path = meta_dir.join("ingestion-log.jsonl");
+    let log_entry = serde_json::json!({
+        "created_at_ms": millis,
+        "source_app": "CReader",
+        "mode": "direct",
+        "action": if new_file { "create" } else { "append" },
+        "note_path": note_path.to_string_lossy(),
+        "target_dir": target_dir,
+        "title": title,
+        "note_type": note_type,
+        "confidence": confidence,
+        "reason": decision.reason.unwrap_or_default(),
+        "block_hash": block_hash,
+        "source_book": request.book_title,
+        "source_chapter": request.source_chapter,
+        "source_cfi": request.source_cfi,
+    });
+    let mut log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| format!("Failed to open ingestion log: {}", e))?;
+    writeln!(log_file, "{}", log_entry)
+        .map_err(|e| format!("Failed to append ingestion log: {}", e))?;
+
+    Ok(ReadingMemoryDirectIngestResult {
+        note_path: note_path
+            .to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "Invalid note path encoding".to_string())?,
+        log_path: log_path
+            .to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "Invalid log path encoding".to_string())?,
+        skipped: false,
+        reason: "ingested".to_string(),
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1445,7 +1921,8 @@ pub fn run() {
             validate_book_paths,
             find_book_in_library,
             ensure_reading_memory_repository,
-            ingest_reading_memory_note
+            ingest_reading_memory_note,
+            ingest_reading_memory_direct
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1580,6 +2057,37 @@ mod tests {
         assert!(prompt.contains("Current book: \"Book\""));
         assert!(prompt.contains("User: 我关心机会成本"));
         assert!(prompt.contains("Assistant: 机会成本是决策比较的核心。"));
+    }
+
+    #[test]
+    fn reading_memory_direct_prompt_rejects_ordinary_summaries() {
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: "/tmp/memory".to_string(),
+            book_title: "左耳听风".to_string(),
+            book_author: Some("左耳听风".to_string()),
+            source_chapter: Some("02".to_string()),
+            source_cfi: Some("epubcfi(/6/8)".to_string()),
+            source_progress: Some(1.75),
+            user_question: "继续总结第二章".to_string(),
+            selected_excerpt: Some("章节原文".to_string()),
+            assistant_answer: "这章主要讲程序员如何用技术变现。".to_string(),
+            provider: None,
+            model: None,
+        };
+
+        let prompt = build_reading_memory_direct_prompt(&request);
+        assert!(prompt.contains("普通章节总结"));
+        assert!(prompt.contains("默认不要写入"));
+        assert!(prompt.contains("\"should_ingest\": boolean"));
+        assert!(prompt.contains("继续总结第二章"));
+    }
+
+    #[test]
+    fn safe_wiki_title_and_allowed_dirs_restrict_model_output() {
+        assert_eq!(safe_wiki_title("../概念/机会成本?.md"), "概念 机会成本 md");
+        assert_eq!(allowed_reading_memory_dir("concepts"), Some("concepts"));
+        assert_eq!(allowed_reading_memory_dir("../outside"), None);
+        assert_eq!(normalize_note_type(Some("weird"), "claims"), "claim");
     }
 
     #[test]

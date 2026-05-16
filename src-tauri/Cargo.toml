@@ -1,6 +1,6 @@
 [package]
 name = "creader"
-version = "0.2.0"
+version = "0.2.1"
 description = "A lightweight EPUB reader with AI assistant"
 authors = ["you"]
 edition = "2021"

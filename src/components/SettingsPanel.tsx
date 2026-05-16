@@ -398,7 +398,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         <div>
                             <div className="settings-label">Markdown 仓库</div>
                             <div className="settings-help">
-                                AI 自动写入 inbox，之后交给外部 agent lint。
+                                AI 判断后直接写入知识页，之后交给外部 agent lint。
                             </div>
                         </div>
                         <button className="settings-primary-action" onClick={chooseReadingMemory} disabled={!isTauri || isMemoryBusy}>
@@ -413,8 +413,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     )}
                     <label className="settings-toggle-row">
                         <span>
-                            <strong>自动摄入 inbox</strong>
-                            <small>有书籍上下文的 AI 回答会无感沉淀。</small>
+                            <strong>自动摄入知识页</strong>
+                            <small>AI 只在判断有长期价值时无感沉淀。</small>
                         </span>
                         <input
                             type="checkbox"

@@ -4,7 +4,7 @@ import { useAI, useBookProgress, useLibrary, useSettings, useUI } from '../store
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
 import { perfMark, perfMeasure } from '../utils/perf';
-import { ingestReadingMemoryNote } from '../services/ReadingMemory';
+import { ingestReadingMemoryDirect } from '../services/ReadingMemory';
 import type { ChatMessage } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
 // Import from refactored modules
@@ -248,7 +248,12 @@ export function AIPanel() {
         if (!settings.readingMemoryAutoIngest || !settings.readingMemoryPath || !currentBook) return;
 
         try {
-            await ingestReadingMemoryNote({
+            const model = settings.aiProvider === 'claude'
+                ? settings.aiModel
+                : settings.aiProvider === 'hermes'
+                    ? settings.hermesModel
+                    : undefined;
+            await ingestReadingMemoryDirect({
                 rootPath: settings.readingMemoryPath,
                 book: currentBook,
                 userMessage,
@@ -257,6 +262,8 @@ export function AIPanel() {
                 selectedCfiRange: userMessage.contextCfi,
                 currentChapter: currentChapterContent,
                 progress: bookProgressById[currentBook.id] || currentBook.progress,
+                provider: settings.aiProvider,
+                model,
             });
         } catch (error) {
             logger.warn('Reading Memory ingest skipped:', error);
