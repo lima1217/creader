@@ -21,11 +21,20 @@
 
 ## Hotspots
 - `src/components/AIPanel.tsx` and `src/components/AIPanel.css` own the AI panel experience; verify with `npm run typecheck` and `npm run build` after changes.
+- `src/components/SettingsPanel.tsx` owns user-facing AI configuration, Reading Memory configuration, and quick prompt editing.
+- `src/components/Sidebar.tsx` owns library navigation, tag actions, import actions, and the settings entry in the left sidebar.
 - `src-tauri/src/lib.rs` owns native library and file operations; keep command names and payload shapes stable unless coordinated with frontend updates.
 - Large shared styles in `src/index.css` and component CSS files should stay organized around existing selectors instead of introducing parallel styling systems.
 
+## AI Panel
+- Keep provider, model, Reading Memory, and quick prompt management in the settings panel instead of adding persistent configuration controls back into the AI panel.
+- The AI panel should stay focused on reading-context conversation: header, message stream, quick prompt buttons, and input.
+- Quick prompts are persisted by `src/components/ai/quickActions.tsx`; the AI panel shows up to six direct prompt buttons and moves overflow into the more menu.
+- The AI input intentionally uses an empty placeholder for a quieter reading surface.
+
 ## Reading Memory
 - Reading Memory is a user-selected local Markdown repository, not an internal database.
+- Users choose or open the Reading Memory path from the settings panel.
 - CReader may append automatic inbox notes under `inbox/` and append write events to `.reading-memory/ingestion-log.jsonl`.
 - Keep automatic ingestion source-grounded: include book title, author, progress, CFI when available, selected text or question, and the AI answer.
 - Do not rewrite promoted wiki pages automatically from the reader flow; external lint agents may organize `inbox/` into `books/`, `concepts/`, `questions/`, and `claims/`.

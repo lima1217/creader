@@ -1,6 +1,6 @@
 # CReader - 轻量级 EPUB 阅读器
 
-一个基于 Tauri 2.x 的本地轻量级 EPUB 阅读器，支持书库管理、阅读进度追踪、多种主题，以及内嵌 AI 对话助手。
+一个基于 Tauri 2.x 的本地轻量级 EPUB 阅读器，支持书库管理、阅读进度追踪、多种主题、内嵌 AI 对话助手，以及本地 Markdown 形式的 Reading Memory。
 
 ## 功能特性
 
@@ -27,13 +27,15 @@
   - `A`: 选中文字后打开 AI 助手
 
 ### AI 对话助手
-- **多提供商支持**: Claude Code / Codex CLI / Gemini / OpenCode
+- **多提供商支持**: Claude Code / Codex CLI / OpenCode
 - **上下文关联**: 自动传递当前阅读内容
 - **文字选择**: 选中文字直接询问 AI
 - **对话历史**: 本地持久化保存
+- **快捷提示词**: 在设置中增删改快捷提示词，AI 面板底部最多直接显示 6 个，其余收进“更多”
+- **集中设置**: AI 提供商、模型、快捷提示词和 Reading Memory 都从左侧栏底部设置入口管理
 
 ### Reading Memory
-- **本地 Markdown 仓库**: 可在工具栏选择 Reading Memory 文件夹
+- **本地 Markdown 仓库**: 可在设置中选择 Reading Memory 文件夹
 - **自动沉淀**: AI 回答有书籍上下文时会无感写入 `inbox/`
 - **外部可编辑**: 仓库可直接用 Obsidian、Typora、VS Code 等 Markdown 工具打开
 - **可追溯**: 每条笔记保留书籍、作者、章节、进度和 EPUB CFI 等来源信息
@@ -42,6 +44,8 @@
 
 ### v0.1.1 (2026-05-16)
 - **界面优化**: 精简 AI 面板交互和样式
+- **设置集中化**: 将 AI 提供商、模型、Reading Memory 和快捷提示词配置集中到设置面板
+- **Reading Memory**: 新增本地 Markdown 仓库初始化和 AI 回答自动写入 `inbox/`
 - **阅读器改进**: 优化 EPUB 阅读器布局和样式
 - **组件增强**: 改进选择工具栏、侧边栏和工具栏设计
 - **响应式优化**: 提升界面响应性和用户体验
@@ -60,7 +64,7 @@
 - **前端**: Vite + React + TypeScript
 - **样式**: Vanilla CSS (warm paper / native desktop)
 - **EPUB**: epub.js
-- **AI**: 终端 CLI 调用 (codex/claude/gemini/opencode)
+- **AI**: 终端 CLI 调用 (codex/claude/opencode)
 
 ## 安装
 
@@ -89,14 +93,34 @@ npm run tauri build
 
 ## AI 配置
 
-CReader 支持多种 AI 提供商。请确保已安装对应的 CLI 工具：
+CReader 支持多种 AI 提供商。请在左侧栏底部的设置面板中选择提供商和模型，并确保已安装对应的 CLI 工具：
 
 | 提供商 | 安装命令 | 说明 |
 |--------|----------|------|
 | Codex CLI | 参见 Codex CLI | Codex |
 | Claude | `npm install -g @anthropic-ai/claude-code` | Anthropic Claude |
-| Gemini | 参见 [Gemini CLI](https://ai.google.dev/gemini-api/docs/quickstart?lang=web) | Google Gemini |
 | OpenCode | 参见 OpenCode CLI | OpenCode |
+
+快捷提示词也在设置面板中管理。AI 面板底部会优先显示前 6 个启用的提示词，超过 6 个的提示词会进入“更多”菜单。
+
+## Reading Memory
+
+Reading Memory 是 CReader 的本地 Markdown 知识仓库。用户可以在设置面板中选择仓库目录，CReader 会初始化以下结构：
+
+```text
+Reading Memory/
+├── inbox/
+├── books/
+├── concepts/
+├── questions/
+├── claims/
+├── sources/
+└── .reading-memory/
+    ├── manifest.json
+    └── ingestion-log.jsonl
+```
+
+AI 回答如果带有当前书籍上下文，会自动写入 `inbox/`，并在 `.reading-memory/ingestion-log.jsonl` 追加写入记录。长期整理、合并、去重和升级到 `books/`、`concepts/`、`questions/`、`claims/` 的工作预留给外部 lint agent。
 
 ## 项目结构
 
