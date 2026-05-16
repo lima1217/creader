@@ -43,5 +43,6 @@
 - Reading Memory is a user-selected local Markdown repository, not an internal database.
 - Users choose or open the Reading Memory path from the settings panel.
 - CReader may append automatic inbox notes under `inbox/` and append write events to `.reading-memory/ingestion-log.jsonl`.
+- Reading Memory ingestion is intentionally selective: skip translations, meta prompts, socratic coaching interactions, and short follow-up turns unless the user explicitly asks to save them.
 - Keep automatic ingestion source-grounded: include book title, author, progress, CFI when available, selected text or question, and the AI answer.
 - Do not rewrite promoted wiki pages automatically from the reader flow; external lint agents may organize `inbox/` into `books/`, `concepts/`, `questions/`, and `claims/`.

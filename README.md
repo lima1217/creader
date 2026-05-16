@@ -40,7 +40,7 @@
 
 ### Reading Memory
 - **本地 Markdown 仓库**: 可在设置中选择 Reading Memory 文件夹
-- **自动沉淀**: AI 回答有书籍上下文时会无感写入 `inbox/`
+- **自动沉淀**: 高置信阅读知识会无感写入 `inbox/`，翻译、元提示词和普通追问默认不摄入
 - **外部可编辑**: 仓库可直接用 Obsidian、Typora、VS Code 等 Markdown 工具打开
 - **可追溯**: 每条笔记保留书籍、作者、章节、进度和 EPUB CFI 等来源信息
 
@@ -130,7 +130,7 @@ Reading Memory/
     └── ingestion-log.jsonl
 ```
 
-AI 回答如果带有当前书籍上下文，会自动写入 `inbox/`，并在 `.reading-memory/ingestion-log.jsonl` 追加写入记录。长期整理、合并、去重和升级到 `books/`、`concepts/`、`questions/`、`claims/` 的工作预留给外部 lint agent。
+AI 回答如果形成可长期复用的阅读知识，会自动写入 `inbox/`，并在 `.reading-memory/ingestion-log.jsonl` 追加写入记录。CReader 会跳过翻译、元提示词、苏格拉底式训练交互和普通短答追问，避免把每轮聊天都塞进 wiki。长期整理、合并、去重和升级到 `books/`、`concepts/`、`questions/`、`claims/` 的工作预留给外部 lint agent。
 
 ## 项目结构
 
