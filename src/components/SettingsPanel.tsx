@@ -20,7 +20,22 @@ import './SettingsPanel.css';
 
 const logger = createLogger('SettingsPanel');
 
+type SettingsSection = 'ai' | 'memory' | 'prompts';
+
+const contextWindowOptions = [
+    { value: 5, label: '近 5 条', hint: '快' },
+    { value: 20, label: '近 20 条', hint: '平衡' },
+    { value: 40, label: '近 40 条', hint: '长对话' },
+] as const;
+
+const sectionTabs: Array<{ id: SettingsSection; label: string; hint: string }> = [
+    { id: 'ai', label: 'AI', hint: '模型与上下文' },
+    { id: 'memory', label: 'Reading Memory', hint: '知识仓库' },
+    { id: 'prompts', label: '快捷提示词', hint: '底部按钮' },
+];
+
 const fallbackProviders: AIProviderInfo[] = [
+    { id: 'hermes', name: 'Hermes', model: 'Hermes Agent', available: false },
     { id: 'claude', name: 'Claude Code', model: 'Claude', available: false },
     { id: 'opencode', name: 'OpenCode', model: 'OpenCode', available: false },
     { id: 'codex', name: 'Codex CLI', model: 'Codex', available: false },
@@ -41,6 +56,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(loadQuickActionConfigs);
     const [editingActionId, setEditingActionId] = useState<string | null>(quickActionConfigs[0]?.id || null);
     const [quickActionDraft, setQuickActionDraft] = useState({ label: '', prompt: '' });
+    const [activeSection, setActiveSection] = useState<SettingsSection>('ai');
 
     const refreshProviders = useCallback(async () => {
         if (!isTauri) {
@@ -58,6 +74,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
     useEffect(() => {
         if (!isOpen) return;
+        setActiveSection('ai');
+        setProviderOpen(false);
+        setModelOpen(false);
         void refreshProviders();
         const loadedActions = loadQuickActionConfigs();
         setQuickActionConfigs(loadedActions);
@@ -102,6 +121,15 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const setModel = (modelId: string) => {
         setSettings({ ...settings, aiModel: modelId });
         setModelOpen(false);
+    };
+
+    const setHermesModel = (modelId: string) => {
+        setSettings({ ...settings, hermesModel: modelId });
+    };
+
+    const adjustAITextSize = (delta: number) => {
+        const nextSize = Math.min(20, Math.max(13, settings.aiTextSize + delta));
+        setSettings({ ...settings, aiTextSize: nextSize });
     };
 
     const chooseReadingMemory = async () => {
@@ -184,6 +212,12 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
     const missingDefaultQuickActions = getMissingDefaultQuickActions(quickActionConfigs);
 
+    const selectSection = (section: SettingsSection) => {
+        setActiveSection(section);
+        setProviderOpen(false);
+        setModelOpen(false);
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -203,8 +237,22 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     <button className="settings-close" onClick={onClose} aria-label="关闭设置">x</button>
                 </header>
 
-                <div className="settings-section">
-                    <div className="settings-section-title">AI Provider</div>
+                <nav className="settings-primary-tabs" aria-label="设置分类">
+                    {sectionTabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            className={activeSection === tab.id ? 'active' : ''}
+                            onClick={() => selectSection(tab.id)}
+                        >
+                            <span>{tab.label}</span>
+                            <small>{tab.hint}</small>
+                        </button>
+                    ))}
+                </nav>
+
+                {activeSection === 'ai' && (
+                    <div className="settings-section">
+                        <div className="settings-section-title">AI</div>
                     <div className="settings-row">
                         <div>
                             <div className="settings-label">提供方</div>
@@ -267,13 +315,85 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         </div>
                     )}
 
+                    {settings.aiProvider === 'hermes' && (
+                        <div className="settings-row">
+                            <div>
+                                <div className="settings-label">Hermes 模型</div>
+                                <div className="settings-help">默认来自 Hermes 配置，可在这里覆盖。</div>
+                            </div>
+                            <input
+                                className="settings-text-input"
+                                value={settings.hermesModel}
+                                onChange={(event) => setHermesModel(event.target.value)}
+                                placeholder="glm-5.1"
+                            />
+                        </div>
+                    )}
+
+                    <div className="settings-row">
+                        <div>
+                            <div className="settings-label">AI 文字大小</div>
+                            <div className="settings-help">调整对话和输入框文字。</div>
+                        </div>
+                        <div className="settings-stepper" aria-label="AI 文字大小">
+                            <button
+                                onClick={() => adjustAITextSize(-1)}
+                                disabled={settings.aiTextSize <= 13}
+                                aria-label="减小 AI 文字"
+                            >
+                                -
+                            </button>
+                            <span>{settings.aiTextSize}px</span>
+                            <button
+                                onClick={() => adjustAITextSize(1)}
+                                disabled={settings.aiTextSize >= 20}
+                                aria-label="增大 AI 文字"
+                            >
+                                +
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="settings-row settings-row-stacked">
+                        <div>
+                            <div className="settings-label">AI 上下文轮次</div>
+                            <div className="settings-help">每次提问带上的最近聊天记录，越多越连贯，也越慢。</div>
+                        </div>
+                        <div className="settings-segmented" aria-label="AI 上下文轮次">
+                            {contextWindowOptions.map(option => (
+                                <button
+                                    key={option.value}
+                                    className={settings.aiContextWindow === option.value ? 'active' : ''}
+                                    onClick={() => setSettings({ ...settings, aiContextWindow: option.value })}
+                                >
+                                    <span>{option.label}</span>
+                                    <small>{option.hint}</small>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <label className="settings-toggle-row">
+                        <span>
+                            <strong>自动压缩上下文</strong>
+                            <small>超过上下文轮次后，将更早对话压缩成隐藏摘要继续带上。</small>
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={settings.aiAutoSummarize}
+                            onChange={event => setSettings({ ...settings, aiAutoSummarize: event.target.checked })}
+                        />
+                    </label>
+
                     <button className="settings-secondary-action" onClick={refreshProviders} disabled={!isTauri}>
                         刷新可用 Provider
                     </button>
-                </div>
+                    </div>
+                )}
 
-                <div className="settings-section">
-                    <div className="settings-section-title">Reading Memory</div>
+                {activeSection === 'memory' && (
+                    <div className="settings-section">
+                        <div className="settings-section-title">Reading Memory</div>
                     <div className="settings-row">
                         <div>
                             <div className="settings-label">Markdown 仓库</div>
@@ -302,10 +422,12 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             onChange={event => setSettings({ ...settings, readingMemoryAutoIngest: event.target.checked })}
                         />
                     </label>
-                </div>
+                    </div>
+                )}
 
-                <div className="settings-section">
-                    <div className="settings-section-title">AI 快捷提示词</div>
+                {activeSection === 'prompts' && (
+                    <div className="settings-section">
+                        <div className="settings-section-title">AI 快捷提示词</div>
                     <div className="settings-quick-actions">
                         <div className="settings-quick-list">
                             <button className="settings-quick-add-main" onClick={addQuickAction}>
@@ -397,7 +519,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         )}
                     </div>
                     <div className="settings-help settings-quick-help">AI 窗口底部最多显示前 6 个按钮，其余会进入“更多”。</div>
-                </div>
+                    </div>
+                )}
             </section>
         </div>
     );

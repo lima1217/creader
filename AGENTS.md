@@ -28,9 +28,16 @@
 
 ## AI Panel
 - Keep provider, model, Reading Memory, and quick prompt management in the settings panel instead of adding persistent configuration controls back into the AI panel.
+- `SettingsPanel.tsx` groups controls under three primary tabs: `AI`, `Reading Memory`, and `快捷提示词`; keep new settings inside the matching tab instead of adding another top-level section.
 - The AI panel should stay focused on reading-context conversation: header, message stream, quick prompt buttons, and input.
 - Quick prompts are persisted by `src/components/ai/quickActions.tsx`; the AI panel shows up to six direct prompt buttons and moves overflow into the more menu.
 - The AI input intentionally uses an empty placeholder for a quieter reading surface.
+- Hermes is a supported provider. The backend should prefer `/Users/lima/.hermes/hermes-agent/venv/bin/python /Users/lima/.hermes/hermes-agent/hermes -z <prompt>` when available, falling back to a `hermes` command on `PATH`.
+- Hermes model override and AI text size are user settings. Keep these controls in `SettingsPanel.tsx`, and pass the Hermes model through the regular chat request `model` field.
+- AI context window is user-configurable as 5, 20, or 40 recent messages. The frontend decides how many messages to send; the backend should not silently reduce that window again.
+- Auto summarization keeps old chat turns as hidden `ConversationMemory`; do not render that summary as a chat message or ingest it directly into Reading Memory.
+- Chapter context is smart-trimmed by `src/components/ai/contextWindow.ts`: selected or accumulated text is the focus, and chapter text should only provide nearby background when useful.
+- EPUB selected CFI ranges are captured as `selectedCfiRange` and persisted on `ChatMessage.contextCfi` for Reading Memory source tracing; keep this separate from the plain text smart-trimming path.
 
 ## Reading Memory
 - Reading Memory is a user-selected local Markdown repository, not an internal database.

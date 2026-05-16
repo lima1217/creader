@@ -7,6 +7,7 @@ export type ReadingMemoryIngestInput = {
   userMessage: ChatMessage;
   assistantMessage: ChatMessage;
   selectedContext?: string;
+  selectedCfiRange?: string;
   currentChapter?: string;
   progress?: ReadingProgress;
 };
@@ -50,13 +51,14 @@ function shouldIngest(input: ReadingMemoryIngestInput): boolean {
   return true;
 }
 
-function buildMarkdown(input: ReadingMemoryIngestInput): { title: string; body: string; metadata: Record<string, unknown> } {
+export function buildReadingMemoryMarkdown(input: ReadingMemoryIngestInput): { title: string; body: string; metadata: Record<string, unknown> } {
   const created = new Date(input.assistantMessage.timestamp).toISOString();
   const noteType = inferNoteType(input.userMessage.content, input.assistantMessage.content);
   const sourceExcerpt = excerpt(input.selectedContext || input.userMessage.context || input.currentChapter, 1800);
   const title = `${input.book.title} - ${slugSeed(input.userMessage.content)}`;
   const dedupeKey = `${noteType}:${input.book.id}:${slugSeed(input.userMessage.content)}`;
   const progress = input.progress || input.book.progress;
+  const sourceCfi = input.selectedCfiRange || input.userMessage.contextCfi || progress.currentCfi || '';
 
   const metadata = {
     type: noteType,
@@ -66,7 +68,7 @@ function buildMarkdown(input: ReadingMemoryIngestInput): { title: string; body: 
     source_book: input.book.title,
     source_author: input.book.author,
     source_chapter: progress.currentChapter || '',
-    source_cfi: progress.currentCfi || '',
+    source_cfi: sourceCfi,
     source_progress: progress.percentage,
     trigger: 'ai_answer',
     confidence: 0.72,
@@ -82,7 +84,7 @@ function buildMarkdown(input: ReadingMemoryIngestInput): { title: string; body: 
     `source_book: ${escapeYaml(input.book.title)}`,
     `source_author: ${escapeYaml(input.book.author)}`,
     `source_chapter: ${escapeYaml(progress.currentChapter || '')}`,
-    `source_cfi: ${escapeYaml(progress.currentCfi || '')}`,
+    `source_cfi: ${escapeYaml(sourceCfi)}`,
     `source_progress: ${Number(progress.percentage || 0).toFixed(2)}`,
     'trigger: ai_answer',
     'confidence: 0.72',
@@ -120,7 +122,7 @@ export async function ensureReadingMemoryRepository(rootPath: string): Promise<s
 
 export async function ingestReadingMemoryNote(input: ReadingMemoryIngestInput): Promise<IngestResult | null> {
   if (!shouldIngest(input)) return null;
-  const note = buildMarkdown(input);
+  const note = buildReadingMemoryMarkdown(input);
   return await invoke<IngestResult>('ingest_reading_memory_note', {
     request: {
       root_path: input.rootPath,

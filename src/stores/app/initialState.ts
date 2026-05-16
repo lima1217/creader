@@ -37,11 +37,26 @@ function asStoredEntry(value: unknown): (ReadingProgress & { lastReadAt: number 
   return null;
 }
 
+function normalizeAIContextWindow(value: unknown, fallback: Settings['aiContextWindow']): Settings['aiContextWindow'] {
+  return value === 5 || value === 20 || value === 40 ? value : fallback;
+}
+
 export function getInitialSettings(defaultSettings: Settings): Settings {
+  const stored = loadStored(STORAGE_KEYS.settings, defaultSettings);
   return {
     ...defaultSettings,
-    ...loadStored(STORAGE_KEYS.settings, defaultSettings),
+    ...stored,
     allowEpubScripts: true,
+    hermesModel: typeof stored.hermesModel === 'string' && stored.hermesModel.trim()
+      ? stored.hermesModel
+      : defaultSettings.hermesModel,
+    aiTextSize: typeof stored.aiTextSize === 'number'
+      ? Math.min(20, Math.max(13, stored.aiTextSize))
+      : defaultSettings.aiTextSize,
+    aiContextWindow: normalizeAIContextWindow(stored.aiContextWindow, defaultSettings.aiContextWindow),
+    aiAutoSummarize: typeof stored.aiAutoSummarize === 'boolean'
+      ? stored.aiAutoSummarize
+      : defaultSettings.aiAutoSummarize,
   };
 }
 

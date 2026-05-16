@@ -1,10 +1,10 @@
 import { useState, useEffect, createContext, useContext, ReactNode, useRef, useCallback, useMemo } from 'react';
-import type { Settings, Book, Library, ChatMessage, BookCategory, BookProgressUpdate, ReadingProgress } from '../types';
+import type { Settings, Book, Library, ChatMessage, BookCategory, BookProgressUpdate, ReadingProgress, ConversationMemory } from '../types';
 import { dataUrlToBlob, deleteCover, revokeCoverUrl, saveCover } from '../services/CoverStore';
 import { loadStored, STORAGE_KEYS } from '../services/LocalStore';
 import { validateAndFixLibraryPaths } from '../services/BookPathValidator';
 import { MAX_CHAT_MESSAGES_STORED } from '../constants';
-import { appendChatMessages, clearChatMessages, loadChatMessages, replaceChatMessages } from '../services/ChatStore';
+import { appendChatMessages, clearChatMessages, clearConversationMemory, loadChatMessages, loadConversationMemory, replaceChatMessages, saveConversationMemory } from '../services/ChatStore';
 import { createLogger } from '../utils/logger';
 import { perfSpan } from '../utils/perf';
 import { useDebouncedPersist } from '../hooks/useDebouncedPersist';
@@ -24,6 +24,10 @@ const defaultSettings: Settings = {
     readingMemoryAutoIngest: true,
     aiProvider: 'claude',
     aiModel: 'opus',
+    hermesModel: 'glm-5.1',
+    aiTextSize: 14,
+    aiContextWindow: 20,
+    aiAutoSummarize: true,
 };
 
 // App state context
@@ -58,8 +62,10 @@ interface AppState {
 
     // AI Chat
     chatMessages: ChatMessage[];
+    conversationMemory: ConversationMemory | null;
     addChatMessage: (message: ChatMessage) => void;
     setChatMessages: (messages: ChatMessage[]) => void;
+    setConversationMemory: (memory: ConversationMemory | null) => void;
     clearChat: () => void;
 
     // UI State
@@ -73,6 +79,8 @@ interface AppState {
     // Selected text for AI context
     selectedText: string;
     setSelectedText: (text: string) => void;
+    selectedCfiRange: string;
+    setSelectedCfiRange: (cfiRange: string) => void;
 
     // Accumulated texts for cross-page selection
     accumulatedTexts: string[];
@@ -106,11 +114,15 @@ type AIContextValue = Pick<
     | 'currentChapterContent'
     | 'setCurrentChapterContent'
     | 'chatMessages'
+    | 'conversationMemory'
     | 'addChatMessage'
     | 'setChatMessages'
+    | 'setConversationMemory'
     | 'clearChat'
     | 'selectedText'
     | 'setSelectedText'
+    | 'selectedCfiRange'
+    | 'setSelectedCfiRange'
     | 'accumulatedTexts'
     | 'addToAccumulatedTexts'
     | 'removeAccumulatedText'
@@ -141,16 +153,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Chat - hydrated asynchronously from IndexedDB
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => getInitialChatMessages());
+    const [conversationMemory, setConversationMemoryState] = useState<ConversationMemory | null>(null);
 
     const [bookProgressById, setBookProgressById] = useState<BookProgressById>(() => getInitialBookProgressById());
 
     // Selected text
     const [selectedText, setSelectedTextState] = useState<string>('');
+    const [selectedCfiRange, setSelectedCfiRange] = useState<string>('');
 
     // Wrapper to log selectedText changes
     const setSelectedText = useCallback((text: string) => {
         logger.debug('setSelectedText called with:', text ? text.slice(0, 50) : '(empty)');
         setSelectedTextState(text);
+        if (!text) setSelectedCfiRange('');
     }, []);
 
     // Accumulated texts for cross-page selection
@@ -191,6 +206,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     useDebouncedPersist(STORAGE_KEYS.settings, settings, 500, { skipInitial: true });
     useDebouncedPersist(STORAGE_KEYS.library, library, 800, { skipInitial: true });
     useDebouncedPersist(STORAGE_KEYS.progress, bookProgressById, 800, { skipInitial: true });
+
+    useEffect(() => {
+        if (typeof indexedDB === 'undefined') return;
+        let cancelled = false;
+        loadConversationMemory()
+            .then(memory => {
+                if (!cancelled) setConversationMemoryState(memory);
+            })
+            .catch(e => {
+                logger.warn('Failed to load conversation memory:', e);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -320,6 +350,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
+        if (typeof indexedDB === 'undefined') return;
         let cancelled = false;
 
         const hydrateChat = async () => {
@@ -548,12 +579,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
+    const setConversationMemory = useCallback((memory: ConversationMemory | null) => {
+        setConversationMemoryState(memory);
+        const op = memory ? saveConversationMemory(memory) : clearConversationMemory();
+        void op.catch((e) => {
+            logger.warn('Failed to persist conversation memory:', e);
+        });
+    }, []);
+
     const clearChat = useCallback(() => {
         setChatMessages([]);
         void clearChatMessages().catch((e) => {
             logger.warn('Failed to clear chat messages:', e);
         });
-    }, []);
+        setConversationMemory(null);
+    }, [setConversationMemory]);
 
     const value: AppState = useMemo(() => ({
         settings,
@@ -575,8 +615,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentChapterContent,
         setCurrentChapterContent,
         chatMessages,
+        conversationMemory,
         addChatMessage,
         setChatMessages: setChatMessagesFn,
+        setConversationMemory,
         clearChat,
         isSidebarOpen,
         setSidebarOpen,
@@ -586,6 +628,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSearchOpen,
         selectedText,
         setSelectedText,
+        selectedCfiRange,
+        setSelectedCfiRange,
         accumulatedTexts,
         addToAccumulatedTexts,
         removeAccumulatedText,
@@ -609,14 +653,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCurrentBook,
         currentChapterContent,
         chatMessages,
+        conversationMemory,
         addChatMessage,
         setChatMessagesFn,
+        setConversationMemory,
         clearChat,
         isSidebarOpen,
         isAIPanelOpen,
         isSearchOpen,
         selectedText,
         setSelectedText,
+        selectedCfiRange,
+        setSelectedCfiRange,
         accumulatedTexts,
         addToAccumulatedTexts,
         removeAccumulatedText,
@@ -674,11 +722,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentChapterContent,
         setCurrentChapterContent,
         chatMessages,
+        conversationMemory,
         addChatMessage,
         setChatMessages: setChatMessagesFn,
+        setConversationMemory,
         clearChat,
         selectedText,
         setSelectedText,
+        selectedCfiRange,
+        setSelectedCfiRange,
         accumulatedTexts,
         addToAccumulatedTexts,
         removeAccumulatedText,
@@ -686,11 +738,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }), [
         currentChapterContent,
         chatMessages,
+        conversationMemory,
         addChatMessage,
         setChatMessagesFn,
+        setConversationMemory,
         clearChat,
         selectedText,
         setSelectedText,
+        selectedCfiRange,
         accumulatedTexts,
         addToAccumulatedTexts,
         removeAccumulatedText,

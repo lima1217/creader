@@ -14,7 +14,16 @@ export interface ChatRequest {
     context?: string;
     book_title?: string;
     chapter_content?: string;
+    conversation_summary?: string;
     history?: { role: string; content: string }[];
+    provider?: string;
+    model?: string;
+}
+
+export interface SummarizeConversationRequest {
+    existing_summary?: string;
+    messages: { role: string; content: string }[];
+    book_title?: string;
     provider?: string;
     model?: string;
 }

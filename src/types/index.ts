@@ -56,6 +56,10 @@ export interface Settings {
   readingMemoryAutoIngest: boolean;
   aiProvider: string;
   aiModel: string;
+  hermesModel: string;
+  aiTextSize: number; // 13-20
+  aiContextWindow: 5 | 20 | 40;
+  aiAutoSummarize: boolean;
 }
 
 // AI Chat message
@@ -65,6 +69,17 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   context?: string; // Selected text from book
+  contextCfi?: string; // EPUB CFI range for selected text
+}
+
+export interface ConversationMemory {
+  id: string;
+  bookId?: string;
+  bookTitle?: string;
+  summary: string;
+  summarizedThroughMessageId?: string;
+  summarizedThroughTimestamp?: number;
+  updatedAt: number;
 }
 
 // Navigation item (chapter)

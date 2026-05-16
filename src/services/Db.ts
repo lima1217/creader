@@ -1,5 +1,5 @@
 const DB_NAME = 'creader';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export const STORES = {
   covers: 'covers',
@@ -7,6 +7,7 @@ export const STORES = {
   searchText: 'searchText',
   searchResults: 'searchResults',
   chatMessages: 'chatMessages',
+  conversationMemory: 'conversationMemory',
 } as const;
 
 let dbPromise: Promise<IDBDatabase> | null = null;

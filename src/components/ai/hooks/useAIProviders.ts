@@ -6,6 +6,7 @@ import { createLogger } from '../../../utils/logger';
 const logger = createLogger('useAIProviders');
 
 const fallbackProviders: AIProviderInfo[] = [
+  { id: 'hermes', name: 'Hermes', model: 'Hermes Agent', available: false },
   { id: 'claude', name: 'Claude', model: 'sonnet', available: false },
   { id: 'opencode', name: 'OpenCode', model: 'default', available: false },
   { id: 'codex', name: 'Codex', model: 'default', available: false },

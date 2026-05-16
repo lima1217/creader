@@ -18,9 +18,11 @@ import {
     loadQuickActionConfigs,
     QUICK_ACTIONS_CHANGED_EVENT,
 } from './ai/quickActions';
+import { buildSmartChapterContext } from './ai/contextWindow';
+import { getMessagesToSummarize } from './ai/conversationMemory';
 import { createOnceCommitter } from './ai/streamCommit';
 import type { QuickActionConfig } from './ai/quickActions';
-import type { AIProviderInfo, ChatRequest, StreamEvent } from './ai/types';
+import type { AIProviderInfo, ChatRequest, StreamEvent, SummarizeConversationRequest } from './ai/types';
 import './AIPanel.css';
 import './AIPanelMarkdown.css';
 
@@ -36,11 +38,14 @@ export function AIPanel() {
     const { isAIPanelOpen } = useUI();
     const {
         chatMessages,
+        conversationMemory,
         addChatMessage,
+        setConversationMemory,
         clearChat,
         currentChapterContent,
         selectedText,
         setSelectedText,
+        selectedCfiRange,
         accumulatedTexts,
         removeAccumulatedText,
         clearAccumulatedTexts,
@@ -68,10 +73,15 @@ export function AIPanel() {
     const pendingPanelWidthRef = useRef<number | null>(null);
     const panelWidthRafRef = useRef<number | null>(null);
     const isSendingRef = useRef(false);
+    const latestMemoryRef = useRef(conversationMemory);
 
     useEffect(() => {
         streamingContentRef.current = streamingContent;
     }, [streamingContent]);
+
+    useEffect(() => {
+        latestMemoryRef.current = conversationMemory;
+    }, [conversationMemory]);
 
     useEffect(() => {
         const reloadQuickActions = () => setQuickActionConfigs(loadQuickActionConfigs());
@@ -181,6 +191,7 @@ export function AIPanel() {
                 checkAIAvailability();
             } else {
                 setProviders([
+                    { id: 'hermes', name: 'Hermes', model: 'Hermes Agent', available: false },
                     { id: 'claude', name: 'Claude', model: 'sonnet', available: false },
                     { id: 'opencode', name: 'OpenCode', model: 'default', available: false },
                     { id: 'codex', name: 'Codex', model: 'default', available: false },
@@ -243,6 +254,7 @@ export function AIPanel() {
                 userMessage,
                 assistantMessage,
                 selectedContext: userMessage.context,
+                selectedCfiRange: userMessage.contextCfi,
                 currentChapter: currentChapterContent,
                 progress: bookProgressById[currentBook.id] || currentBook.progress,
             });
@@ -258,6 +270,72 @@ export function AIPanel() {
         settings.readingMemoryPath,
     ]);
 
+    const ensureConversationMemory = useCallback(async (): Promise<string | undefined> => {
+        if (!settings.aiAutoSummarize || !isTauri || chatMessages.length <= settings.aiContextWindow) {
+            return conversationMemory?.summary;
+        }
+
+        const activeMemory = latestMemoryRef.current;
+        if (activeMemory?.bookId && currentBook?.id && activeMemory.bookId !== currentBook.id) {
+            return undefined;
+        }
+
+        const eligibleMessages = getMessagesToSummarize(chatMessages, settings.aiContextWindow, activeMemory);
+
+        if (eligibleMessages.length < Math.min(10, settings.aiContextWindow)) {
+            return activeMemory?.summary;
+        }
+
+        const lastFolded = eligibleMessages[eligibleMessages.length - 1];
+        const request: SummarizeConversationRequest = {
+            existing_summary: activeMemory?.summary,
+            messages: eligibleMessages.map(message => ({
+                role: message.role,
+                content: message.content,
+            })),
+            book_title: currentBook?.title,
+            provider: settings.aiProvider,
+            model: settings.aiProvider === 'claude'
+                ? settings.aiModel
+                : settings.aiProvider === 'hermes'
+                    ? settings.hermesModel
+                    : undefined,
+        };
+
+        try {
+            const summary = await invoke<string>('summarize_ai_conversation', { request });
+            const trimmedSummary = summary.trim();
+            if (!trimmedSummary) return activeMemory?.summary;
+
+            const nextMemory = {
+                id: activeMemory?.id ?? 'active',
+                bookId: currentBook?.id,
+                bookTitle: currentBook?.title,
+                summary: trimmedSummary,
+                summarizedThroughMessageId: lastFolded.id,
+                summarizedThroughTimestamp: lastFolded.timestamp,
+                updatedAt: Date.now(),
+            };
+            latestMemoryRef.current = nextMemory;
+            setConversationMemory(nextMemory);
+            return trimmedSummary;
+        } catch (error) {
+            logger.warn('Conversation summary skipped:', error);
+            return activeMemory?.summary;
+        }
+    }, [
+        chatMessages,
+        conversationMemory,
+        currentBook,
+        isTauri,
+        setConversationMemory,
+        settings.aiAutoSummarize,
+        settings.aiContextWindow,
+        settings.aiModel,
+        settings.aiProvider,
+        settings.hermesModel,
+    ]);
+
     const sendMessage = async () => {
         if (!input.trim() || isLoading || isSendingRef.current) return;
         isSendingRef.current = true;
@@ -271,6 +349,10 @@ export function AIPanel() {
             allContext.push(...accumulatedTexts);
         }
         const combinedContext = allContext.length > 0 ? allContext.join('\n\n---\n\n') : undefined;
+        const smartChapterContext = buildSmartChapterContext({
+            chapterContent: currentChapterContent,
+            focusTexts: allContext,
+        });
 
         const userMessage: ChatMessage = {
             id: Date.now().toString(),
@@ -278,6 +360,7 @@ export function AIPanel() {
             content: input.trim(),
             timestamp: Date.now(),
             context: combinedContext,
+            contextCfi: selectedCfiRange || undefined,
         };
 
         addChatMessage(userMessage);
@@ -302,18 +385,24 @@ export function AIPanel() {
             }
 
             await invoke('reset_ai_cancel');
+            const conversationSummary = await ensureConversationMemory();
 
             const request: ChatRequest = {
                 message: messageToSend,
                 context: combinedContext,
                 book_title: currentBook?.title,
-                chapter_content: currentChapterContent || undefined,
-                history: chatMessages.slice(-10).map(m => ({
+                chapter_content: smartChapterContext,
+                conversation_summary: conversationSummary,
+                history: chatMessages.slice(-settings.aiContextWindow).map(m => ({
                     role: m.role,
                     content: m.content,
                 })),
                 provider: settings.aiProvider,
-                model: settings.aiProvider === 'claude' ? settings.aiModel : undefined,
+                model: settings.aiProvider === 'claude'
+                    ? settings.aiModel
+                    : settings.aiProvider === 'hermes'
+                        ? settings.hermesModel
+                        : undefined,
             };
 
             // Create a channel to receive streaming events
@@ -411,7 +500,7 @@ export function AIPanel() {
             const errorMessage: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: `Sorry, I encountered an error: ${error}\n\nPlease make sure you have one of the following AI CLIs installed and configured:\n- claude (Anthropic Claude)\n- opencode (OpenCode)\n- codex (Codex CLI)`,
+                content: `Sorry, I encountered an error: ${error}\n\nPlease make sure you have one of the following AI CLIs installed and configured:\n- hermes (Hermes Agent)\n- claude (Anthropic Claude)\n- opencode (OpenCode)\n- codex (Codex CLI)`,
                 timestamp: Date.now(),
             };
             addChatMessage(errorMessage);
@@ -555,7 +644,10 @@ export function AIPanel() {
         <aside
             ref={panelRef}
             className={`ai-panel ${isResizing ? 'ai-panel-resizing' : ''}`}
-            style={{ width: `${panelWidth}px` }}
+            style={{
+                width: `${panelWidth}px`,
+                '--ai-text-size': `${settings.aiTextSize}px`,
+            } as React.CSSProperties}
         >
             {/* Resize handle */}
             <div
@@ -639,7 +731,7 @@ export function AIPanel() {
                     <div className="ai-panel-empty">
                         {!providers.some(p => p.available) && (
                             <div className="ai-warning">
-                                <p>未检测到 AI CLI，请安装 claude、opencode 或 codex。</p>
+                                <p>未检测到 AI CLI，请安装 hermes、claude、opencode 或 codex。</p>
                                 <button className="btn btn-ghost btn-sm" onClick={refreshAIAvailability}>
                                     刷新
                                 </button>

@@ -4,6 +4,7 @@
 
 .ai-panel {
     /* Width is now controlled by inline style for resizing */
+    --ai-text-size: 14px;
     min-width: 300px;
     max-width: 700px;
     height: 100%;
@@ -915,7 +916,7 @@
 .ai-message-content {
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-md);
-    font-size: var(--text-sm);
+    font-size: var(--ai-text-size);
     line-height: 1.7;
     position: relative;
 }
@@ -1097,7 +1098,7 @@
     max-height: 120px;
     padding: var(--space-3);
     border-radius: var(--radius-md);
-    font-size: var(--text-sm);
+    font-size: var(--ai-text-size);
     line-height: 1.5;
     background: var(--bg-primary);
     border: 1px solid var(--border-secondary);

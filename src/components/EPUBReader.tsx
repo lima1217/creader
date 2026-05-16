@@ -25,7 +25,15 @@ export function EPUBReader() {
     const { updateBookProgress } = useBookProgress();
     const { settings } = useSettings();
     const { isSearchOpen, setSearchOpen, setAIPanelOpen } = useUI();
-    const { currentChapterContent, setCurrentChapterContent, setSelectedText, selectedText, addToAccumulatedTexts, accumulatedTexts } = useAI();
+    const {
+        currentChapterContent,
+        setCurrentChapterContent,
+        setSelectedText,
+        selectedText,
+        setSelectedCfiRange,
+        addToAccumulatedTexts,
+        accumulatedTexts,
+    } = useAI();
     const containerRef = useRef<HTMLDivElement>(null);
     const bookRef = useRef<EpubBook | null>(null);
     const renditionRef = useRef<Rendition | null>(null);
@@ -97,6 +105,7 @@ export function EPUBReader() {
         containerRef,
         lastMousePosRef,
         setSelectedText,
+        setSelectedCfiRange,
         setSelectionToolbarPos,
         setShowSelectionToolbar,
         setShowSelectionHint,

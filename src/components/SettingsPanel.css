@@ -42,6 +42,59 @@
     color: var(--text-tertiary);
 }
 
+.settings-primary-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-secondary);
+}
+
+.settings-primary-tabs button {
+    min-width: 0;
+    min-height: 48px;
+    padding: 7px 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    text-align: center;
+}
+
+.settings-primary-tabs button:hover {
+    background: var(--bg-control-hover);
+    color: var(--text-primary);
+}
+
+.settings-primary-tabs button.active {
+    border-color: var(--border-secondary);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(20, 18, 15, 0.08);
+}
+
+.settings-primary-tabs span,
+.settings-primary-tabs small {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-primary-tabs span {
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.settings-primary-tabs small {
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
 .settings-close {
     width: 30px;
     height: 30px;
@@ -88,6 +141,12 @@
     margin-bottom: 0;
 }
 
+.settings-row-stacked {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+}
+
 .settings-label {
     font-size: 14px;
     font-weight: 570;
@@ -113,7 +172,8 @@
 .settings-select-trigger,
 .settings-primary-action,
 .settings-secondary-action,
-.settings-path-row button {
+.settings-path-row button,
+.settings-stepper button {
     min-height: 34px;
     border: 1px solid var(--border-secondary);
     border-radius: 5px;
@@ -129,6 +189,108 @@
     justify-content: space-between;
     gap: 8px;
     padding: 0 10px;
+}
+
+.settings-text-input {
+    width: 184px;
+    min-height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--border-secondary);
+    border-radius: 5px;
+    background: var(--bg-control);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+}
+
+.settings-text-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
+}
+
+.settings-stepper {
+    display: grid;
+    grid-template-columns: 34px 54px 34px;
+    align-items: center;
+    min-height: 34px;
+    border: 1px solid var(--border-secondary);
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--bg-control);
+}
+
+.settings-stepper button {
+    min-height: 34px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 15px;
+}
+
+.settings-stepper button:hover:not(:disabled) {
+    background: var(--bg-control-hover);
+}
+
+.settings-stepper button:disabled {
+    color: var(--text-muted);
+}
+
+.settings-stepper span {
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.settings-segmented {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--border-secondary);
+    border-radius: 6px;
+    background: var(--bg-control);
+}
+
+.settings-segmented button {
+    min-width: 0;
+    min-height: 46px;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    text-align: center;
+}
+
+.settings-segmented button:hover {
+    background: var(--bg-control-hover);
+    color: var(--text-primary);
+}
+
+.settings-segmented button.active {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(20, 18, 15, 0.08);
+}
+
+.settings-segmented span,
+.settings-segmented small {
+    display: block;
+    line-height: 1.25;
+}
+
+.settings-segmented span {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.settings-segmented small {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--text-tertiary);
 }
 
 .settings-select-trigger:hover,

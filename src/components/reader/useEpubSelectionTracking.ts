@@ -13,6 +13,7 @@ export function useEpubSelectionTracking(params: {
   containerRef: RefObject<HTMLDivElement | null>;
   lastMousePosRef: RefObject<{ x: number; y: number }>;
   setSelectedText: (text: string) => void;
+  setSelectedCfiRange: (cfiRange: string) => void;
   setSelectionToolbarPos: (pos: { x: number; y: number } | null) => void;
   setShowSelectionToolbar: (show: boolean) => void;
   setShowSelectionHint: (show: boolean) => void;
@@ -23,6 +24,7 @@ export function useEpubSelectionTracking(params: {
     containerRef,
     lastMousePosRef,
     setSelectedText,
+    setSelectedCfiRange,
     setSelectionToolbarPos,
     setShowSelectionToolbar,
     setShowSelectionHint,
@@ -54,7 +56,7 @@ export function useEpubSelectionTracking(params: {
       }
     };
 
-    const updateSelectionFromWindow = (win: Window) => {
+    const updateSelectionFromWindow = (win: Window, cfiRange = '') => {
       const iframe = containerRef.current?.querySelector('iframe') ?? null;
       const selection = getSelectionFromEpubContent({
         win,
@@ -66,6 +68,7 @@ export function useEpubSelectionTracking(params: {
       if (selection.text !== lastSelectedText) {
         lastSelectedText = selection.text;
         setSelectedText(selection.text);
+        setSelectedCfiRange(cfiRange);
       }
 
       if (selection.position) {
@@ -104,10 +107,10 @@ export function useEpubSelectionTracking(params: {
       setSelectionPollingInterval(rendition, selectionPollingInterval);
     };
 
-    const onSelected = (_cfiRange: any, contents: any) => {
+    const onSelected = (cfiRange: any, contents: any) => {
       try {
         if (contents?.window) {
-          updateSelectionFromWindow(contents.window);
+          updateSelectionFromWindow(contents.window, typeof cfiRange === 'string' ? cfiRange : '');
         }
       } catch (e) {
         logger.warn('Failed to get selection from epub event:', e);
@@ -135,5 +138,5 @@ export function useEpubSelectionTracking(params: {
       if (cleanupRef.current) cleanupRef.current();
       cleanupRef.current = null;
     };
-  }, [renditionKey, setSelectedText, setSelectionToolbarPos, setShowSelectionHint, setShowSelectionToolbar]);
+  }, [renditionKey, setSelectedText, setSelectedCfiRange, setSelectionToolbarPos, setShowSelectionHint, setShowSelectionToolbar]);
 }

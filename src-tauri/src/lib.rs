@@ -71,6 +71,25 @@ fn new_ai_command(cmd_name: &str) -> TokioCommand {
     cmd
 }
 
+fn new_hermes_command() -> TokioCommand {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    let hermes_root = PathBuf::from(home).join(".hermes").join("hermes-agent");
+    let hermes_script = hermes_root.join("hermes");
+    let hermes_python = hermes_root.join("venv").join("bin").join("python");
+
+    if hermes_python.exists() && hermes_script.exists() {
+        let python_path = hermes_python.to_string_lossy().to_string();
+        let mut cmd = TokioCommand::new(&python_path);
+        configure_command_path(&mut cmd, &python_path);
+        cmd.arg(hermes_script.to_string_lossy().to_string());
+        cmd
+    } else {
+        new_ai_command("hermes")
+    }
+}
+
 // Greet command (keep for testing)
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -92,6 +111,7 @@ pub struct ChatRequest {
     pub context: Option<String>,
     pub book_title: Option<String>,
     pub chapter_content: Option<String>,
+    pub conversation_summary: Option<String>,
     pub history: Option<Vec<ChatHistoryItem>>,
     pub provider: Option<String>, // Optional: specify provider per request
     pub model: Option<String>,    // Optional: specify model (e.g., "sonnet", "opus", "haiku")
@@ -101,6 +121,15 @@ pub struct ChatRequest {
 pub struct ChatHistoryItem {
     pub role: String,
     pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SummarizeConversationRequest {
+    pub existing_summary: Option<String>,
+    pub messages: Vec<ChatHistoryItem>,
+    pub book_title: Option<String>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,9 +177,9 @@ fn build_prompt(request: &ChatRequest) -> String {
     let mut prompt_parts = Vec::new();
 
     // System context
-    prompt_parts.push(r#"你是用户的**首席深度思维教练（Chief Thinking Coach）**。你的任务是利用人类文明中最优秀的思维模型，拆解问题本质，提供极具洞察力、批判性和启发性的回应。
+    prompt_parts.push(r#"你是一个极其出色的阅读助手，同时诚实、并且关心这个世界。
 
-永远不要出现"不是···，而是"的句式。不要出现破折号。不要用emjio表情。
+永远不要出现"不是···，而是"的句式。不要出现破折号。不要用 emoji 表情。
 
 - 自然语言与流畅度："像和熟人聊天一样重写这个"、"像在喝咖啡时和同事聊天一样解释这个"。
 
@@ -179,7 +208,7 @@ fn build_prompt(request: &ChatRequest) -> String {
             content.clone()
         };
         prompt_parts.push(format!(
-            "\n\nCurrent chapter content:\n---\n{}\n---",
+            "\n\nChapter background context:\n---\n{}\n---",
             truncated
         ));
     }
@@ -189,12 +218,21 @@ fn build_prompt(request: &ChatRequest) -> String {
         prompt_parts.push(format!("\n\nUser has selected this text: \"{}\"", ctx));
     }
 
+    if let Some(ref summary) = request.conversation_summary {
+        if !summary.trim().is_empty() {
+            prompt_parts.push(format!(
+                "\n\nConversation memory summary. This is hidden running memory from earlier turns, not source text from the book:\n---\n{}\n---",
+                summary.trim()
+            ));
+        }
+    }
+
     // Include recent conversation history for context
     if let Some(ref history) = request.history {
         if !history.is_empty() {
             prompt_parts.push("\n\nRecent conversation:".to_string());
-            // Only include last 5 messages to avoid too long prompts
-            let recent: Vec<_> = history.iter().rev().take(5).rev().collect();
+            // Frontend controls the history window size from user settings.
+            let recent: Vec<_> = history.iter().collect();
             for item in recent {
                 let role_label = if item.role == "user" {
                     "User"
@@ -209,6 +247,39 @@ fn build_prompt(request: &ChatRequest) -> String {
     // Current user message
     prompt_parts.push(format!("\n\nUser's current question: {}", request.message));
     prompt_parts.push("\n\nPlease respond helpfully:".to_string());
+
+    prompt_parts.join("")
+}
+
+fn build_summary_prompt(request: &SummarizeConversationRequest) -> String {
+    let mut prompt_parts = Vec::new();
+    prompt_parts.push(r#"你在维护一个阅读器 AI 对话的隐藏摘要记忆。请把旧对话压缩成一份短而有用的中文摘要，供后续继续回答用户问题时使用。
+
+要求：
+- 保留用户正在理解的问题、关键概念、已经形成的解释、未解决的疑问、用户偏好。
+- 删除寒暄、重复、失败重试、临时 UI 操作。
+- 不要把摘要写成书中原文；如果是对话推断，要保留这是对话记忆的语气。
+- 控制在 800 字以内。
+- 只输出摘要正文，不要标题。"#.to_string());
+
+    if let Some(ref title) = request.book_title {
+        prompt_parts.push(format!("\n\nCurrent book: \"{}\"", title));
+    }
+
+    if let Some(ref summary) = request.existing_summary {
+        if !summary.trim().is_empty() {
+            prompt_parts.push(format!(
+                "\n\nExisting hidden summary:\n---\n{}\n---",
+                summary.trim()
+            ));
+        }
+    }
+
+    prompt_parts.push("\n\nMessages to fold into the summary:".to_string());
+    for item in request.messages.iter() {
+        let role_label = if item.role == "user" { "User" } else { "Assistant" };
+        prompt_parts.push(format!("{}: {}", role_label, item.content));
+    }
 
     prompt_parts.join("")
 }
@@ -238,6 +309,7 @@ fn find_command(cmd: &str) -> String {
 
     // Build list of paths to check - prioritize common locations
     let mut paths = vec![
+        format!("{}/.hermes/hermes-agent/{}", home, cmd), // Hermes local agent
         format!("{}/.local/bin/{}", home, cmd), // ~/.local/bin (Codex CLI)
         format!("{}/.cargo/bin/{}", home, cmd), // Cargo installs
         format!("{}/.bun/bin/{}", home, cmd),   // Bun installs
@@ -334,6 +406,30 @@ async fn try_opencode(prompt: &str) -> Option<String> {
     let output = run_with_timeout({
         let mut cmd = new_ai_command("opencode");
         cmd.arg("run").arg(prompt);
+        cmd
+    })
+    .await?;
+
+    if output.status.success() {
+        let response = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !response.is_empty() {
+            return Some(response);
+        }
+    }
+
+    None
+}
+
+async fn try_hermes(prompt: &str, model: Option<&str>) -> Option<String> {
+    let output = run_with_timeout({
+        let mut cmd = new_hermes_command();
+        cmd.arg("-z").arg(prompt);
+        if let Some(m) = model {
+            let trimmed = m.trim();
+            if !trimmed.is_empty() {
+                cmd.arg("--model").arg(trimmed);
+            }
+        }
         cmd
     })
     .await?;
@@ -516,12 +612,27 @@ async fn do_check_ai_availability() -> Vec<AIProviderInfo> {
         })
         .await
     });
+    let hermes_task = tokio::spawn(async move {
+        check_cli_available({
+            let mut cmd = new_hermes_command();
+            cmd.arg("--version");
+            cmd
+        })
+        .await
+    });
 
     let codex_available = codex_task.await.unwrap_or(false);
     let claude_available = claude_task.await.unwrap_or(false);
     let opencode_available = opencode_task.await.unwrap_or(false);
+    let hermes_available = hermes_task.await.unwrap_or(false);
 
     vec![
+        AIProviderInfo {
+            id: "hermes".to_string(),
+            name: "Hermes".to_string(),
+            model: "Hermes Agent".to_string(),
+            available: hermes_available,
+        },
         AIProviderInfo {
             id: "codex".to_string(),
             name: "Codex CLI".to_string(),
@@ -587,7 +698,7 @@ fn get_ai_provider() -> Option<String> {
 // Set AI provider
 #[tauri::command]
 fn set_ai_provider(provider: String) -> Result<(), String> {
-    let valid_providers = ["codex", "claude", "opencode", "gemini"];
+    let valid_providers = ["hermes", "codex", "claude", "opencode", "gemini"];
     if !valid_providers.contains(&provider.as_str()) {
         return Err(format!(
             "Invalid provider: {}. Valid options: {:?}",
@@ -629,14 +740,15 @@ fn reset_ai_cancel() {
 #[tauri::command]
 async fn chat_with_ai(message: String, context: Option<String>) -> Result<String, String> {
     let request = ChatRequest {
-        message,
-        context,
-        book_title: None,
-        chapter_content: None,
-        history: None,
-        provider: None,
-        model: None,
-    };
+            message,
+            context,
+            book_title: None,
+            chapter_content: None,
+            conversation_summary: None,
+            history: None,
+            provider: None,
+            model: None,
+        };
 
     chat_with_ai_advanced(request).await
 }
@@ -669,6 +781,11 @@ async fn chat_with_ai_advanced(request: ChatRequest) -> Result<String, String> {
                 return Ok(response);
             }
         }
+        "hermes" => {
+            if let Some(response) = try_hermes(&prompt, request.model.as_deref()).await {
+                return Ok(response);
+            }
+        }
         "gemini" => {
             if let Some(response) = try_gemini(&prompt).await {
                 return Ok(response);
@@ -679,15 +796,17 @@ async fn chat_with_ai_advanced(request: ChatRequest) -> Result<String, String> {
 
     // Fallback: try other providers if selected one fails
     let fallback_order = match provider.as_str() {
-        "codex" => vec!["claude", "opencode"],
-        "claude" => vec!["codex", "opencode"],
-        "opencode" => vec!["codex", "claude"],
-        "gemini" => vec!["codex", "claude", "opencode"],
-        _ => vec!["codex", "claude", "opencode"],
+        "hermes" => vec!["claude", "codex", "opencode"],
+        "codex" => vec!["claude", "hermes", "opencode"],
+        "claude" => vec!["hermes", "codex", "opencode"],
+        "opencode" => vec!["hermes", "codex", "claude"],
+        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
+        _ => vec!["hermes", "codex", "claude", "opencode"],
     };
 
     for fallback in fallback_order {
         let response = match fallback {
+            "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
             "codex" => try_codex(&prompt).await,
             "claude" => try_claude(&prompt, request.model.as_deref()).await,
             "opencode" => try_opencode(&prompt).await,
@@ -699,7 +818,57 @@ async fn chat_with_ai_advanced(request: ChatRequest) -> Result<String, String> {
         }
     }
 
-    Err("No AI CLI available. Please install one of: codex, claude, gemini, or opencode CLI.".to_string())
+    Err("No AI CLI available. Please install one of: hermes, codex, claude, or opencode CLI.".to_string())
+}
+
+#[tauri::command]
+async fn summarize_ai_conversation(request: SummarizeConversationRequest) -> Result<String, String> {
+    if request.messages.is_empty() {
+        return Ok(request.existing_summary.unwrap_or_default());
+    }
+
+    let prompt = build_summary_prompt(&request);
+    let provider = request
+        .provider
+        .or_else(|| SELECTED_PROVIDER.lock().ok()?.clone())
+        .unwrap_or_else(|| "claude".to_string());
+
+    let selected = match provider.as_str() {
+        "codex" => try_codex(&prompt).await,
+        "claude" => try_claude(&prompt, request.model.as_deref()).await,
+        "opencode" => try_opencode(&prompt).await,
+        "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
+        "gemini" => try_gemini(&prompt).await,
+        _ => None,
+    };
+    if let Some(response) = selected {
+        return Ok(response);
+    }
+
+    let fallback_order = match provider.as_str() {
+        "hermes" => vec!["claude", "codex", "opencode"],
+        "codex" => vec!["claude", "hermes", "opencode"],
+        "claude" => vec!["hermes", "codex", "opencode"],
+        "opencode" => vec!["hermes", "codex", "claude"],
+        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
+        _ => vec!["hermes", "codex", "claude", "opencode"],
+    };
+
+    for fallback in fallback_order {
+        let response = match fallback {
+            "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
+            "codex" => try_codex(&prompt).await,
+            "claude" => try_claude(&prompt, request.model.as_deref()).await,
+            "opencode" => try_opencode(&prompt).await,
+            "gemini" => try_gemini(&prompt).await,
+            _ => None,
+        };
+        if let Some(response) = response {
+            return Ok(response);
+        }
+    }
+
+    Err("No AI CLI available to summarize conversation.".to_string())
 }
 
 // Streaming chat with AI using Tauri Channel
@@ -736,6 +905,7 @@ async fn chat_with_ai_streaming(
         "codex" => try_codex(&prompt).await,
         "claude" => try_claude(&prompt, request.model.as_deref()).await, // Non-streaming fallback
         "opencode" => try_opencode(&prompt).await,
+        "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
         "gemini" => try_gemini(&prompt).await,
         _ => None,
     };
@@ -763,11 +933,12 @@ async fn chat_with_ai_streaming(
 
     // Try fallback providers
     let fallback_order = match provider.as_str() {
-        "codex" => vec!["claude", "opencode"],
-        "claude" => vec!["codex", "opencode"],
-        "opencode" => vec!["codex", "claude"],
-        "gemini" => vec!["codex", "claude", "opencode"],
-        _ => vec!["claude", "codex", "opencode"],
+        "hermes" => vec!["claude", "codex", "opencode"],
+        "codex" => vec!["claude", "hermes", "opencode"],
+        "claude" => vec!["hermes", "codex", "opencode"],
+        "opencode" => vec!["hermes", "codex", "claude"],
+        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
+        _ => vec!["hermes", "claude", "codex", "opencode"],
     };
 
     for fallback in fallback_order {
@@ -789,6 +960,7 @@ async fn chat_with_ai_streaming(
         }
 
         let result = match fallback {
+            "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
             "codex" => try_codex(&prompt).await,
             "claude" => try_claude(&prompt, request.model.as_deref()).await,
             "opencode" => try_opencode(&prompt).await,
@@ -819,7 +991,7 @@ async fn chat_with_ai_streaming(
     }
 
     let _ = on_event.send(StreamEvent::Error {
-        message: "No AI CLI available. Please install codex, claude, or opencode CLI."
+        message: "No AI CLI available. Please install hermes, codex, claude, or opencode CLI."
             .to_string(),
         provider: Some(provider),
     });
@@ -1257,6 +1429,7 @@ pub fn run() {
             chat_with_ai,
             chat_with_ai_advanced,
             chat_with_ai_streaming,
+            summarize_ai_conversation,
             check_ai_availability,
             refresh_ai_availability,
             get_ai_provider,
@@ -1351,6 +1524,7 @@ mod tests {
             context: Some("selected".to_string()),
             book_title: Some("Book".to_string()),
             chapter_content: Some("a".repeat(4000)),
+            conversation_summary: Some("Earlier conversation memory".to_string()),
             history: Some(vec![
                 ChatHistoryItem {
                     role: "user".to_string(),
@@ -1374,8 +1548,43 @@ mod tests {
         assert!(prompt.contains("User has selected this text: \"selected\""));
         assert!(prompt.contains("User's current question: What does this mean?"));
         assert!(prompt.contains("...[content truncated]"));
+        assert!(prompt.contains("Conversation memory summary"));
+        assert!(prompt.contains("Earlier conversation memory"));
         assert!(prompt.contains("Recent conversation:"));
         assert!(prompt.contains("User: u1"));
         assert!(prompt.contains("Assistant: a1"));
+    }
+
+    #[test]
+    fn build_summary_prompt_preserves_existing_summary_and_messages() {
+        let request = SummarizeConversationRequest {
+            existing_summary: Some("旧摘要".to_string()),
+            messages: vec![
+                ChatHistoryItem {
+                    role: "user".to_string(),
+                    content: "我关心机会成本".to_string(),
+                },
+                ChatHistoryItem {
+                    role: "assistant".to_string(),
+                    content: "机会成本是决策比较的核心。".to_string(),
+                },
+            ],
+            book_title: Some("Book".to_string()),
+            provider: None,
+            model: None,
+        };
+
+        let prompt = build_summary_prompt(&request);
+        assert!(prompt.contains("Existing hidden summary"));
+        assert!(prompt.contains("旧摘要"));
+        assert!(prompt.contains("Current book: \"Book\""));
+        assert!(prompt.contains("User: 我关心机会成本"));
+        assert!(prompt.contains("Assistant: 机会成本是决策比较的核心。"));
+    }
+
+    #[test]
+    fn hermes_provider_is_valid() {
+        assert!(set_ai_provider("hermes".to_string()).is_ok());
+        assert_eq!(get_ai_provider(), Some("hermes".to_string()));
     }
 }
