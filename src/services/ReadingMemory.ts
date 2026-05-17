@@ -7,6 +7,7 @@ import {
 
 export {
   buildReadingMemoryMarkdown,
+  buildReadingMemoryIngestInput,
   classifyReadingMemoryCandidate,
   type ReadingMemoryCandidate,
   type ReadingMemoryIngestInput,

@@ -29,6 +29,7 @@
 ### AI 对话助手
 - **多提供商支持**: Hermes Agent / Claude Code / Codex CLI / OpenCode
 - **上下文关联**: 自动传递当前阅读内容
+- **冻结阅读快照**: 用户发问时冻结当前书籍、进度、选区、CFI、累积摘录和章节内容，AI 请求与 Reading Memory 写入复用同一份上下文
 - **智能裁剪**: 有选中文本时优先使用选区，并只附带少量章节周边背景，减少重复上下文
 - **文字选择**: 选中文字直接询问 AI，并记录选区 CFI 用于来源追溯
 - **对话历史**: 本地持久化保存
@@ -45,6 +46,14 @@
 - **可追溯**: 每条笔记保留书籍、作者、章节、进度和 EPUB CFI 等来源信息
 
 ## 更新日志
+
+### v0.2.2 (2026-05-17)
+- **阅读上下文边界**: 新增 `ReadingContextSnapshot`，AI 请求和 Reading Memory ingestion 都从发问时冻结的阅读快照派生，避免流式回答期间翻页或重选文本导致上下文漂移
+- **领域层整理**: 新增 `src/domain/`，收拢 AI 请求组装、章节上下文裁剪、Reading Memory Markdown/ingestion 逻辑和阅读快照类型
+- **AI Provider 路由**: 后端统一 provider 选择、fallback 顺序和模型参数处理，Claude/Hermes 模型仅在非空时传给 CLI
+- **Claude 模型输入**: 设置面板中的 Claude 模型改为手动输入，便于使用 `opus-4.7` 等新模型名
+- **AI CLI 隔离**: CReader 启动 Claude/Codex/Hermes/OpenCode 时使用专用 `~/.creader/ai-workdir`，避免继承应用源码目录触发不必要的 Downloads 权限弹窗
+- **侧栏体验**: 当前正在阅读的书会自动排到左侧书单顶部，标签区默认收起，侧栏收起/展开按钮改为更扁平的原生桌面样式
 
 ### v0.2.1 (2026-05-17)
 - **Reading Memory**: 改为 AI 审稿后直接写入 `books/`、`concepts/`、`questions/`、`claims/`
@@ -151,6 +160,7 @@ AI 回答完成后，CReader 会先让 AI 判断这一轮是否值得写入 Read
 creader/
 ├── src/                    # 前端源码
 │   ├── components/         # React 组件
+│   ├── domain/             # 纯领域逻辑 (AI 请求、Reading Memory、阅读上下文快照)
 │   ├── stores/             # 状态管理 (Context)
 │   ├── services/           # 服务层 (导入、存储、封面、搜索等)
 │   ├── types/              # TypeScript 类型

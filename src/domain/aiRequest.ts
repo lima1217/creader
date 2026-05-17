@@ -1,5 +1,7 @@
-import type { Book, ChatMessage, Settings } from '../types';
+import type { ChatMessage, Settings } from '../types';
 import { buildSmartChapterContext } from './contextWindow';
+import type { ReadingContextSnapshot } from './readingSource';
+import { getReadingFocusTexts } from './readingSource';
 
 export interface ChatRequest {
   message: string;
@@ -18,14 +20,11 @@ export function buildAIModelSettings(settings: Pick<Settings, 'aiProvider' | 'ai
   return undefined;
 }
 
-export function combineFocusTexts(selectedText: string, accumulatedTexts: string[]): {
+export function buildContextFromReadingSnapshot(snapshot: ReadingContextSnapshot): {
   focusTexts: string[];
   combinedContext?: string;
 } {
-  const focusTexts: string[] = [];
-  if (selectedText) focusTexts.push(selectedText);
-  if (accumulatedTexts.length > 0) focusTexts.push(...accumulatedTexts);
-
+  const focusTexts = getReadingFocusTexts(snapshot);
   return {
     focusTexts,
     combinedContext: focusTexts.length > 0 ? focusTexts.join('\n\n---\n\n') : undefined,
@@ -51,21 +50,20 @@ export function createUserChatMessage(params: {
 
 export function buildChatRequest(params: {
   message: string;
-  combinedContext?: string;
-  currentBook?: Book | null;
-  currentChapterContent?: string;
-  focusTexts: string[];
+  readingContext: ReadingContextSnapshot;
   conversationSummary?: string;
   chatMessages: ChatMessage[];
   settings: Pick<Settings, 'aiProvider' | 'aiModel' | 'hermesModel' | 'aiContextWindow'>;
 }): ChatRequest {
+  const derivedContext = buildContextFromReadingSnapshot(params.readingContext);
+
   return {
     message: params.message,
-    context: params.combinedContext,
-    book_title: params.currentBook?.title,
+    context: derivedContext.combinedContext,
+    book_title: params.readingContext.book?.title,
     chapter_content: buildSmartChapterContext({
-      chapterContent: params.currentChapterContent,
-      focusTexts: params.focusTexts,
+      chapterContent: params.readingContext.chapterContent,
+      focusTexts: derivedContext.focusTexts,
     }),
     conversation_summary: params.conversationSummary,
     history: params.chatMessages.slice(-params.settings.aiContextWindow).map(message => ({

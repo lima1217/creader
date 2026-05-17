@@ -38,6 +38,7 @@
 - Auto summarization keeps old chat turns as hidden `ConversationMemory`; do not render that summary as a chat message or ingest it directly into Reading Memory.
 - Chapter context is smart-trimmed by `src/components/ai/contextWindow.ts`: selected or accumulated text is the focus, and chapter text should only provide nearby background when useful.
 - EPUB selected CFI ranges are captured as `selectedCfiRange` and persisted on `ChatMessage.contextCfi` for Reading Memory source tracing; keep this separate from the plain text smart-trimming path.
+- AI requests and Reading Memory ingestion should derive reader state from a frozen `ReadingContextSnapshot` in `src/domain/readingSource.ts` instead of re-reading live reader state after a user message is sent.
 
 ## Reading Memory
 - Reading Memory is a user-selected local Markdown repository, not an internal database.

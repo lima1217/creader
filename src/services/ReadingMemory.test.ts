@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Book, ChatMessage } from '../types';
-import { buildReadingMemoryMarkdown, classifyReadingMemoryCandidate } from '../domain/readingMemory';
+import { buildReadingMemoryIngestInput, buildReadingMemoryMarkdown, classifyReadingMemoryCandidate } from '../domain/readingMemory';
+import { buildReadingContextSnapshot } from '../domain/readingSource';
 
 const book: Book = {
   id: 'book-1',
@@ -108,5 +109,39 @@ describe('ReadingMemory markdown', () => {
 
     expect(candidate.shouldIngest).toBe(true);
     expect(candidate.confidence).toBe(0.9);
+  });
+
+  it('builds ingest input from a frozen reading context snapshot', () => {
+    const userMessage = message('user', '解释这段', {
+      context: 'selected from message',
+      contextCfi: 'epubcfi(/6/4,/1:0,/1:10)',
+    });
+    const assistantMessage = message('assistant', '这是一个可复用概念。');
+    const readingContext = buildReadingContextSnapshot({
+      book,
+      progress: { currentCfi: 'epubcfi(/6/4)', percentage: 55, currentChapter: 'Chapter 3' },
+      selectedText: 'selected from reader',
+      selectedCfiRange: 'epubcfi(/6/4,/1:0,/1:20)',
+      chapterContent: 'chapter content',
+    });
+
+    expect(buildReadingMemoryIngestInput({
+      rootPath: '/tmp/memory',
+      readingContext,
+      userMessage,
+      assistantMessage,
+    })).toMatchObject({
+      rootPath: '/tmp/memory',
+      book: {
+        ...book,
+        progress: { currentCfi: 'epubcfi(/6/4)', percentage: 55, currentChapter: 'Chapter 3' },
+      },
+      userMessage,
+      assistantMessage,
+      selectedContext: 'selected from message',
+      selectedCfiRange: 'epubcfi(/6/4,/1:0,/1:10)',
+      currentChapter: 'chapter content',
+      progress: { currentCfi: 'epubcfi(/6/4)', percentage: 55, currentChapter: 'Chapter 3' },
+    });
   });
 });

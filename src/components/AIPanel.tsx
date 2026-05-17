@@ -4,7 +4,7 @@ import { useAI, useBookProgress, useLibrary, useSettings, useUI } from '../store
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
 import { perfMark, perfMeasure } from '../utils/perf';
-import { ingestReadingMemoryDirect } from '../services/ReadingMemory';
+import { buildReadingMemoryIngestInput, ingestReadingMemoryDirect } from '../services/ReadingMemory';
 import type { ChatMessage } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
 // Import from refactored modules
@@ -18,7 +18,9 @@ import {
     loadQuickActionConfigs,
     QUICK_ACTIONS_CHANGED_EVENT,
 } from './ai/quickActions';
-import { buildAIModelSettings, buildChatRequest, combineFocusTexts, createUserChatMessage } from '../domain/aiRequest';
+import { buildAIModelSettings, buildChatRequest, buildContextFromReadingSnapshot, createUserChatMessage } from '../domain/aiRequest';
+import { buildReadingContextSnapshot } from '../domain/readingSource';
+import type { ReadingContextSnapshot } from '../domain/readingSource';
 import { getMessagesToSummarize } from './ai/conversationMemory';
 import { createOnceCommitter } from './ai/streamCommit';
 import type { QuickActionConfig } from './ai/quickActions';
@@ -243,21 +245,26 @@ export function AIPanel() {
         await refreshAIAvailability();
     };
 
-    const autoIngestReadingMemory = useCallback(async (userMessage: ChatMessage, assistantMessage: ChatMessage) => {
+    const autoIngestReadingMemory = useCallback(async (
+        userMessage: ChatMessage,
+        assistantMessage: ChatMessage,
+        readingContext: ReadingContextSnapshot,
+    ) => {
         if (!isTauri) return;
-        if (!settings.readingMemoryAutoIngest || !settings.readingMemoryPath || !currentBook) return;
+        if (!settings.readingMemoryAutoIngest || !settings.readingMemoryPath || !readingContext.book) return;
 
         try {
             const model = buildAIModelSettings(settings);
-            await ingestReadingMemoryDirect({
+            const ingestInput = buildReadingMemoryIngestInput({
                 rootPath: settings.readingMemoryPath,
-                book: currentBook,
+                readingContext,
                 userMessage,
                 assistantMessage,
-                selectedContext: userMessage.context,
-                selectedCfiRange: userMessage.contextCfi,
-                currentChapter: currentChapterContent,
-                progress: bookProgressById[currentBook.id] || currentBook.progress,
+            });
+            if (!ingestInput) return;
+
+            await ingestReadingMemoryDirect({
+                ...ingestInput,
                 provider: settings.aiProvider,
                 model,
             });
@@ -265,9 +272,6 @@ export function AIPanel() {
             logger.warn('Reading Memory ingest skipped:', error);
         }
     }, [
-        bookProgressById,
-        currentBook,
-        currentChapterContent,
         isTauri,
         settings.aiModel,
         settings.aiProvider,
@@ -342,7 +346,15 @@ export function AIPanel() {
         if (!input.trim() || isLoading || isSendingRef.current) return;
         isSendingRef.current = true;
 
-        const { focusTexts, combinedContext } = combineFocusTexts(selectedText, accumulatedTexts);
+        const readingContext = buildReadingContextSnapshot({
+            book: currentBook,
+            progress: currentBook ? bookProgressById[currentBook.id] || currentBook.progress : undefined,
+            selectedText,
+            selectedCfiRange,
+            accumulatedTexts,
+            chapterContent: currentChapterContent,
+        });
+        const { combinedContext } = buildContextFromReadingSnapshot(readingContext);
         const userMessageTimestamp = Date.now();
 
         const userMessage = createUserChatMessage({
@@ -350,7 +362,7 @@ export function AIPanel() {
             content: input.trim(),
             timestamp: userMessageTimestamp,
             context: combinedContext,
-            contextCfi: selectedCfiRange || undefined,
+            contextCfi: readingContext.selection?.cfiRange,
         });
 
         addChatMessage(userMessage);
@@ -379,10 +391,7 @@ export function AIPanel() {
 
             const request: ChatRequest = buildChatRequest({
                 message: messageToSend,
-                combinedContext,
-                currentBook,
-                currentChapterContent,
-                focusTexts,
+                readingContext,
                 conversationSummary,
                 chatMessages,
                 settings,
@@ -411,7 +420,7 @@ export function AIPanel() {
                     timestamp: Date.now(),
                 };
                 addChatMessage(assistantMessage);
-                void autoIngestReadingMemory(userMessage, assistantMessage);
+                void autoIngestReadingMemory(userMessage, assistantMessage, readingContext);
             });
 
             const scheduleFlush = () => {
