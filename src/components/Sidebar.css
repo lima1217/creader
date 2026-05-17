@@ -319,7 +319,7 @@
     box-sizing: border-box;
     border: 1px solid transparent;
     position: relative;
-    padding-right: 44px;
+    padding-right: var(--space-2);
 }
 
 .book-item:hover {
@@ -424,6 +424,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    max-width: calc(100% - 92px);
 }
 
 /* Book Progress */
@@ -447,62 +448,67 @@
 .book-actions {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
     position: absolute;
-    top: 50%;
+    bottom: var(--space-2);
     right: var(--space-2);
-    transform: translateY(-50%);
+    transform: translateX(2px);
     justify-content: flex-end;
-    padding: 3px;
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--bg-primary) 88%, white);
-    border: 1px solid var(--border-secondary);
-    box-shadow: var(--shadow-sm);
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
     opacity: 0;
     pointer-events: none;
-    transition: opacity var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast);
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
 }
 
 .book-item:hover .book-actions,
 .book-item:focus-within .book-actions {
     opacity: 1;
     pointer-events: auto;
+    transform: translateX(0);
 }
 
 .book-item.active .book-actions {
-    background: color-mix(in srgb, var(--bg-primary) 82%, var(--accent) 18%);
-    border-color: rgba(var(--accent-rgb), 0.18);
+    background: transparent;
+    border-color: transparent;
 }
 
 .book-delete,
 .book-edit,
 .book-action-btn {
     opacity: 1;
-    transition: background-color var(--transition-fast), color var(--transition-fast);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
     color: var(--text-secondary);
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    background: transparent;
+    background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+    border: 1px solid var(--border-soft);
     border-radius: var(--radius-sm);
+    box-shadow: none;
 }
 
 .book-delete svg,
 .book-edit svg,
 .book-action-btn svg {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
 }
 
 .book-delete:hover {
     color: var(--error);
-    background: rgba(239, 68, 68, 0.10);
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.18);
 }
 
 .book-edit:hover,
 .book-action-btn:hover {
     color: var(--accent);
-    background: rgba(var(--accent-rgb), 0.10);
+    background: var(--bg-control-hover);
+    border-color: var(--border-primary);
 }
 
 /* Modals */
@@ -745,7 +751,7 @@
 
 .book-item {
     gap: 10px;
-    padding: 8px 42px 8px 8px;
+    padding: 8px;
     border: 1px solid transparent;
     border-radius: var(--radius-surface);
     transition: background-color var(--transition-fast), border-color var(--transition-fast);
@@ -814,6 +820,7 @@
 .book-item.active .book-progress,
 .book-item:hover .book-progress {
     height: 3px;
+    max-width: calc(100% - 92px);
 }
 
 .book-progress-bar {
@@ -821,25 +828,28 @@
 }
 
 .book-actions {
-    right: 7px;
-    gap: 2px;
-    padding: 2px;
-    background: var(--bg-elevated);
-    border-color: var(--border-secondary);
-    box-shadow: var(--shadow-float);
+    bottom: 8px;
+    right: 8px;
+    gap: 4px;
+    padding: 0;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
 }
 
 .book-item.active .book-actions {
-    background: var(--bg-elevated);
-    border-color: var(--border-accent);
+    background: transparent;
+    border-color: transparent;
 }
 
 .book-delete,
 .book-edit,
 .book-action-btn {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+    border: 1px solid var(--border-soft);
 }
 
 .book-delete:hover,
@@ -920,15 +930,15 @@
 }
 
 .book-actions {
-    border-radius: 6px;
+    border-radius: 0;
 }
 
 .book-delete,
 .book-edit,
 .book-action-btn,
 .btn-icon-sm {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     border-radius: 4px;
 }
 
