@@ -143,6 +143,13 @@ export const TocSidebarIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) 
   </svg>
 );
 
+export const SidebarPanelIcon = ({ size = 20, strokeWidth = 1.8 }: StrokeIconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
+    <rect x="5" y="4" width="14" height="16" rx="3.2" />
+    <line x1="10" y1="7" x2="10" y2="17" />
+  </svg>
+);
+
 export const CloseIcon = ({ size = 18, strokeWidth = 2 }: StrokeIconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
     <line x1="18" y1="6" x2="6" y2="18" />

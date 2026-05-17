@@ -18,7 +18,7 @@ import {
     loadQuickActionConfigs,
     QUICK_ACTIONS_CHANGED_EVENT,
 } from './ai/quickActions';
-import { buildSmartChapterContext } from './ai/contextWindow';
+import { buildAIModelSettings, buildChatRequest, combineFocusTexts, createUserChatMessage } from '../domain/aiRequest';
 import { getMessagesToSummarize } from './ai/conversationMemory';
 import { createOnceCommitter } from './ai/streamCommit';
 import type { QuickActionConfig } from './ai/quickActions';
@@ -248,11 +248,7 @@ export function AIPanel() {
         if (!settings.readingMemoryAutoIngest || !settings.readingMemoryPath || !currentBook) return;
 
         try {
-            const model = settings.aiProvider === 'claude'
-                ? settings.aiModel
-                : settings.aiProvider === 'hermes'
-                    ? settings.hermesModel
-                    : undefined;
+            const model = buildAIModelSettings(settings);
             await ingestReadingMemoryDirect({
                 rootPath: settings.readingMemoryPath,
                 book: currentBook,
@@ -273,6 +269,9 @@ export function AIPanel() {
         currentBook,
         currentChapterContent,
         isTauri,
+        settings.aiModel,
+        settings.aiProvider,
+        settings.hermesModel,
         settings.readingMemoryAutoIngest,
         settings.readingMemoryPath,
     ]);
@@ -302,11 +301,7 @@ export function AIPanel() {
             })),
             book_title: currentBook?.title,
             provider: settings.aiProvider,
-            model: settings.aiProvider === 'claude'
-                ? settings.aiModel
-                : settings.aiProvider === 'hermes'
-                    ? settings.hermesModel
-                    : undefined,
+            model: buildAIModelSettings(settings),
         };
 
         try {
@@ -347,28 +342,16 @@ export function AIPanel() {
         if (!input.trim() || isLoading || isSendingRef.current) return;
         isSendingRef.current = true;
 
-        // Combine selected text and accumulated texts as context
-        const allContext: string[] = [];
-        if (selectedText) {
-            allContext.push(selectedText);
-        }
-        if (accumulatedTexts.length > 0) {
-            allContext.push(...accumulatedTexts);
-        }
-        const combinedContext = allContext.length > 0 ? allContext.join('\n\n---\n\n') : undefined;
-        const smartChapterContext = buildSmartChapterContext({
-            chapterContent: currentChapterContent,
-            focusTexts: allContext,
-        });
+        const { focusTexts, combinedContext } = combineFocusTexts(selectedText, accumulatedTexts);
+        const userMessageTimestamp = Date.now();
 
-        const userMessage: ChatMessage = {
-            id: Date.now().toString(),
-            role: 'user',
+        const userMessage = createUserChatMessage({
+            id: userMessageTimestamp.toString(),
             content: input.trim(),
-            timestamp: Date.now(),
+            timestamp: userMessageTimestamp,
             context: combinedContext,
             contextCfi: selectedCfiRange || undefined,
-        };
+        });
 
         addChatMessage(userMessage);
         const messageToSend = input.trim();
@@ -394,23 +377,16 @@ export function AIPanel() {
             await invoke('reset_ai_cancel');
             const conversationSummary = await ensureConversationMemory();
 
-            const request: ChatRequest = {
+            const request: ChatRequest = buildChatRequest({
                 message: messageToSend,
-                context: combinedContext,
-                book_title: currentBook?.title,
-                chapter_content: smartChapterContext,
-                conversation_summary: conversationSummary,
-                history: chatMessages.slice(-settings.aiContextWindow).map(m => ({
-                    role: m.role,
-                    content: m.content,
-                })),
-                provider: settings.aiProvider,
-                model: settings.aiProvider === 'claude'
-                    ? settings.aiModel
-                    : settings.aiProvider === 'hermes'
-                        ? settings.hermesModel
-                        : undefined,
-            };
+                combinedContext,
+                currentBook,
+                currentChapterContent,
+                focusTexts,
+                conversationSummary,
+                chatMessages,
+                settings,
+            });
 
             // Create a channel to receive streaming events
             const onEvent = new Channel<StreamEvent>();

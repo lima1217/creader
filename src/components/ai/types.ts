@@ -1,3 +1,5 @@
+import type { ChatRequest } from '../../domain/aiRequest';
+
 /**
  * AI Panel Type Definitions
  */
@@ -9,16 +11,7 @@ export interface AIProviderInfo {
     available: boolean;
 }
 
-export interface ChatRequest {
-    message: string;
-    context?: string;
-    book_title?: string;
-    chapter_content?: string;
-    conversation_summary?: string;
-    history?: { role: string; content: string }[];
-    provider?: string;
-    model?: string;
-}
+export type { ChatRequest };
 
 export interface SummarizeConversationRequest {
     existing_summary?: string;

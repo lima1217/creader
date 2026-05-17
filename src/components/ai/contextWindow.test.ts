@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSmartChapterContext } from './contextWindow';
+import { buildSmartChapterContext } from '../../domain/contextWindow';
 
 describe('buildSmartChapterContext', () => {
   it('returns full chapter content when there is no focus text', () => {

@@ -23,9 +23,27 @@
 }
 
 .sidebar-toggle-btn {
-    width: 36px;
-    height: 36px;
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    min-height: 30px;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    box-shadow: none;
+    opacity: 0.9;
+    transition: background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.sidebar-toggle-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
     color: var(--text-secondary);
+    opacity: 1;
+}
+
+.sidebar-toggle-btn:active:not(:disabled) {
+    transform: none;
 }
 
 .sidebar-header-actions {
@@ -845,10 +863,11 @@
 }
 
 .sidebar-toggle-btn {
-    width: 36px;
-    min-width: 36px;
-    height: 36px;
-    border-radius: 4px;
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    min-height: 30px;
+    border-radius: 6px;
 }
 
 .sidebar-header-actions {

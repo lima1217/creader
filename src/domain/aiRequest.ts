@@ -1,0 +1,78 @@
+import type { Book, ChatMessage, Settings } from '../types';
+import { buildSmartChapterContext } from './contextWindow';
+
+export interface ChatRequest {
+  message: string;
+  context?: string;
+  book_title?: string;
+  chapter_content?: string;
+  conversation_summary?: string;
+  history?: { role: string; content: string }[];
+  provider?: string;
+  model?: string;
+}
+
+export function buildAIModelSettings(settings: Pick<Settings, 'aiProvider' | 'aiModel' | 'hermesModel'>): string | undefined {
+  if (settings.aiProvider === 'claude') return settings.aiModel;
+  if (settings.aiProvider === 'hermes') return settings.hermesModel;
+  return undefined;
+}
+
+export function combineFocusTexts(selectedText: string, accumulatedTexts: string[]): {
+  focusTexts: string[];
+  combinedContext?: string;
+} {
+  const focusTexts: string[] = [];
+  if (selectedText) focusTexts.push(selectedText);
+  if (accumulatedTexts.length > 0) focusTexts.push(...accumulatedTexts);
+
+  return {
+    focusTexts,
+    combinedContext: focusTexts.length > 0 ? focusTexts.join('\n\n---\n\n') : undefined,
+  };
+}
+
+export function createUserChatMessage(params: {
+  id: string;
+  content: string;
+  timestamp: number;
+  context?: string;
+  contextCfi?: string;
+}): ChatMessage {
+  return {
+    id: params.id,
+    role: 'user',
+    content: params.content.trim(),
+    timestamp: params.timestamp,
+    context: params.context,
+    contextCfi: params.contextCfi || undefined,
+  };
+}
+
+export function buildChatRequest(params: {
+  message: string;
+  combinedContext?: string;
+  currentBook?: Book | null;
+  currentChapterContent?: string;
+  focusTexts: string[];
+  conversationSummary?: string;
+  chatMessages: ChatMessage[];
+  settings: Pick<Settings, 'aiProvider' | 'aiModel' | 'hermesModel' | 'aiContextWindow'>;
+}): ChatRequest {
+  return {
+    message: params.message,
+    context: params.combinedContext,
+    book_title: params.currentBook?.title,
+    chapter_content: buildSmartChapterContext({
+      chapterContent: params.currentChapterContent,
+      focusTexts: params.focusTexts,
+    }),
+    conversation_summary: params.conversationSummary,
+    history: params.chatMessages.slice(-params.settings.aiContextWindow).map(message => ({
+      role: message.role,
+      content: message.content,
+    })),
+    provider: params.settings.aiProvider,
+    model: buildAIModelSettings(params.settings),
+  };
+}

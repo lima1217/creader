@@ -66,10 +66,41 @@ fn configure_command_path(cmd: &mut TokioCommand, cmd_path: &str) {
     cmd.env("PATH", parts.join(":"));
 }
 
+fn ai_workdir() -> Option<PathBuf> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .filter(|value| !value.is_empty())?;
+    let home = PathBuf::from(home);
+    let workdir = home.join(".creader").join("ai-workdir");
+
+    if std::fs::create_dir_all(&workdir).is_ok() {
+        Some(workdir)
+    } else {
+        Some(home)
+    }
+}
+
+fn configure_ai_command(cmd: &mut TokioCommand, cmd_path: &str) {
+    configure_command_path(cmd, cmd_path);
+    if let Some(workdir) = ai_workdir() {
+        cmd.current_dir(workdir);
+    }
+}
+
+fn append_model_arg(cmd: &mut TokioCommand, model: Option<&str>) {
+    if let Some(m) = model {
+        let trimmed = m.trim();
+        if !trimmed.is_empty() {
+            cmd.arg("--model").arg(trimmed);
+        }
+    }
+}
+
 fn new_ai_command(cmd_name: &str) -> TokioCommand {
     let cmd_path = find_command(cmd_name);
     let mut cmd = TokioCommand::new(&cmd_path);
-    configure_command_path(&mut cmd, &cmd_path);
+    configure_ai_command(&mut cmd, &cmd_path);
     cmd
 }
 
@@ -84,7 +115,7 @@ fn new_hermes_command() -> TokioCommand {
     if hermes_python.exists() && hermes_script.exists() {
         let python_path = hermes_python.to_string_lossy().to_string();
         let mut cmd = TokioCommand::new(&python_path);
-        configure_command_path(&mut cmd, &python_path);
+        configure_ai_command(&mut cmd, &python_path);
         cmd.arg(hermes_script.to_string_lossy().to_string());
         cmd
     } else {
@@ -215,7 +246,8 @@ fn build_prompt(request: &ChatRequest) -> String {
     let mut prompt_parts = Vec::new();
 
     // System context
-    prompt_parts.push(r#"你是一个极其出色的阅读助手，同时诚实、并且关心这个世界。
+    prompt_parts.push(
+        r#"你是一个极其出色的阅读助手，同时诚实、并且关心这个世界。
 
 永远不要出现"不是···，而是"的句式。不要出现破折号。不要用 emoji 表情。
 
@@ -225,7 +257,9 @@ fn build_prompt(request: &ChatRequest) -> String {
 
 - 个性化触感："多用'你'和'我们'让内容更个人化"。
 
-- 技术平衡："简化技术信息，但保持准确性"、"像一个专家在进行随意交谈那样解释"。"#.to_string());
+- 技术平衡："简化技术信息，但保持准确性"、"像一个专家在进行随意交谈那样解释"。"#
+            .to_string(),
+    );
 
     // Book context
     if let Some(ref title) = request.book_title {
@@ -315,7 +349,11 @@ fn build_summary_prompt(request: &SummarizeConversationRequest) -> String {
 
     prompt_parts.push("\n\nMessages to fold into the summary:".to_string());
     for item in request.messages.iter() {
-        let role_label = if item.role == "user" { "User" } else { "Assistant" };
+        let role_label = if item.role == "user" {
+            "User"
+        } else {
+            "Assistant"
+        };
         prompt_parts.push(format!("{}: {}", role_label, item.content));
     }
 
@@ -440,9 +478,9 @@ fn find_command(cmd: &str) -> String {
     // Build list of paths to check - prioritize common locations
     let mut paths = vec![
         format!("{}/.hermes/hermes-agent/{}", home, cmd), // Hermes local agent
-        format!("{}/.local/bin/{}", home, cmd), // ~/.local/bin (Codex CLI)
-        format!("{}/.cargo/bin/{}", home, cmd), // Cargo installs
-        format!("{}/.bun/bin/{}", home, cmd),   // Bun installs
+        format!("{}/.local/bin/{}", home, cmd),           // ~/.local/bin (Codex CLI)
+        format!("{}/.cargo/bin/{}", home, cmd),           // Cargo installs
+        format!("{}/.bun/bin/{}", home, cmd),             // Bun installs
     ];
 
     // Check NVM versions dynamically
@@ -554,12 +592,7 @@ async fn try_hermes(prompt: &str, model: Option<&str>) -> Option<String> {
     let output = run_with_timeout({
         let mut cmd = new_hermes_command();
         cmd.arg("-z").arg(prompt);
-        if let Some(m) = model {
-            let trimmed = m.trim();
-            if !trimmed.is_empty() {
-                cmd.arg("--model").arg(trimmed);
-            }
-        }
+        append_model_arg(&mut cmd, model);
         cmd
     })
     .await?;
@@ -582,10 +615,7 @@ async fn try_claude(prompt: &str, model: Option<&str>) -> Option<String> {
         if AI_ALLOW_DANGEROUS_PERMISSIONS.load(Ordering::Relaxed) {
             cmd.arg("--dangerously-skip-permissions");
         }
-        // Add model parameter if specified
-        if let Some(m) = model {
-            cmd.arg("--model").arg(m);
-        }
+        append_model_arg(&mut cmd, model);
         cmd
     })
     .await?;
@@ -616,10 +646,7 @@ async fn try_claude_streaming(
         cmd.arg("--dangerously-skip-permissions");
     }
 
-    // Add model parameter if specified
-    if let Some(m) = model {
-        cmd.arg("--model").arg(m);
-    }
+    append_model_arg(&mut cmd, model);
 
     let mut child = cmd
         .stdout(Stdio::piped())
@@ -702,6 +729,34 @@ async fn try_claude_streaming(
         Some(full_text)
     } else {
         None
+    }
+}
+
+fn selected_ai_provider(provider: Option<String>) -> String {
+    provider
+        .or_else(|| SELECTED_PROVIDER.lock().ok()?.clone())
+        .unwrap_or_else(|| "claude".to_string())
+}
+
+fn ai_fallback_order(provider: &str) -> Vec<&'static str> {
+    match provider {
+        "hermes" => vec!["claude", "codex", "opencode"],
+        "codex" => vec!["claude", "hermes", "opencode"],
+        "claude" => vec!["hermes", "codex", "opencode"],
+        "opencode" => vec!["hermes", "codex", "claude"],
+        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
+        _ => vec!["hermes", "codex", "claude", "opencode"],
+    }
+}
+
+async fn try_ai_provider(provider: &str, prompt: &str, model: Option<&str>) -> Option<String> {
+    match provider {
+        "codex" => try_codex(prompt).await,
+        "claude" => try_claude(prompt, model).await,
+        "opencode" => try_opencode(prompt).await,
+        "hermes" => try_hermes(prompt, model).await,
+        "gemini" => try_gemini(prompt).await,
+        _ => None,
     }
 }
 
@@ -870,15 +925,15 @@ fn reset_ai_cancel() {
 #[tauri::command]
 async fn chat_with_ai(message: String, context: Option<String>) -> Result<String, String> {
     let request = ChatRequest {
-            message,
-            context,
-            book_title: None,
-            chapter_content: None,
-            conversation_summary: None,
-            history: None,
-            provider: None,
-            model: None,
-        };
+        message,
+        context,
+        book_title: None,
+        chapter_content: None,
+        conversation_summary: None,
+        history: None,
+        provider: None,
+        model: None,
+    };
 
     chat_with_ai_advanced(request).await
 }
@@ -887,118 +942,26 @@ async fn chat_with_ai(message: String, context: Option<String>) -> Result<String
 #[tauri::command]
 async fn chat_with_ai_advanced(request: ChatRequest) -> Result<String, String> {
     let prompt = build_prompt(&request);
-
-    // Determine which provider to use
-    let provider = request
-        .provider
-        .or_else(|| SELECTED_PROVIDER.lock().ok()?.clone())
-        .unwrap_or_else(|| "claude".to_string()); // Default to Claude
-
-    // Try the selected provider first
-    match provider.as_str() {
-        "codex" => {
-            if let Some(response) = try_codex(&prompt).await {
-                return Ok(response);
-            }
-        }
-        "claude" => {
-            if let Some(response) = try_claude(&prompt, request.model.as_deref()).await {
-                return Ok(response);
-            }
-        }
-        "opencode" => {
-            if let Some(response) = try_opencode(&prompt).await {
-                return Ok(response);
-            }
-        }
-        "hermes" => {
-            if let Some(response) = try_hermes(&prompt, request.model.as_deref()).await {
-                return Ok(response);
-            }
-        }
-        "gemini" => {
-            if let Some(response) = try_gemini(&prompt).await {
-                return Ok(response);
-            }
-        }
-        _ => {}
-    }
-
-    // Fallback: try other providers if selected one fails
-    let fallback_order = match provider.as_str() {
-        "hermes" => vec!["claude", "codex", "opencode"],
-        "codex" => vec!["claude", "hermes", "opencode"],
-        "claude" => vec!["hermes", "codex", "opencode"],
-        "opencode" => vec!["hermes", "codex", "claude"],
-        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
-        _ => vec!["hermes", "codex", "claude", "opencode"],
-    };
-
-    for fallback in fallback_order {
-        let response = match fallback {
-            "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
-            "codex" => try_codex(&prompt).await,
-            "claude" => try_claude(&prompt, request.model.as_deref()).await,
-            "opencode" => try_opencode(&prompt).await,
-            "gemini" => try_gemini(&prompt).await,
-            _ => None,
-        };
-        if let Some(response) = response {
-            return Ok(response);
-        }
-    }
-
-    Err("No AI CLI available. Please install one of: hermes, codex, claude, or opencode CLI.".to_string())
+    run_ai_oneshot_with_fallback(&prompt, request.provider, request.model.as_deref())
+        .await
+        .ok_or_else(|| {
+            "No AI CLI available. Please install one of: hermes, codex, claude, or opencode CLI."
+                .to_string()
+        })
 }
 
 #[tauri::command]
-async fn summarize_ai_conversation(request: SummarizeConversationRequest) -> Result<String, String> {
+async fn summarize_ai_conversation(
+    request: SummarizeConversationRequest,
+) -> Result<String, String> {
     if request.messages.is_empty() {
         return Ok(request.existing_summary.unwrap_or_default());
     }
 
     let prompt = build_summary_prompt(&request);
-    let provider = request
-        .provider
-        .or_else(|| SELECTED_PROVIDER.lock().ok()?.clone())
-        .unwrap_or_else(|| "claude".to_string());
-
-    let selected = match provider.as_str() {
-        "codex" => try_codex(&prompt).await,
-        "claude" => try_claude(&prompt, request.model.as_deref()).await,
-        "opencode" => try_opencode(&prompt).await,
-        "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
-        "gemini" => try_gemini(&prompt).await,
-        _ => None,
-    };
-    if let Some(response) = selected {
-        return Ok(response);
-    }
-
-    let fallback_order = match provider.as_str() {
-        "hermes" => vec!["claude", "codex", "opencode"],
-        "codex" => vec!["claude", "hermes", "opencode"],
-        "claude" => vec!["hermes", "codex", "opencode"],
-        "opencode" => vec!["hermes", "codex", "claude"],
-        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
-        _ => vec!["hermes", "codex", "claude", "opencode"],
-    };
-
-    for fallback in fallback_order {
-        let response = match fallback {
-            "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
-            "codex" => try_codex(&prompt).await,
-            "claude" => try_claude(&prompt, request.model.as_deref()).await,
-            "opencode" => try_opencode(&prompt).await,
-            "gemini" => try_gemini(&prompt).await,
-            _ => None,
-        };
-        if let Some(response) = response {
-            return Ok(response);
-        }
-    }
-
-    Err("No AI CLI available to summarize conversation.".to_string())
+    run_ai_oneshot_with_fallback(&prompt, request.provider, request.model.as_deref())
+        .await
+        .ok_or_else(|| "No AI CLI available to summarize conversation.".to_string())
 }
 
 async fn run_ai_oneshot_with_fallback(
@@ -1006,40 +969,15 @@ async fn run_ai_oneshot_with_fallback(
     provider: Option<String>,
     model: Option<&str>,
 ) -> Option<String> {
-    let provider = provider
-        .or_else(|| SELECTED_PROVIDER.lock().ok()?.clone())
-        .unwrap_or_else(|| "claude".to_string());
+    let provider = selected_ai_provider(provider);
 
-    let selected = match provider.as_str() {
-        "codex" => try_codex(prompt).await,
-        "claude" => try_claude(prompt, model).await,
-        "opencode" => try_opencode(prompt).await,
-        "hermes" => try_hermes(prompt, model).await,
-        "gemini" => try_gemini(prompt).await,
-        _ => None,
-    };
+    let selected = try_ai_provider(&provider, prompt, model).await;
     if selected.is_some() {
         return selected;
     }
 
-    let fallback_order = match provider.as_str() {
-        "hermes" => vec!["claude", "codex", "opencode"],
-        "codex" => vec!["claude", "hermes", "opencode"],
-        "claude" => vec!["hermes", "codex", "opencode"],
-        "opencode" => vec!["hermes", "codex", "claude"],
-        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
-        _ => vec!["hermes", "codex", "claude", "opencode"],
-    };
-
-    for fallback in fallback_order {
-        let response = match fallback {
-            "hermes" => try_hermes(prompt, model).await,
-            "codex" => try_codex(prompt).await,
-            "claude" => try_claude(prompt, model).await,
-            "opencode" => try_opencode(prompt).await,
-            "gemini" => try_gemini(prompt).await,
-            _ => None,
-        };
+    for fallback in ai_fallback_order(&provider) {
+        let response = try_ai_provider(fallback, prompt, model).await;
         if response.is_some() {
             return response;
         }
@@ -1056,11 +994,7 @@ async fn chat_with_ai_streaming(
 ) -> Result<(), String> {
     let prompt = build_prompt(&request);
 
-    // Determine which provider to use
-    let provider = request
-        .provider
-        .or_else(|| SELECTED_PROVIDER.lock().ok()?.clone())
-        .unwrap_or_else(|| "claude".to_string());
+    let provider = selected_ai_provider(request.provider.clone());
 
     // Currently only Claude supports streaming
     if provider == "claude" {
@@ -1078,14 +1012,7 @@ async fn chat_with_ai_streaming(
         return Ok(());
     }
 
-    let result = match provider.as_str() {
-        "codex" => try_codex(&prompt).await,
-        "claude" => try_claude(&prompt, request.model.as_deref()).await, // Non-streaming fallback
-        "opencode" => try_opencode(&prompt).await,
-        "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
-        "gemini" => try_gemini(&prompt).await,
-        _ => None,
-    };
+    let result = try_ai_provider(&provider, &prompt, request.model.as_deref()).await;
 
     // Check if cancelled after getting result
     if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
@@ -1109,16 +1036,7 @@ async fn chat_with_ai_streaming(
     }
 
     // Try fallback providers
-    let fallback_order = match provider.as_str() {
-        "hermes" => vec!["claude", "codex", "opencode"],
-        "codex" => vec!["claude", "hermes", "opencode"],
-        "claude" => vec!["hermes", "codex", "opencode"],
-        "opencode" => vec!["hermes", "codex", "claude"],
-        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
-        _ => vec!["hermes", "claude", "codex", "opencode"],
-    };
-
-    for fallback in fallback_order {
+    for fallback in ai_fallback_order(&provider) {
         // Check if cancelled at start of each iteration
         if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
             let _ = on_event.send(StreamEvent::Done {
@@ -1136,14 +1054,7 @@ async fn chat_with_ai_streaming(
             }
         }
 
-        let result = match fallback {
-            "hermes" => try_hermes(&prompt, request.model.as_deref()).await,
-            "codex" => try_codex(&prompt).await,
-            "claude" => try_claude(&prompt, request.model.as_deref()).await,
-            "opencode" => try_opencode(&prompt).await,
-            "gemini" => try_gemini(&prompt).await,
-            _ => None,
-        };
+        let result = try_ai_provider(fallback, &prompt, request.model.as_deref()).await;
 
         // Check if cancelled after getting result
         if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
@@ -1730,7 +1641,8 @@ fn ingest_reading_memory_note(
         .append(true)
         .open(&log_path)
         .map_err(|e| format!("Failed to open ingestion log: {}", e))?;
-    writeln!(file, "{}", log_entry).map_err(|e| format!("Failed to append ingestion log: {}", e))?;
+    writeln!(file, "{}", log_entry)
+        .map_err(|e| format!("Failed to append ingestion log: {}", e))?;
 
     Ok(ReadingMemoryIngestResult {
         note_path: note_path
@@ -1770,7 +1682,13 @@ async fn ingest_reading_memory_direct(
     }
 
     let prompt = build_reading_memory_direct_prompt(&request);
-    let raw = match run_ai_oneshot_with_fallback(&prompt, request.provider.clone(), request.model.as_deref()).await {
+    let raw = match run_ai_oneshot_with_fallback(
+        &prompt,
+        request.provider.clone(),
+        request.model.as_deref(),
+    )
+    .await
+    {
         Some(response) => response,
         None => {
             return Ok(ReadingMemoryDirectIngestResult {
@@ -2094,5 +2012,12 @@ mod tests {
     fn hermes_provider_is_valid() {
         assert!(set_ai_provider("hermes".to_string()).is_ok());
         assert_eq!(get_ai_provider(), Some("hermes".to_string()));
+    }
+
+    #[test]
+    fn ai_fallback_order_prefers_complementary_providers() {
+        assert_eq!(ai_fallback_order("claude"), vec!["hermes", "codex", "opencode"]);
+        assert_eq!(ai_fallback_order("hermes"), vec!["claude", "codex", "opencode"]);
+        assert_eq!(ai_fallback_order("unknown"), vec!["hermes", "codex", "claude", "opencode"]);
     }
 }

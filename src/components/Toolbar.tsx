@@ -8,8 +8,8 @@ import {
     MoonIcon,
     PlusIcon,
     SearchIcon,
+    SidebarPanelIcon,
     SunIcon,
-    TocSidebarIcon,
     ToolbarAIIcon,
 } from './icons/icons';
 import './Toolbar.css';
@@ -87,7 +87,7 @@ export function Toolbar() {
                         title="显示侧栏"
                         aria-label="显示侧栏"
                     >
-                        <TocSidebarIcon />
+                        <SidebarPanelIcon size={23} strokeWidth={1.7} />
                     </button>
                 )}
                 {currentBook && (

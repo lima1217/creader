@@ -11,8 +11,8 @@ import {
     PlusIcon,
     SettingsIcon,
     SidebarBookIcon as BookIcon,
+    SidebarPanelIcon,
     TagIcon,
-    TocSidebarIcon,
     TrashIcon,
 } from './icons/icons';
 import './Sidebar.css';
@@ -106,7 +106,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [editingCategory, setEditingCategory] = useState<BookCategory | null>(null);
-    const [isTagsOpen, setTagsOpen] = useState(true);
+    const [isTagsOpen, setTagsOpen] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState('');
     const [newCategoryColor, setNewCategoryColor] = useState<string>(CATEGORY_COLORS[0]);
     const [bookForCategory, setBookForCategory] = useState<string | null>(null);
@@ -139,14 +139,23 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
 
     // Filter books based on selected category
     const filteredBooks = useMemo(() => {
+        let books: Book[];
+
         if (!selectedCategoryId || selectedCategoryId === 'all') {
-            return library.books;
+            books = library.books;
+        } else if (selectedCategoryId === 'uncategorized') {
+            books = library.books.filter(b => !b.categoryId);
+        } else {
+            books = library.books.filter(b => b.categoryId === selectedCategoryId);
         }
-        if (selectedCategoryId === 'uncategorized') {
-            return library.books.filter(b => !b.categoryId);
-        }
-        return library.books.filter(b => b.categoryId === selectedCategoryId);
-    }, [library.books, selectedCategoryId]);
+
+        const currentBookIndex = currentBook ? books.findIndex(book => book.id === currentBook.id) : -1;
+        if (currentBookIndex <= 0) return books;
+
+        const nextBooks = [...books];
+        const [activeBook] = nextBooks.splice(currentBookIndex, 1);
+        return [activeBook, ...nextBooks];
+    }, [currentBook, library.books, selectedCategoryId]);
 
     const { containerRef: listContainerRef, virtualItems, totalHeight } = useVirtualList(filteredBooks, {
         itemHeight: BOOK_ITEM_HEIGHT,
@@ -399,7 +408,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                     title="隐藏侧栏"
                     aria-label="隐藏侧栏"
                 >
-                    <TocSidebarIcon />
+                    <SidebarPanelIcon size={23} strokeWidth={1.7} />
                 </button>
                 <div className="sidebar-header-actions">
                     <button className="btn btn-secondary btn-icon" onClick={handleAddCategory} title="新增标签" aria-label="新增标签">

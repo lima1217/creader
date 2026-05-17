@@ -51,7 +51,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const isTauri = isTauriRuntime();
     const [providers, setProviders] = useState<AIProviderInfo[]>([]);
     const [isProviderOpen, setProviderOpen] = useState(false);
-    const [isModelOpen, setModelOpen] = useState(false);
     const [isMemoryBusy, setMemoryBusy] = useState(false);
     const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(loadQuickActionConfigs);
     const [editingActionId, setEditingActionId] = useState<string | null>(quickActionConfigs[0]?.id || null);
@@ -76,7 +75,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         if (!isOpen) return;
         setActiveSection('ai');
         setProviderOpen(false);
-        setModelOpen(false);
         void refreshProviders();
         const loadedActions = loadQuickActionConfigs();
         setQuickActionConfigs(loadedActions);
@@ -120,7 +118,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
     const setModel = (modelId: string) => {
         setSettings({ ...settings, aiModel: modelId });
-        setModelOpen(false);
     };
 
     const setHermesModel = (modelId: string) => {
@@ -215,7 +212,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const selectSection = (section: SettingsSection) => {
         setActiveSection(section);
         setProviderOpen(false);
-        setModelOpen(false);
     };
 
     if (!isOpen) return null;
@@ -290,28 +286,14 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         <div className="settings-row">
                             <div>
                                 <div className="settings-label">Claude 模型</div>
-                                <div className="settings-help">用于阅读理解时的默认模型。</div>
+                                <div className="settings-help">传给 Claude Code 的 --model，可按当前 CLI 支持手动覆盖。</div>
                             </div>
-                            <div className="settings-select settings-select-compact">
-                                <button className="settings-select-trigger" onClick={() => setModelOpen(open => !open)}>
-                                    <span>{settings.aiModel}</span>
-                                    <ChevronDownIcon />
-                                </button>
-                                {isModelOpen && (
-                                    <div className="settings-select-menu">
-                                        {['sonnet', 'opus', 'haiku'].map(model => (
-                                            <button
-                                                key={model}
-                                                className={`settings-select-option ${model === settings.aiModel ? 'selected' : ''}`}
-                                                onClick={() => setModel(model)}
-                                            >
-                                                <span>{model}</span>
-                                                {model === settings.aiModel && <CheckIcon />}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            <input
+                                className="settings-text-input"
+                                value={settings.aiModel}
+                                onChange={(event) => setModel(event.target.value)}
+                                placeholder="opus-4.7"
+                            />
                         </div>
                     )}
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Book, ChatMessage } from '../types';
-import { buildReadingMemoryMarkdown, classifyReadingMemoryCandidate } from './ReadingMemory';
+import { buildReadingMemoryMarkdown, classifyReadingMemoryCandidate } from '../domain/readingMemory';
 
 const book: Book = {
   id: 'book-1',
