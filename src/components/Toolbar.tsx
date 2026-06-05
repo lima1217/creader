@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLibrary, useSettings, useUI, useBookProgress } from '../stores/AppContext';
 import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useProximityGroup } from './useProximityGroup';
 import {
     CoffeeIcon,
     MinusIcon,
@@ -21,6 +22,7 @@ export function Toolbar() {
     const { isSidebarOpen, setSidebarOpen, isAIPanelOpen, setAIPanelOpen, isSearchOpen, setSearchOpen } = useUI();
     const [isThemeMenuOpen, setThemeMenuOpen] = useState(false);
     const themeMenuRef = useRef<HTMLDivElement>(null);
+    const toolbarRef = useProximityGroup<HTMLElement>();
 
     const displayProgress = currentBook ? (bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage ?? 0) : 0;
 
@@ -78,11 +80,12 @@ export function Toolbar() {
     });
 
     return (
-        <header className="toolbar">
+        <header className="toolbar" ref={toolbarRef}>
             <div className="toolbar-left">
                 {!isSidebarOpen && (
                     <button
                         className="btn btn-ghost btn-icon toolbar-sidebar-restore"
+                        data-proximity-control
                         onClick={() => setSidebarOpen(true)}
                         title="显示侧栏"
                         aria-label="显示侧栏"
@@ -104,6 +107,7 @@ export function Toolbar() {
                 <div className="toolbar-group toolbar-reading-group" aria-label="阅读控制">
                     <button
                         className="btn btn-ghost btn-icon"
+                        data-proximity-control
                         onClick={() => adjustFontSize(-1)}
                         title="减小字号"
                         disabled={settings.fontSize <= 12}
@@ -113,6 +117,7 @@ export function Toolbar() {
                     <span className="toolbar-font-size">{settings.fontSize}px</span>
                     <button
                         className="btn btn-ghost btn-icon"
+                        data-proximity-control
                         onClick={() => adjustFontSize(1)}
                         title="增大字号"
                         disabled={settings.fontSize >= 24}
@@ -123,6 +128,7 @@ export function Toolbar() {
                     <div className="toolbar-theme-menu" ref={themeMenuRef}>
                         <button
                             className={`btn btn-secondary toolbar-action toolbar-theme-button ${isThemeMenuOpen ? 'active' : ''}`}
+                            data-proximity-control
                             onClick={() => setThemeMenuOpen(open => !open)}
                             title={`主题：${themeLabels[settings.theme]}`}
                             aria-label={`主题：${themeLabels[settings.theme]}`}
@@ -156,6 +162,7 @@ export function Toolbar() {
                 <div className="toolbar-action-group" aria-label="内容工具">
                     <button
                         className={`btn btn-secondary toolbar-action ${isSearchOpen ? 'active' : ''}`}
+                        data-proximity-control
                         onClick={() => setSearchOpen(!isSearchOpen)}
                         title="搜索（Cmd/Ctrl+F）"
                         aria-label="搜索"
@@ -165,6 +172,7 @@ export function Toolbar() {
 
                     <button
                         className={`btn toolbar-action toolbar-ai-action ${isAIPanelOpen ? 'btn-primary active' : 'btn-secondary'}`}
+                        data-proximity-control
                         onClick={() => setAIPanelOpen(!isAIPanelOpen)}
                         title="AI 助手"
                         aria-label="AI 助手"

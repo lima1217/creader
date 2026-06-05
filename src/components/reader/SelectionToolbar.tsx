@@ -42,16 +42,16 @@ export function SelectionToolbar(props: {
         <button
           className="reader-selection-btn"
           onClick={onAdd}
-          title="Add to accumulated selection (continue selecting across pages)"
+          title="加入跨页选文"
         >
           {addIcon}
-          <span>Add ({accumulatedCount})</span>
+          <span>加入 ({accumulatedCount})</span>
         </button>
-        <button className="reader-selection-btn" onClick={onAsk} title="Ask AI about selected text">
+        <button className="reader-selection-btn" onClick={onAsk} title="用选文询问 AI">
           {askIcon}
-          <span>Ask AI</span>
+          <span>问 AI</span>
         </button>
-        <button className="reader-selection-btn reader-selection-btn-close" onClick={onClose} title="Close toolbar">
+        <button className="reader-selection-btn reader-selection-btn-close" onClick={onClose} title="关闭">
           {closeIcon}
         </button>
       </div>
@@ -63,10 +63,9 @@ export function SelectionToolbar(props: {
             top: `${position.y + 60}px`,
           }}
         >
-          💡 Tip: Click "Add" to select across pages, then use AI
+          可先加入多段选文，再一起询问 AI
         </div>
       )}
     </>
   );
 }
-

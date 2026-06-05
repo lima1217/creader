@@ -58,8 +58,8 @@ function AppContent() {
       importLogger.error('Failed to import book:', error);
       if (error instanceof Error) importLogger.debug('Error details:', error.message, error.stack);
       notice({
-        title: 'Could not import EPUB',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        title: '无法导入 EPUB',
+        message: error instanceof Error ? error.message : '未知错误',
       });
     } finally {
       setIsImporting(false);
@@ -139,8 +139,8 @@ function AppContent() {
         <div className="import-overlay">
           <div className="import-overlay-content">
             <div className="import-book-mark" aria-hidden="true" />
-            <p>Adding EPUB to library</p>
-            <span>Reading the cover, title, and author.</span>
+            <p>正在加入书库</p>
+            <span>读取封面、书名和作者。</span>
           </div>
         </div>
       )}
@@ -152,8 +152,8 @@ function AppContent() {
               <span />
               <span />
             </div>
-            <p>Drop EPUB into your library</p>
-            <span className="drop-overlay-hint">Only .epub files are added to CReader</span>
+            <p>松开后导入 EPUB</p>
+            <span className="drop-overlay-hint">CReader 只会加入 .epub 文件</span>
           </div>
         </div>
       )}

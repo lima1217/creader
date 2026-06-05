@@ -5,6 +5,7 @@ import { getCoverUrl } from '../services/CoverStore';
 import { BOOK_ITEM_HEIGHT, CATEGORY_COLORS } from '../constants';
 import { useVirtualList } from '../hooks/useVirtualList';
 import { useAppDialog } from './AppDialog';
+import { useProximityGroup } from './useProximityGroup';
 import {
     EditIcon,
     FolderIcon,
@@ -161,6 +162,11 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
         itemHeight: BOOK_ITEM_HEIGHT,
         overscan: 3,
     });
+    const headerActionsRef = useProximityGroup<HTMLDivElement>({
+        radius: 96,
+        maxScale: 0.08,
+        minOpacity: 0.8,
+    });
 
     const handleBookClick = (book: Book) => {
         setCurrentBook(book);
@@ -170,9 +176,9 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
         e.stopPropagation();
 
         const shouldDelete = await confirm({
-            title: 'Remove book',
-            message: 'Remove this book from your library? The EPUB file will stay on disk.',
-            confirmLabel: 'Remove',
+            title: '移出书库',
+            message: '从书库移除这本书？本地 EPUB 文件会保留在磁盘上。',
+            confirmLabel: '移除',
             tone: 'danger',
         });
 
@@ -285,10 +291,10 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
             {bookToEdit && (
                 <div className="modal-overlay" onClick={cancelEdit}>
                     <div className="modal modal-edit" onClick={e => e.stopPropagation()}>
-                        <h3>Edit Book Info</h3>
+                        <h3>编辑书籍</h3>
                         <div className="modal-form">
                             <div className="form-group">
-                                <label htmlFor="edit-title">Title</label>
+                                <label htmlFor="edit-title">书名</label>
                                 <input
                                     id="edit-title"
                                     type="text"
@@ -300,7 +306,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                                 />
                             </div>
                             <div className="form-group">
-                                <label htmlFor="edit-author">Author</label>
+                                <label htmlFor="edit-author">作者</label>
                                 <input
                                     id="edit-author"
                                     type="text"
@@ -330,7 +336,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                         <h3>{editingCategory ? '编辑分类' : '新建分类'}</h3>
                         <div className="modal-form">
                             <div className="form-group">
-                                <label htmlFor="category-name">Name</label>
+                                <label htmlFor="category-name">名称</label>
                                 <input
                                     id="category-name"
                                     type="text"
@@ -342,7 +348,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Color</label>
+                                <label>颜色</label>
                                 <div className="color-picker">
                                     {CATEGORY_COLORS.map(color => (
                                         <button
@@ -361,7 +367,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                                 取消
                             </button>
                             <button className="btn btn-primary" onClick={confirmCategoryModal} disabled={!newCategoryName.trim()}>
-                                {editingCategory ? '保存' : 'Create'}
+                                {editingCategory ? '保存' : '创建'}
                             </button>
                         </div>
                     </div>
@@ -372,14 +378,14 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
             {bookForCategory && (
                 <div className="modal-overlay" onClick={() => setBookForCategory(null)}>
                     <div className="modal modal-assign-category" onClick={e => e.stopPropagation()}>
-                        <h3>Assign Category</h3>
+                        <h3>设置分类</h3>
                         <div className="category-assign-list">
                             <button
                                 className="category-assign-item"
                                 onClick={() => confirmBookCategory(undefined)}
                             >
                                 <span className="category-color" style={{ backgroundColor: 'var(--text-muted)' }} />
-                                <span>No Category</span>
+                                <span>不分类</span>
                             </button>
                             {categories.map(cat => (
                                 <button
@@ -410,11 +416,11 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                 >
                     <SidebarPanelIcon size={23} strokeWidth={1.7} />
                 </button>
-                <div className="sidebar-header-actions">
-                    <button className="btn btn-secondary btn-icon" onClick={handleAddCategory} title="新增标签" aria-label="新增标签">
+                <div className="sidebar-header-actions" ref={headerActionsRef}>
+                    <button className="btn btn-secondary btn-icon" data-proximity-control onClick={handleAddCategory} title="新增标签" aria-label="新增标签">
                         <FolderIcon />
                     </button>
-                    <button className="btn btn-primary btn-icon sidebar-import-btn" onClick={onImportBook} title="导入 EPUB" aria-label="导入 EPUB">
+                    <button className="btn btn-primary btn-icon sidebar-import-btn" data-proximity-control onClick={onImportBook} title="导入 EPUB" aria-label="导入 EPUB">
                         <PlusIcon />
                     </button>
                 </div>
@@ -548,7 +554,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                                             <div className="book-progress">
                                                 <div
                                                     className="book-progress-bar"
-                                                    style={{ width: `${percentage}%` }}
+                                                    style={{ '--book-progress-scale': percentage / 100 } as React.CSSProperties}
                                                 />
                                             </div>
                                         )}
@@ -557,7 +563,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                                         <button
                                             className="btn btn-ghost btn-icon book-action-btn"
                                             onClick={(e) => handleSetBookCategory(e, book.id)}
-                                            title="Set category"
+                                            title="设置分类"
                                         >
                                             <TagIcon />
                                         </button>

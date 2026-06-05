@@ -138,6 +138,19 @@
     filter: none;
 }
 
+.toolbar [data-proximity-control] {
+    transform-origin: center;
+    will-change: scale, opacity;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), scale var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toolbar [data-proximity-control] {
+        scale: 1 !important;
+        opacity: 1 !important;
+    }
+}
+
 /* ============================================
    Active State Button
    ============================================ */
@@ -175,32 +188,6 @@
     background: linear-gradient(180deg, transparent, var(--border-primary), transparent);
     margin: 0 var(--space-3);
     opacity: 0.7;
-}
-
-/* ============================================
-   Theme Toggle Button Special Styling
-   ============================================ */
-.toolbar .btn-icon[data-tooltip="Toggle Theme"] {
-    position: relative;
-}
-
-.toolbar .btn-icon[data-tooltip="Toggle Theme"] svg {
-    transition: transform var(--transition-spring);
-}
-
-.toolbar .btn-icon[data-tooltip="Toggle Theme"]:hover svg {
-    transform: rotate(20deg);
-}
-
-/* ============================================
-   Settings Button Special Styling
-   ============================================ */
-.toolbar .btn-icon[data-tooltip="Settings"] svg {
-    transition: transform var(--transition-slow);
-}
-
-.toolbar .btn-icon[data-tooltip="Settings"]:hover svg {
-    transform: rotate(45deg);
 }
 
 /* ============================================
@@ -342,11 +329,6 @@
     font-weight: 560;
 }
 
-.toolbar .btn-icon[data-tooltip="Toggle Theme"]:hover svg,
-.toolbar .btn-icon[data-tooltip="Settings"]:hover svg {
-    transform: none;
-}
-
 @media (max-width: 900px) {
     .toolbar-book-info {
         max-width: 260px;
@@ -458,6 +440,8 @@
     padding: 0;
     border-radius: 4px;
     justify-content: center;
+    transform-origin: center;
+    will-change: scale, opacity;
 }
 
 .toolbar .toolbar-sidebar-restore.btn-icon {

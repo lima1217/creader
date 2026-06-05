@@ -44,16 +44,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             return (
                 <div className="error-boundary">
                     <div className="error-boundary-content">
-                        <h2>Something went wrong</h2>
-                        <p>An unexpected error occurred. Please try again.</p>
+                        <h2>界面出错了</h2>
+                        <p>可以重试一次；如果仍然失败，请重新打开当前书籍。</p>
                         {this.state.error && (
                             <details className="error-details">
-                                <summary>Error details</summary>
+                                <summary>错误详情</summary>
                                 <pre>{this.state.error.message}</pre>
                             </details>
                         )}
                         <button className="btn btn-primary" onClick={this.handleReset}>
-                            Try Again
+                            重试
                         </button>
                     </div>
                 </div>

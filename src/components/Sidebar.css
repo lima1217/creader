@@ -140,10 +140,11 @@
     top: 50%;
     transform: translateY(-50%);
     width: 2px;
-    height: 0;
+    height: 70%;
     background: var(--accent);
     border-radius: 2px;
-    transition: height var(--transition-base);
+    scale: 1 0;
+    transition: scale var(--transition-base);
 }
 
 .category-filter-item:hover {
@@ -158,7 +159,7 @@
 }
 
 .category-filter-item.active::before {
-    height: 70%;
+    scale: 1 1;
 }
 
 .category-filter-name {
@@ -441,7 +442,9 @@
     height: 100%;
     background: var(--accent);
     border-radius: 2px;
-    transition: width var(--transition-fast);
+    scale: var(--book-progress-scale, 0) 1;
+    transform-origin: left center;
+    transition: scale var(--transition-fast);
 }
 
 /* Book Actions */
@@ -813,18 +816,23 @@
 
 .book-progress {
     width: 58px;
-    height: 2px;
+    height: 3px;
     background: var(--border-soft);
+    overflow: hidden;
 }
 
 .book-item.active .book-progress,
 .book-item:hover .book-progress {
-    height: 3px;
     max-width: calc(100% - 92px);
 }
 
 .book-progress-bar {
+    width: 100%;
+    height: 100%;
     background: var(--accent);
+    scale: var(--book-progress-scale, 0) 1;
+    transform-origin: left center;
+    transition: scale var(--transition-fast);
 }
 
 .book-actions {
@@ -890,6 +898,16 @@
     width: 36px;
     height: 36px;
     border-radius: 4px;
+    transform-origin: center;
+    will-change: scale, opacity;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), scale var(--transition-fast);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar-header-actions [data-proximity-control] {
+        scale: 1 !important;
+        opacity: 1 !important;
+    }
 }
 
 .sidebar-import-btn {

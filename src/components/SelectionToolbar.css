@@ -159,9 +159,18 @@
 
 .reader-selection-btn {
     min-height: 32px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 620;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-size: 12px;
+    font-weight: 560;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.reader-selection-toolbar {
+    border-color: var(--border-soft);
+    box-shadow: var(--shadow-float);
+}
+
+.reader-selection-hint {
+    color: var(--text-tertiary);
+    box-shadow: none;
 }

@@ -157,10 +157,10 @@ export function useEpubBookLifecycle(params: {
       } catch (err) {
         logger.error('Failed to load book:', err);
         if (!cancelled) {
-          const errorMessage = err instanceof Error ? err.message : (typeof err === 'string' ? err : 'Unknown error');
+          const errorMessage = err instanceof Error ? err.message : (typeof err === 'string' ? err : '未知错误');
           const isNotFound = isNotFoundErrorMessage(errorMessage);
           setIsFileNotFound(isNotFound);
-          setError(isNotFound ? toUserMessage(errorMessage) : `Failed to load book: ${errorMessage}`);
+          setError(isNotFound ? toUserMessage(errorMessage) : `无法打开书籍：${errorMessage}`);
           setIsLoading(false);
         }
       }

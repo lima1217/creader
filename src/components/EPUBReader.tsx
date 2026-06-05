@@ -247,8 +247,8 @@ export function EPUBReader() {
         return (
             <div className="reader-empty">
                 <div className="reader-empty-content">
-                    <h2>Welcome to CReader</h2>
-                    <p>Select a book from the library or import a new EPUB file to start reading.</p>
+                    <h2>选择一本书开始阅读</h2>
+                    <p>从左侧书库打开 EPUB，或导入一本新书。</p>
                 </div>
             </div>
         );
@@ -261,10 +261,10 @@ export function EPUBReader() {
                     {isFileNotFound ? (
                         <>
                             <FileIcon />
-                            <h2>Book File Not Found</h2>
+                            <h2>找不到书籍文件</h2>
                             <p>{error}</p>
                             <p className="reader-error-path">
-                                <strong>Expected path:</strong><br />
+                                <strong>原文件路径：</strong><br />
                                 <code>{currentBook.filePath}</code>
                             </p>
                             <div className="reader-error-actions">
@@ -273,26 +273,26 @@ export function EPUBReader() {
                                     onClick={handleRelocateFile}
                                     disabled={isRelocating}
                                 >
-                                    {isRelocating ? 'Selecting...' : 'Locate File'}
+                                    {isRelocating ? '正在选择...' : '重新定位文件'}
                                 </button>
                             </div>
                             <p className="reader-error-hint">
-                                If you renamed or moved the file, click the button above to locate it again.
+                                如果文件被移动或重命名，可以重新选择本地 EPUB。
                             </p>
                         </>
                     ) : (
                         <>
-                            <h2>Error Loading Book</h2>
+                            <h2>无法打开书籍</h2>
                             <p>{error}</p>
                             {scriptsEnabled && (
                                 <div className="reader-error-actions">
                                     <button className="btn btn-secondary" onClick={handleRetryWithoutScripts}>
-                                        Open without scripts
+                                        用安全模式打开
                                     </button>
                                 </div>
                             )}
                             <p className="reader-error-hint">
-                                Some EPUBs include scripts that can break rendering. Safe mode opens this book without running them.
+                                某些 EPUB 的脚本会影响渲染。安全模式会跳过这些脚本。
                             </p>
                         </>
                     )}
@@ -306,7 +306,7 @@ export function EPUBReader() {
             {/* Loading indicator */}
             {isLoading && (
                 <div className="reader-loading">
-                    <p>Loading book...</p>
+                    <p>正在打开书籍...</p>
                 </div>
             )}
 
@@ -314,14 +314,14 @@ export function EPUBReader() {
             {showToc && (
                 <div className="reader-toc">
                     <div className="reader-toc-header">
-                        <h3>Table of Contents</h3>
-                        <button className="btn btn-ghost btn-icon" onClick={() => setShowToc(false)}>
-                            &times;
+                        <h3>目录</h3>
+                        <button className="btn btn-ghost btn-icon" onClick={() => setShowToc(false)} aria-label="关闭目录">
+                            <CloseIcon />
                         </button>
                     </div>
                     <ul className="reader-toc-list">
                         {toc.length === 0 ? (
-                            <li className="reader-toc-empty">No chapters found</li>
+                            <li className="reader-toc-empty">没有可用章节</li>
                         ) : (
                             toc.map(item => (
                                 <li key={item.id}>
@@ -354,15 +354,16 @@ export function EPUBReader() {
 
             {/* TOC Toggle */}
             <button
-                className="reader-toc-toggle btn btn-ghost btn-icon"
+                className="reader-chrome-control reader-toc-toggle btn btn-ghost btn-icon"
                 onClick={() => setShowToc(!showToc)}
-                title="Table of Contents"
+                title="目录"
+                aria-label="目录"
             >
                 <EpubTocIcon size={18} />
             </button>
 
             {/* Navigation */}
-            <button className="reader-nav reader-nav-prev" onClick={handlePrev}>
+            <button className="reader-chrome-control reader-nav reader-nav-prev" onClick={handlePrev} aria-label="上一页">
                 <ChevronLeftIcon />
             </button>
 
@@ -396,12 +397,12 @@ export function EPUBReader() {
             {accumulatedTexts.length > 0 && (
                 <div className="reader-accumulated-indicator">
                     <button
-                        className="reader-accumulated-btn"
+                        className="reader-chrome-control reader-accumulated-btn"
                         onClick={() => setAIPanelOpen(true)}
-                        title={`${accumulatedTexts.length} text(s) accumulated - Click to use with AI`}
+                        title={`${accumulatedTexts.length} 段选文，发送给 AI`}
                     >
                         <LayersIcon />
-                        <span>{accumulatedTexts.length} selected</span>
+                        <span>{accumulatedTexts.length} 段选文</span>
                     </button>
                     <div className="reader-accumulated-preview">
                         {accumulatedTexts.slice(-3).map((text, idx) => (
@@ -411,7 +412,7 @@ export function EPUBReader() {
                         ))}
                         {accumulatedTexts.length > 3 && (
                             <div className="reader-accumulated-preview-more">
-                                +{accumulatedTexts.length - 3} more
+                                另有 {accumulatedTexts.length - 3} 段
                             </div>
                         )}
                     </div>
@@ -422,28 +423,28 @@ export function EPUBReader() {
             {currentChapterContent && currentChapterContent.length > 100 && (
                 <div className="reader-chapter-action">
                     <button
-                        className="reader-chapter-btn"
+                        className="reader-chrome-control reader-chapter-btn"
                         onClick={() => {
                             addToAccumulatedTexts(currentChapterContent);
                             setAIPanelOpen(true);
                         }}
-                        title="Use current chapter content for AI translation"
+                        title="把当前章节发送给 AI"
                     >
                         <BookOpenIcon size={18} strokeWidth={2} />
-                        <span>Use Chapter ({Math.round(currentChapterContent.length / 1000)}k chars)</span>
+                        <span>使用本章（约 {Math.round(currentChapterContent.length / 1000)}k 字）</span>
                     </button>
                     <button
-                        className={`reader-chapter-btn reader-chapter-copy ${chapterCopied ? 'copied' : ''}`}
+                        className={`reader-chrome-control reader-chapter-btn reader-chapter-copy ${chapterCopied ? 'copied' : ''}`}
                         onClick={handleCopyChapter}
-                        title={chapterCopied ? 'Copied!' : 'Copy chapter content'}
+                        title={chapterCopied ? '已复制' : '复制章节'}
                     >
                         {chapterCopied ? <CheckIcon /> : <CopyIcon />}
-                        <span>{chapterCopied ? 'Copied!' : 'Copy Chapter'}</span>
+                        <span>{chapterCopied ? '已复制' : '复制章节'}</span>
                     </button>
                 </div>
             )}
 
-            <button className="reader-nav reader-nav-next" onClick={handleNext}>
+            <button className="reader-chrome-control reader-nav reader-nav-next" onClick={handleNext} aria-label="下一页">
                 <ChevronRightIcon />
             </button>
 
@@ -459,7 +460,7 @@ export function EPUBReader() {
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                placeholder="Search in book..."
+                                placeholder="在书中搜索"
                                 className="reader-search-input"
                             />
                         </div>
@@ -469,9 +470,9 @@ export function EPUBReader() {
                     </div>
                     <div className="reader-search-results">
                         {isSearching ? (
-                            <div className="reader-search-status">Searching...</div>
+                            <div className="reader-search-status">正在搜索...</div>
                         ) : searchResults.length === 0 && searchQuery ? (
-                            <div className="reader-search-status">No results found</div>
+                            <div className="reader-search-status">没有找到结果</div>
                         ) : (
                             searchResults.map((result, index) => (
                                 <button

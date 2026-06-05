@@ -30,7 +30,7 @@ const contextWindowOptions = [
 
 const sectionTabs: Array<{ id: SettingsSection; label: string; hint: string }> = [
     { id: 'ai', label: 'AI', hint: '模型与上下文' },
-    { id: 'memory', label: 'Reading Memory', hint: '知识仓库' },
+    { id: 'memory', label: '阅读记忆', hint: '本地知识库' },
     { id: 'prompts', label: '快捷提示词', hint: '底部按钮' },
 ];
 
@@ -136,7 +136,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             const selected = await openDialog({
                 directory: true,
                 multiple: false,
-                title: '选择 Reading Memory 仓库',
+                title: '选择阅读记忆仓库',
             });
             if (!selected || Array.isArray(selected)) return;
             const rootPath = await ensureReadingMemoryRepository(selected);
@@ -228,7 +228,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 <header className="settings-panel-header">
                     <div>
                         <h2 id="settings-title">设置</h2>
-                        <p>阅读记忆和 AI 运行方式</p>
+                        <p>阅读记忆与 AI 运行方式</p>
                     </div>
                     <button className="settings-close" onClick={onClose} aria-label="关闭设置">x</button>
                 </header>
@@ -249,12 +249,12 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 {activeSection === 'ai' && (
                     <div className="settings-section">
                         <div className="settings-section-title">AI</div>
-                    <div className="settings-row">
-                        <div>
-                            <div className="settings-label">提供方</div>
-                            <div className="settings-help">隐藏到设置里，阅读时只保留对话本身。</div>
+                    <div className="settings-field">
+                        <div className="settings-field-copy">
+                            <div className="settings-field-label">提供方</div>
+                            <div className="settings-field-hint">阅读时不显示模型控制，只保留旁注入口。</div>
                         </div>
-                        <div className="settings-select">
+                        <div className="settings-control-cluster settings-select">
                             <button className="settings-select-trigger" onClick={() => setProviderOpen(open => !open)}>
                                 <span className={`settings-provider-dot ${selectedProvider.available ? 'available' : 'unavailable'}`} />
                                 <span>{selectedProvider.name}</span>
@@ -283,10 +283,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     </div>
 
                     {settings.aiProvider === 'claude' && (
-                        <div className="settings-row">
-                            <div>
-                                <div className="settings-label">Claude 模型</div>
-                                <div className="settings-help">传给 Claude Code 的 --model，可按当前 CLI 支持手动覆盖。</div>
+                        <div className="settings-field">
+                            <div className="settings-field-copy">
+                                <div className="settings-field-label">Claude 模型</div>
+                                <div className="settings-field-hint">传给 Claude Code 的 --model，可按当前 CLI 支持填写。</div>
                             </div>
                             <input
                                 className="settings-text-input"
@@ -298,10 +298,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     )}
 
                     {settings.aiProvider === 'hermes' && (
-                        <div className="settings-row">
-                            <div>
-                                <div className="settings-label">Hermes 模型</div>
-                                <div className="settings-help">默认来自 Hermes 配置，可在这里覆盖。</div>
+                        <div className="settings-field">
+                            <div className="settings-field-copy">
+                                <div className="settings-field-label">Hermes 模型</div>
+                                <div className="settings-field-hint">默认读取 Hermes 配置，也可在这里覆盖。</div>
                             </div>
                             <input
                                 className="settings-text-input"
@@ -312,10 +312,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         </div>
                     )}
 
-                    <div className="settings-row">
-                        <div>
-                            <div className="settings-label">AI 文字大小</div>
-                            <div className="settings-help">调整对话和输入框文字。</div>
+                    <div className="settings-field">
+                        <div className="settings-field-copy">
+                            <div className="settings-field-label">AI 文字大小</div>
+                            <div className="settings-field-hint">调整旁注正文和输入框文字。</div>
                         </div>
                         <div className="settings-stepper" aria-label="AI 文字大小">
                             <button
@@ -336,10 +336,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         </div>
                     </div>
 
-                    <div className="settings-row settings-row-stacked">
-                        <div>
-                            <div className="settings-label">AI 上下文轮次</div>
-                            <div className="settings-help">每次提问带上的最近聊天记录，越多越连贯，也越慢。</div>
+                    <div className="settings-field settings-field-stacked">
+                        <div className="settings-field-copy">
+                            <div className="settings-field-label">上下文轮次</div>
+                            <div className="settings-field-hint">每次提问带上的最近记录，越多越连贯，也越慢。</div>
                         </div>
                         <div className="settings-segmented" aria-label="AI 上下文轮次">
                             {contextWindowOptions.map(option => (
@@ -357,8 +357,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
                     <label className="settings-toggle-row">
                         <span>
-                            <strong>自动压缩上下文</strong>
-                            <small>超过上下文轮次后，将更早对话压缩成隐藏摘要继续带上。</small>
+                            <strong>自动压缩</strong>
+                            <small>超过轮次后，将更早对话压成隐藏摘要继续带上。</small>
                         </span>
                         <input
                             type="checkbox"
@@ -368,19 +368,19 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     </label>
 
                     <button className="settings-secondary-action" onClick={refreshProviders} disabled={!isTauri}>
-                        刷新可用 Provider
+                        刷新可用提供方
                     </button>
                     </div>
                 )}
 
                 {activeSection === 'memory' && (
                     <div className="settings-section">
-                        <div className="settings-section-title">Reading Memory</div>
-                    <div className="settings-row">
-                        <div>
-                            <div className="settings-label">Markdown 仓库</div>
-                            <div className="settings-help">
-                                AI 判断后直接写入知识页，之后交给外部 agent lint。
+                        <div className="settings-section-title">阅读记忆</div>
+                    <div className="settings-field">
+                        <div className="settings-field-copy">
+                            <div className="settings-field-label">Markdown 仓库</div>
+                            <div className="settings-field-hint">
+                                AI 只在值得保留时写入知识页，后续可交给外部整理。
                             </div>
                         </div>
                         <button className="settings-primary-action" onClick={chooseReadingMemory} disabled={!isTauri || isMemoryBusy}>
@@ -388,15 +388,15 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         </button>
                     </div>
                     {settings.readingMemoryPath && (
-                        <div className="settings-path-row">
+                        <div className="settings-inline-path">
                             <code>{settings.readingMemoryPath}</code>
                             <button onClick={openReadingMemory}>打开</button>
                         </div>
                     )}
                     <label className="settings-toggle-row">
                         <span>
-                            <strong>自动摄入知识页</strong>
-                            <small>AI 只在判断有长期价值时无感沉淀。</small>
+                            <strong>自动沉淀</strong>
+                            <small>AI 判断有长期价值时，自动写入本地仓库。</small>
                         </span>
                         <input
                             type="checkbox"
@@ -409,10 +409,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
                 {activeSection === 'prompts' && (
                     <div className="settings-section">
-                        <div className="settings-section-title">AI 快捷提示词</div>
+                        <div className="settings-section-title">快捷提示词</div>
                     <div className="settings-quick-actions">
                         <div className="settings-quick-list">
-                            <button className="settings-quick-add-main" onClick={addQuickAction}>
+                            <button className="settings-quick-add-main settings-restore-action" onClick={addQuickAction}>
                                 <PlusIcon />
                                 <span>新增提示词</span>
                             </button>
@@ -430,7 +430,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                             <span>{action.label}</span>
                                         </button>
                                         <button
-                                            className="settings-quick-hide"
+                                            className="settings-quick-hide settings-danger-action"
                                             onClick={() => hideQuickAction(action.id)}
                                             aria-label={`隐藏 ${action.label}`}
                                         >
@@ -448,7 +448,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                     {missingDefaultQuickActions.map(action => (
                                         <button
                                             key={action.id}
-                                            className="settings-quick-restore-btn"
+                                            className="settings-quick-restore-btn settings-restore-action"
                                             onClick={() => restoreQuickAction(action)}
                                         >
                                             <PlusIcon />
@@ -479,7 +479,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                     />
                                 </label>
                                 <div className="settings-quick-actions-row">
-                                    <button className="settings-secondary-action" onClick={resetQuickActions}>
+                                    <button className="settings-secondary-action settings-restore-action" onClick={resetQuickActions}>
                                         恢复默认
                                     </button>
                                     <button
@@ -494,13 +494,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         ) : (
                             <div className="settings-quick-empty">
                                 <span>选择一个提示词按钮来编辑。</span>
-                                <button className="settings-secondary-action" onClick={resetQuickActions}>
+                                <button className="settings-secondary-action settings-restore-action" onClick={resetQuickActions}>
                                     恢复默认
                                 </button>
                             </div>
                         )}
                     </div>
-                    <div className="settings-help settings-quick-help">AI 窗口底部最多显示前 6 个按钮，其余会进入“更多”。</div>
+                    <div className="settings-field-hint settings-quick-help">旁注面板底部最多显示前 6 个按钮，其余进入“更多”。</div>
                     </div>
                 )}
             </section>

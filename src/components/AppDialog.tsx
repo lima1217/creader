@@ -69,14 +69,14 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
                         <div className="app-dialog-actions">
                             {dialog.kind === 'confirm' && (
                                 <button className="btn btn-ghost" onClick={() => close(false)}>
-                                    {dialog.cancelLabel ?? 'Cancel'}
+                                    {dialog.cancelLabel ?? '取消'}
                                 </button>
                             )}
                             <button
                                 className={`btn ${dialog.kind === 'confirm' && dialog.tone === 'danger' ? 'btn-danger' : 'btn-primary'}`}
                                 onClick={() => close(dialog.kind === 'confirm')}
                             >
-                                {dialog.kind === 'confirm' ? (dialog.confirmLabel ?? 'Confirm') : 'OK'}
+                                {dialog.kind === 'confirm' ? (dialog.confirmLabel ?? '确认') : '知道了'}
                             </button>
                         </div>
                     </div>

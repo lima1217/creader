@@ -283,10 +283,10 @@ export function CodeBlock({ code, language }: { code: string; language: string }
                 <button
                     className={`ai-code-copy ${copied ? 'copied' : ''}`}
                     onClick={handleCopy}
-                    title={copied ? 'Copied!' : 'Copy code'}
+                    title={copied ? '已复制' : '复制代码'}
                 >
                     {copied ? <CheckIcon /> : <CopyIcon />}
-                    <span>{copied ? 'Copied!' : 'Copy'}</span>
+                    <span>{copied ? '已复制' : '复制'}</span>
                 </button>
             </div>
             <pre>

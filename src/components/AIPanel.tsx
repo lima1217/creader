@@ -492,7 +492,7 @@ export function AIPanel() {
             const errorMessage: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: `Sorry, I encountered an error: ${error}\n\nPlease make sure you have one of the following AI CLIs installed and configured:\n- hermes (Hermes Agent)\n- claude (Anthropic Claude)\n- opencode (OpenCode)\n- codex (Codex CLI)`,
+                content: `AI 请求失败：${error}\n\n请确认已安装并配置 hermes、claude、opencode 或 codex。`,
                 timestamp: Date.now(),
             };
             addChatMessage(errorMessage);
@@ -530,8 +530,8 @@ export function AIPanel() {
                         id: (Date.now() + 1).toString(),
                         role: 'assistant',
                         content: streamingContentRef.current
-                            ? `${streamingContentRef.current}\n\n[Generation stopped by user]`
-                            : '[Generation stopped by user]',
+                            ? `${streamingContentRef.current}\n\n[已停止生成]`
+                            : '[已停止生成]',
                         timestamp: Date.now(),
                     };
                     addChatMessage(stoppedMessage);
@@ -557,9 +557,9 @@ export function AIPanel() {
         return chatMessages.map(msg => (
             <div key={msg.id} className={`ai-message ai-message-${msg.role}`}>
                 {msg.context && (
-                    <div className="ai-message-context">
+                    <div className="ai-message-reference">
                         <QuoteIcon />
-                        <span>"{msg.context.slice(0, 100)}{msg.context.length > 100 ? '...' : ''}"</span>
+                        <span>“{msg.context.slice(0, 100)}{msg.context.length > 100 ? '…' : ''}”</span>
                     </div>
                 )}
                 <div className="ai-message-content">
@@ -574,7 +574,7 @@ export function AIPanel() {
                         <button
                             className={`ai-message-copy ${copiedMessageId === msg.id ? 'copied' : ''}`}
                             onClick={() => copyMessage(msg.id, msg.content)}
-                            title={copiedMessageId === msg.id ? 'Copied!' : 'Copy message'}
+                            title={copiedMessageId === msg.id ? '已复制' : '复制回答'}
                         >
                             {copiedMessageId === msg.id ? <CheckIcon /> : <CopyIcon />}
                         </button>
@@ -586,11 +586,11 @@ export function AIPanel() {
 
     const quickActionControls = (
         <>
-            <div className="ai-quick-actions">
+            <div className="ai-margin-actions">
                 {visibleQuickActions.map(action => (
                     <button
                         key={action.id}
-                        className="ai-quick-btn"
+                        className="ai-margin-action"
                         onClick={() => setInput(action.prompt)}
                         disabled={isLoading}
                     >
@@ -600,20 +600,20 @@ export function AIPanel() {
                 ))}
                 {overflowQuickActions.length > 0 && (
                     <button
-                        className={`ai-quick-btn ai-quick-more ${showQuickActionOverflow ? 'active' : ''}`}
+                        className={`ai-margin-action ai-margin-more ${showQuickActionOverflow ? 'active' : ''}`}
                         onClick={() => setShowQuickActionOverflow(open => !open)}
                         disabled={isLoading}
-                        aria-label="更多快捷动作"
+                        aria-label="更多旁注动作"
                     >
                         <span>更多</span>
                     </button>
                 )}
                 {showQuickActionOverflow && overflowQuickActions.length > 0 && (
-                    <div className="ai-quick-overflow">
+                    <div className="ai-margin-overflow">
                         {overflowQuickActions.map(action => (
                             <button
                                 key={action.id}
-                                className="ai-quick-overflow-btn"
+                                className="ai-margin-overflow-btn"
                                 onClick={() => {
                                     setInput(action.prompt);
                                     setShowQuickActionOverflow(false);
@@ -663,21 +663,21 @@ export function AIPanel() {
                 </div>
             </div>
 
-            {/* Context indicator */}
+            {/* Source indicator */}
             {(currentBook || selectedText || accumulatedTexts.length > 0) && (
-                <div className="ai-context-bar">
+                <div className="ai-source-bar">
                     {currentBook && (
-                        <div className="ai-context-item">
+                        <div className="ai-source-item">
                             <BookIcon />
                             <span>{currentBook.title}</span>
                         </div>
                     )}
                     {selectedText && (
-                        <div className="ai-context-item ai-context-quote">
+                        <div className="ai-source-item ai-source-quote">
                             <QuoteIcon />
-                            <span>"{selectedText.slice(0, 80)}{selectedText.length > 80 ? '...' : ''}"</span>
+                            <span>“{selectedText.slice(0, 80)}{selectedText.length > 80 ? '…' : ''}”</span>
                             <button
-                                className="ai-context-clear"
+                                className="ai-source-clear"
                                 onClick={() => setSelectedText('')}
                                 title="清除选区"
                             >
@@ -686,25 +686,25 @@ export function AIPanel() {
                         </div>
                     )}
                     {accumulatedTexts.length > 0 && (
-                        <div className="ai-context-accumulated">
-                            <div className="ai-accumulated-header">
-                                <span className="ai-accumulated-label">已累积 ({accumulatedTexts.length})</span>
+                        <div className="ai-source-stack">
+                            <div className="ai-source-stack-header">
+                                <span className="ai-source-stack-label">多段引用 ({accumulatedTexts.length})</span>
                                 <button
-                                    className="ai-context-clear-all"
+                                    className="ai-source-clear-all"
                                     onClick={clearAccumulatedTexts}
                                     title="清除所有累积文本"
                                 >
-                                    全部清除
+                                    清空
                                 </button>
                             </div>
-                            <div className="ai-accumulated-list">
+                            <div className="ai-source-stack-list">
                                 {accumulatedTexts.map((text, index) => (
-                                    <div key={index} className="ai-accumulated-item">
-                                        <span className="ai-accumulated-text">
-                                            {text.slice(0, 60)}{text.length > 60 ? '...' : ''}
+                                    <div key={index} className="ai-source-stack-item">
+                                        <span className="ai-source-stack-text">
+                                            {text.slice(0, 60)}{text.length > 60 ? '…' : ''}
                                         </span>
                                         <button
-                                            className="ai-context-clear"
+                                            className="ai-source-clear"
                                             onClick={() => removeAccumulatedText(index)}
                                             title="移除这段文本"
                                         >

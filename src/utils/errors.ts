@@ -4,7 +4,7 @@ export function toError(err: unknown): Error {
   try {
     return new Error(JSON.stringify(err));
   } catch {
-    return new Error('Unknown error');
+    return new Error('未知错误');
   }
 }
 
@@ -26,12 +26,12 @@ export function isNotFoundError(err: unknown): boolean {
 
 export function toUserMessage(err: unknown): string {
   const e = toError(err);
-  const message = e.message || 'Unknown error';
+  const message = e.message || '未知错误';
   if (isNotFoundErrorMessage(message)) {
-    return 'The file was not found. It may have been moved, renamed, or deleted.';
+    return '找不到文件。它可能已被移动、重命名或删除。';
   }
   if (message.toLowerCase().includes('permission') || message.toLowerCase().includes('denied')) {
-    return 'Permission denied. Please check file permissions.';
+    return '没有文件权限，请检查访问权限。';
   }
   return message;
 }
