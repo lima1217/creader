@@ -259,9 +259,7 @@ input,
 textarea,
 [contenteditable='true'],
 .reader-content,
-.ai-messages,
-.message-content,
-.markdown-renderer {
+.message-content {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -460,62 +458,8 @@ textarea::placeholder {
 /* ============================================
    Utility Classes
    ============================================ */
-.flex {
-  display: flex;
-}
-
-.flex-col {
-  flex-direction: column;
-}
-
-.items-center {
-  align-items: center;
-}
-
-.justify-center {
-  justify-content: center;
-}
-
-.justify-between {
-  justify-content: space-between;
-}
-
-.gap-1 {
-  gap: var(--space-1);
-}
-
-.gap-2 {
-  gap: var(--space-2);
-}
-
-.gap-3 {
-  gap: var(--space-3);
-}
-
-.gap-4 {
-  gap: var(--space-4);
-}
-
-.text-sm {
-  font-size: var(--text-sm);
-}
-
-.text-xs {
-  font-size: var(--text-xs);
-}
-
 .text-muted {
   color: var(--text-muted);
-}
-
-.text-secondary {
-  color: var(--text-secondary);
-}
-
-.truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ============================================
@@ -591,124 +535,6 @@ textarea::placeholder {
   }
 }
 
-/* Spin animation - kept for loading spinners only */
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Utility classes - simplified, no infinite animations */
-.animate-spin {
-  animation: spin 0.8s linear infinite;
-}
-
-/* ============================================
-   Loading States - Enhanced
-   ============================================ */
-.skeleton {
-  background: linear-gradient(90deg,
-      var(--bg-tertiary) 25%,
-      var(--bg-secondary) 50%,
-      var(--bg-tertiary) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
-  border-radius: var(--radius-sm);
-  position: relative;
-  overflow: hidden;
-}
-
-.skeleton::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-  animation: shimmerOverlay 1.5s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-
-  100% {
-    background-position: -200% 0;
-  }
-}
-
-@keyframes shimmerOverlay {
-  0% {
-    transform: translateX(-100%);
-  }
-
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-/* Loading Spinner - Enhanced */
-.loading-spinner {
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--border-primary);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  position: relative;
-}
-
-.loading-spinner::after {
-  content: '';
-  position: absolute;
-  inset: 2px;
-  border: 2px solid transparent;
-  border-top-color: rgba(var(--accent-rgb), 0.3);
-  border-radius: 50%;
-  animation: spin 1.2s linear infinite reverse;
-}
-
-/* Loading Dots */
-.loading-dots {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-
-.loading-dots span {
-  width: 6px;
-  height: 6px;
-  background: var(--accent);
-  border-radius: 50%;
-  animation: loadingDot 1.4s ease-in-out infinite;
-}
-
-.loading-dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.loading-dots span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes loadingDot {
-
-  0%,
-  80%,
-  100% {
-    transform: scale(0.8);
-    opacity: 0.5;
-  }
-
-  40% {
-    transform: scale(1.2);
-    opacity: 1;
-  }
-}
-
 /* ============================================
    Tooltips
    ============================================ */
@@ -742,54 +568,6 @@ textarea::placeholder {
 }
 
 /* ============================================
-   Keyboard Shortcut Hint
-   ============================================ */
-.kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  box-shadow: 0 1px 0 var(--border-primary);
-}
-
-/* ============================================
-   Empty State
-   ============================================ */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-12);
-  text-align: center;
-  color: var(--text-muted);
-}
-
-.empty-state-icon {
-  margin-bottom: var(--space-4);
-  opacity: 0.5;
-}
-
-.empty-state-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: var(--space-2);
-}
-
-.empty-state-description {
-  max-width: 300px;
-  margin-bottom: var(--space-6);
-}
-
-/* ============================================
    Native Desktop Conventions
    ============================================ */
 button,
@@ -798,21 +576,13 @@ summary,
 .book-item,
 .category-filter-item,
 .category-assign-item,
-.toc-item,
-.page-nav-btn,
-.ai-action-btn,
-.quick-action,
-.prompt-suggestion,
-.provider-option,
-.model-option,
-.toolbar-button {
+.toc-item {
   cursor: default !important;
 }
 
 .sidebar,
 .toolbar,
 .ai-panel,
-.reader-toolbar,
 .modal,
 .import-overlay-content,
 .drop-overlay-content {
@@ -821,10 +591,8 @@ summary,
 }
 
 .reader-content,
-.epub-viewer,
 .ai-message,
-.message-content,
-.markdown-renderer {
+.message-content {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -836,18 +604,6 @@ html {
 /* ============================================
    Accessibility
    ============================================ */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

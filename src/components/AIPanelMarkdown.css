@@ -126,11 +126,6 @@
     color: var(--accent-hover);
 }
 
-.ai-code-block .operator,
-.ai-code-block .punctuation {
-    color: var(--text-secondary);
-}
-
 .ai-message-actions {
     position: absolute;
     top: 6px;

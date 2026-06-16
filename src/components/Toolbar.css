@@ -180,17 +180,6 @@
 }
 
 /* ============================================
-   Divider
-   ============================================ */
-.toolbar-divider {
-    width: 1px;
-    height: 28px;
-    background: linear-gradient(180deg, transparent, var(--border-primary), transparent);
-    margin: 0 var(--space-3);
-    opacity: 0.7;
-}
-
-/* ============================================
    Responsive Adjustments
    ============================================ */
 @media (max-width: 768px) {
@@ -204,10 +193,6 @@
 
     .toolbar-book-title {
         font-size: var(--text-xs);
-    }
-
-    .toolbar-divider {
-        margin: 0 var(--space-1);
     }
 }
 
@@ -258,16 +243,6 @@
     background: var(--bg-control);
     border-color: var(--border-soft);
     border-radius: calc(var(--control-radius) + 3px);
-}
-
-.toolbar-view-group {
-    background: var(--bg-control);
-    border-color: var(--border-soft);
-}
-
-.toolbar-tool-group {
-    background: var(--bg-control);
-    border-color: var(--border-soft);
 }
 
 .toolbar .btn-icon,
@@ -423,7 +398,6 @@
     padding: 0;
 }
 
-.toolbar-group-label,
 .toolbar-action span,
 .toolbar-theme-button span {
     display: none !important;
