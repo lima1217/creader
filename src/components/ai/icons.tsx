@@ -64,14 +64,6 @@ export const AILogoIcon = ({ size = 20 }: { size?: number }) => (
     </svg>
 );
 
-export const SparkleIcon = () => (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
-        <path d="M5 19l1 3 1-3 3-1-3-1-1-3-1 3-3 1 3 1z" />
-        <path d="M19 12l1 2 1-2 2-1-2-1-1-2-1 2-2 1 2 1z" />
-    </svg>
-);
-
 export const CloseIcon = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <line x1="18" y1="6" x2="6" y2="18" />

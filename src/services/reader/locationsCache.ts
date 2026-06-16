@@ -49,9 +49,3 @@ export async function generateAndPersistLocations(book: EpubBookLike, bookId: st
 
   return false;
 }
-
-export async function loadOrGenerateLocations(book: EpubBookLike, bookId: string): Promise<void> {
-  const loaded = await loadLocationsIfAvailable(book, bookId);
-  if (loaded) return;
-  await generateAndPersistLocations(book, bookId);
-}

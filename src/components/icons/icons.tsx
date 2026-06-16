@@ -3,14 +3,6 @@ type StrokeIconProps = {
   strokeWidth?: number;
 };
 
-export const MenuIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
-    <line x1="3" y1="12" x2="21" y2="12" />
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <line x1="3" y1="18" x2="21" y2="18" />
-  </svg>
-);
-
 export const SunIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
     <circle cx="12" cy="12" r="5" />
@@ -45,13 +37,6 @@ export const SearchIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
     <circle cx="11" cy="11" r="8" />
     <line x1="21" y1="21" x2="16.65" y2="16.65" />
-  </svg>
-);
-
-export const CodeIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
-    <polyline points="16 18 22 12 16 6" />
-    <polyline points="8 6 2 12 8 18" />
   </svg>
 );
 
@@ -92,34 +77,6 @@ export const ChevronRightIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps
   </svg>
 );
 
-export const ZoomInIcon = ({ size = 18, strokeWidth = 2 }: StrokeIconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
-    <circle cx="11" cy="11" r="8" />
-    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    <line x1="11" y1="8" x2="11" y2="14" />
-    <line x1="8" y1="11" x2="14" y2="11" />
-  </svg>
-);
-
-export const ZoomOutIcon = ({ size = 18, strokeWidth = 2 }: StrokeIconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
-    <circle cx="11" cy="11" r="8" />
-    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    <line x1="8" y1="11" x2="14" y2="11" />
-  </svg>
-);
-
-export const MarkdownTocIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
-    <line x1="8" y1="6" x2="21" y2="6" />
-    <line x1="8" y1="12" x2="21" y2="12" />
-    <line x1="8" y1="18" x2="21" y2="18" />
-    <circle cx="4" cy="6" r="1.5" fill="currentColor" />
-    <circle cx="4" cy="12" r="1.5" fill="currentColor" />
-    <circle cx="4" cy="18" r="1.5" fill="currentColor" />
-  </svg>
-);
-
 export const EpubTocIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
     <line x1="8" y1="6" x2="21" y2="6" />
@@ -128,18 +85,6 @@ export const EpubTocIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => 
     <line x1="3" y1="6" x2="3.01" y2="6" />
     <line x1="3" y1="12" x2="3.01" y2="12" />
     <line x1="3" y1="18" x2="3.01" y2="18" />
-  </svg>
-);
-
-export const TocSidebarIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
-    <rect x="3" y="4" width="18" height="16" rx="2" />
-    <line x1="9" y1="4" x2="9" y2="20" />
-    <line x1="5.8" y1="8" x2="6.2" y2="8" />
-    <line x1="5.8" y1="12" x2="6.2" y2="12" />
-    <line x1="5.8" y1="16" x2="6.2" y2="16" />
-    <line x1="12" y1="9" x2="18" y2="9" />
-    <line x1="12" y1="13" x2="17" y2="13" />
   </svg>
 );
 
@@ -204,16 +149,6 @@ export const EditIcon = ({ size = 16, strokeWidth = 2 }: StrokeIconProps) => (
 export const FolderIcon = ({ size = 16, strokeWidth = 2 }: StrokeIconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-  </svg>
-);
-
-export const MemoryIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-    <path d="M9 7h7" />
-    <path d="M9 11h7" />
-    <path d="M9 15h4" />
   </svg>
 );
 

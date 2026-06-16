@@ -1,19 +1,12 @@
 type LogFn = (...args: unknown[]) => void;
 
-let debugOverride: boolean | null = null;
-
 function isDebugEnabled(): boolean {
-  if (debugOverride !== null) return debugOverride;
   if (import.meta.env.DEV) return true;
   try {
     return localStorage.getItem('creader:debug') === '1';
   } catch {
     return false;
   }
-}
-
-export function setDebugEnabled(enabled: boolean | null) {
-  debugOverride = enabled;
 }
 
 export function createLogger(scope: string) {

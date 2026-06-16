@@ -1,9 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import {
-  buildReadingMemoryMarkdown,
-  classifyReadingMemoryCandidate,
-  type ReadingMemoryIngestInput,
-} from '../domain/readingMemory';
+import type { ReadingMemoryIngestInput } from '../domain/readingMemory';
 
 export {
   buildReadingMemoryMarkdown,
@@ -14,11 +10,6 @@ export {
   type ReadingMemoryMarkdown,
 } from '../domain/readingMemory';
 
-type IngestResult = {
-  note_path: string;
-  log_path: string;
-};
-
 type DirectIngestResult = {
   note_path: string;
   log_path: string;
@@ -28,20 +19,6 @@ type DirectIngestResult = {
 
 export async function ensureReadingMemoryRepository(rootPath: string): Promise<string> {
   return await invoke<string>('ensure_reading_memory_repository', { rootPath });
-}
-
-export async function ingestReadingMemoryNote(input: ReadingMemoryIngestInput): Promise<IngestResult | null> {
-  const candidate = classifyReadingMemoryCandidate(input);
-  if (!candidate.shouldIngest) return null;
-  const note = buildReadingMemoryMarkdown(input);
-  return await invoke<IngestResult>('ingest_reading_memory_note', {
-    request: {
-      root_path: input.rootPath,
-      title: note.title,
-      body: note.body,
-      metadata: note.metadata,
-    },
-  });
 }
 
 export async function ingestReadingMemoryDirect(

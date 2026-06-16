@@ -51,7 +51,6 @@ export interface Settings {
   fontFamily: string;
   lineHeight: number; // 1.4-2.0
   allowEpubScripts: boolean;
-  allowAIDangerousPermissions: boolean;
   readingMemoryPath?: string;
   readingMemoryAutoIngest: boolean;
   aiProvider: string;

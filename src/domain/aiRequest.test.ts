@@ -21,7 +21,6 @@ const settings: Settings = {
   fontFamily: 'Georgia',
   lineHeight: 1.6,
   allowEpubScripts: true,
-  allowAIDangerousPermissions: false,
   readingMemoryAutoIngest: true,
   aiProvider: 'claude',
   aiModel: 'opus-4.7',

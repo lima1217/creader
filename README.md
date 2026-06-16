@@ -168,9 +168,6 @@ creader/
 ├── src-tauri/              # Rust 后端
 │   └── src/
 │       └── lib.rs          # Tauri 命令
-├── memory/                 # 项目文档
-│   └── epub-reader/
-│       └── task_plan.md    # 任务计划
 └── public/                 # 静态资源
 ```
 

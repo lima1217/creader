@@ -122,16 +122,3 @@ export async function validateAndFixLibraryPaths(
         brokenBooks,
     };
 }
-
-/**
- * Get the app's books directory path
- */
-export async function getBooksDirectory(): Promise<string | null> {
-    try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        return await invoke<string>('get_books_directory');
-    } catch (error) {
-        logger.warn('Failed to get books directory:', error);
-        return null;
-    }
-}

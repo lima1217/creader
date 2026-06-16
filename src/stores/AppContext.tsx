@@ -19,7 +19,6 @@ const defaultSettings: Settings = {
     fontFamily: 'Georgia',
     lineHeight: 1.6,
     allowEpubScripts: true,
-    allowAIDangerousPermissions: false,
     readingMemoryPath: undefined,
     readingMemoryAutoIngest: true,
     aiProvider: 'claude',
@@ -30,104 +29,54 @@ const defaultSettings: Settings = {
     aiAutoSummarize: true,
 };
 
-// App state context
-interface AppState {
-    // Settings
+type SettingsContextValue = {
     settings: Settings;
     setSettings: (settings: Settings) => void;
-
-    // Library
+};
+type LibraryContextValue = {
     library: Library;
     setLibrary: (library: Library) => void;
     addBook: (book: Book) => void;
     removeBook: (id: string) => void;
     updateBook: (id: string, updates: Partial<Pick<Book, 'title' | 'author' | 'categoryId'>>) => void;
     updateBookFilePath: (id: string, newFilePath: string) => void;
-    updateBookProgress: (id: string, update: BookProgressUpdate) => void;
-    bookProgressById: BookProgressById;
-
-    // Categories
     addCategory: (name: string, color: string) => BookCategory;
     removeCategory: (id: string) => void;
     updateCategory: (id: string, updates: Partial<Pick<BookCategory, 'name' | 'color'>>) => void;
     setBookCategory: (bookId: string, categoryId: string | undefined) => void;
-
-    // Current book
     currentBook: Book | null;
     setCurrentBook: (book: Book | null) => void;
-
-    // Current chapter content (for AI context)
-    currentChapterContent: string;
-    setCurrentChapterContent: (content: string) => void;
-
-    // AI Chat
-    chatMessages: ChatMessage[];
-    conversationMemory: ConversationMemory | null;
-    addChatMessage: (message: ChatMessage) => void;
-    setChatMessages: (messages: ChatMessage[]) => void;
-    setConversationMemory: (memory: ConversationMemory | null) => void;
-    clearChat: () => void;
-
-    // UI State
+};
+type ProgressContextValue = {
+    bookProgressById: BookProgressById;
+    updateBookProgress: (id: string, update: BookProgressUpdate) => void;
+};
+type UIContextValue = {
     isSidebarOpen: boolean;
     setSidebarOpen: (open: boolean) => void;
     isAIPanelOpen: boolean;
     setAIPanelOpen: (open: boolean) => void;
     isSearchOpen: boolean;
     setSearchOpen: (open: boolean) => void;
-
-    // Selected text for AI context
+};
+type AIContextValue = {
+    currentChapterContent: string;
+    setCurrentChapterContent: (content: string) => void;
+    chatMessages: ChatMessage[];
+    conversationMemory: ConversationMemory | null;
+    addChatMessage: (message: ChatMessage) => void;
+    setChatMessages: (messages: ChatMessage[]) => void;
+    setConversationMemory: (memory: ConversationMemory | null) => void;
+    clearChat: () => void;
     selectedText: string;
     setSelectedText: (text: string) => void;
     selectedCfiRange: string;
     setSelectedCfiRange: (cfiRange: string) => void;
-
-    // Accumulated texts for cross-page selection
     accumulatedTexts: string[];
     addToAccumulatedTexts: (text: string) => void;
     removeAccumulatedText: (index: number) => void;
     clearAccumulatedTexts: () => void;
-}
-
-const AppContext = createContext<AppState | null>(null);
-
-type SettingsContextValue = Pick<AppState, 'settings' | 'setSettings'>;
-type LibraryContextValue = Pick<
-    AppState,
-    | 'library'
-    | 'setLibrary'
-    | 'addBook'
-    | 'removeBook'
-    | 'updateBook'
-    | 'updateBookFilePath'
-    | 'addCategory'
-    | 'removeCategory'
-    | 'updateCategory'
-    | 'setBookCategory'
-    | 'currentBook'
-    | 'setCurrentBook'
->;
-type ProgressContextValue = Pick<AppState, 'bookProgressById' | 'updateBookProgress'>;
-type UIContextValue = Pick<AppState, 'isSidebarOpen' | 'setSidebarOpen' | 'isAIPanelOpen' | 'setAIPanelOpen' | 'isSearchOpen' | 'setSearchOpen'>;
-type AIContextValue = Pick<
-    AppState,
-    | 'currentChapterContent'
-    | 'setCurrentChapterContent'
-    | 'chatMessages'
-    | 'conversationMemory'
-    | 'addChatMessage'
-    | 'setChatMessages'
-    | 'setConversationMemory'
-    | 'clearChat'
-    | 'selectedText'
-    | 'setSelectedText'
-    | 'selectedCfiRange'
-    | 'setSelectedCfiRange'
-    | 'accumulatedTexts'
-    | 'addToAccumulatedTexts'
-    | 'removeAccumulatedText'
-    | 'clearAccumulatedTexts'
->;
+};
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 const LibraryContext = createContext<LibraryContextValue | null>(null);
@@ -595,82 +544,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setConversationMemory(null);
     }, [setConversationMemory]);
 
-    const value: AppState = useMemo(() => ({
-        settings,
-        setSettings,
-        library,
-        setLibrary,
-        addBook,
-        removeBook,
-        updateBook,
-        updateBookFilePath,
-        updateBookProgress,
-        bookProgressById,
-        addCategory,
-        removeCategory,
-        updateCategory,
-        setBookCategory,
-        currentBook,
-        setCurrentBook,
-        currentChapterContent,
-        setCurrentChapterContent,
-        chatMessages,
-        conversationMemory,
-        addChatMessage,
-        setChatMessages: setChatMessagesFn,
-        setConversationMemory,
-        clearChat,
-        isSidebarOpen,
-        setSidebarOpen,
-        isAIPanelOpen,
-        setAIPanelOpen,
-        isSearchOpen,
-        setSearchOpen,
-        selectedText,
-        setSelectedText,
-        selectedCfiRange,
-        setSelectedCfiRange,
-        accumulatedTexts,
-        addToAccumulatedTexts,
-        removeAccumulatedText,
-        clearAccumulatedTexts,
-    }), [
-        settings,
-        setSettings,
-        library,
-        setLibrary,
-        addBook,
-        removeBook,
-        updateBook,
-        updateBookFilePath,
-        updateBookProgress,
-        bookProgressById,
-        addCategory,
-        removeCategory,
-        updateCategory,
-        setBookCategory,
-        currentBook,
-        setCurrentBook,
-        currentChapterContent,
-        chatMessages,
-        conversationMemory,
-        addChatMessage,
-        setChatMessagesFn,
-        setConversationMemory,
-        clearChat,
-        isSidebarOpen,
-        isAIPanelOpen,
-        isSearchOpen,
-        selectedText,
-        setSelectedText,
-        selectedCfiRange,
-        setSelectedCfiRange,
-        accumulatedTexts,
-        addToAccumulatedTexts,
-        removeAccumulatedText,
-        clearAccumulatedTexts,
-    ]);
-
     const settingsContextValue = useMemo<SettingsContextValue>(() => ({
         settings,
         setSettings,
@@ -758,23 +631,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 <ProgressContext.Provider value={progressContextValue}>
                     <UIContext.Provider value={uiContextValue}>
                         <AIContext.Provider value={aiContextValue}>
-                            <AppContext.Provider value={value}>
-                                {children}
-                            </AppContext.Provider>
+                            {children}
                         </AIContext.Provider>
                     </UIContext.Provider>
                 </ProgressContext.Provider>
             </LibraryContext.Provider>
         </SettingsContext.Provider>
     );
-}
-
-export function useApp() {
-    const context = useContext(AppContext);
-    if (!context) {
-        throw new Error('useApp must be used within AppProvider');
-    }
-    return context;
 }
 
 export function useSettings() {

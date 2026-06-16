@@ -21,7 +21,6 @@ static SELECTED_PROVIDER: Mutex<Option<String>> = Mutex::new(None);
 static AI_AVAILABILITY_CACHE: Mutex<Option<Vec<AIProviderInfo>>> = Mutex::new(None);
 // Global cancel flag for AI streaming requests
 static AI_CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
-static AI_ALLOW_DANGEROUS_PERMISSIONS: AtomicBool = AtomicBool::new(false);
 const AI_TIMEOUT_SECS: u64 = 60;
 const AI_AVAILABILITY_TIMEOUT_SECS: u64 = 5;
 
@@ -123,20 +122,6 @@ fn new_hermes_command() -> TokioCommand {
     }
 }
 
-// Greet command (keep for testing)
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-// AI Provider enum
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AIProvider {
-    Codex,  // Codex CLI
-    Claude, // Claude Code CLI
-    Gemini,
-}
-
 // Chat request structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
@@ -163,20 +148,6 @@ pub struct SummarizeConversationRequest {
     pub book_title: Option<String>,
     pub provider: Option<String>,
     pub model: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReadingMemoryIngestRequest {
-    pub root_path: String,
-    pub title: String,
-    pub body: String,
-    pub metadata: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReadingMemoryIngestResult {
-    pub note_path: String,
-    pub log_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -551,25 +522,6 @@ async fn try_codex(prompt: &str) -> Option<String> {
     None
 }
 
-// Try Gemini CLI
-async fn try_gemini(prompt: &str) -> Option<String> {
-    // Deprecated: kept for compatibility if older state still references gemini.
-    let output = run_with_timeout({
-        let mut cmd = new_ai_command("gemini");
-        cmd.arg("-p").arg(prompt);
-        cmd
-    })
-    .await?;
-
-    if output.status.success() {
-        let response = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !response.is_empty() {
-            return Some(response);
-        }
-    }
-    None
-}
-
 async fn try_opencode(prompt: &str) -> Option<String> {
     let output = run_with_timeout({
         let mut cmd = new_ai_command("opencode");
@@ -612,9 +564,6 @@ async fn try_claude(prompt: &str, model: Option<&str>) -> Option<String> {
     let output = run_with_timeout({
         let mut cmd = new_ai_command("claude");
         cmd.arg("-p").arg(prompt);
-        if AI_ALLOW_DANGEROUS_PERMISSIONS.load(Ordering::Relaxed) {
-            cmd.arg("--dangerously-skip-permissions");
-        }
         append_model_arg(&mut cmd, model);
         cmd
     })
@@ -642,9 +591,6 @@ async fn try_claude_streaming(
         .arg("stream-json")
         .arg("--verbose")
         .arg("--include-partial-messages");
-    if AI_ALLOW_DANGEROUS_PERMISSIONS.load(Ordering::Relaxed) {
-        cmd.arg("--dangerously-skip-permissions");
-    }
 
     append_model_arg(&mut cmd, model);
 
@@ -744,7 +690,6 @@ fn ai_fallback_order(provider: &str) -> Vec<&'static str> {
         "codex" => vec!["claude", "hermes", "opencode"],
         "claude" => vec!["hermes", "codex", "opencode"],
         "opencode" => vec!["hermes", "codex", "claude"],
-        "gemini" => vec!["hermes", "codex", "claude", "opencode"],
         _ => vec!["hermes", "codex", "claude", "opencode"],
     }
 }
@@ -755,7 +700,6 @@ async fn try_ai_provider(provider: &str, prompt: &str, model: Option<&str>) -> O
         "claude" => try_claude(prompt, model).await,
         "opencode" => try_opencode(prompt).await,
         "hermes" => try_hermes(prompt, model).await,
-        "gemini" => try_gemini(prompt).await,
         _ => None,
     }
 }
@@ -883,7 +827,7 @@ fn get_ai_provider() -> Option<String> {
 // Set AI provider
 #[tauri::command]
 fn set_ai_provider(provider: String) -> Result<(), String> {
-    let valid_providers = ["hermes", "codex", "claude", "opencode", "gemini"];
+    let valid_providers = ["hermes", "codex", "claude", "opencode"];
     if !valid_providers.contains(&provider.as_str()) {
         return Err(format!(
             "Invalid provider: {}. Valid options: {:?}",
@@ -899,16 +843,6 @@ fn set_ai_provider(provider: String) -> Result<(), String> {
     }
 }
 
-#[tauri::command]
-fn get_ai_allow_dangerous_permissions() -> bool {
-    AI_ALLOW_DANGEROUS_PERMISSIONS.load(Ordering::Relaxed)
-}
-
-#[tauri::command]
-fn set_ai_allow_dangerous_permissions(allow: bool) {
-    AI_ALLOW_DANGEROUS_PERMISSIONS.store(allow, Ordering::Relaxed);
-}
-
 // Cancel ongoing AI streaming request
 #[tauri::command]
 fn cancel_ai_streaming() {
@@ -919,35 +853,6 @@ fn cancel_ai_streaming() {
 #[tauri::command]
 fn reset_ai_cancel() {
     AI_CANCEL_FLAG.store(false, Ordering::Relaxed);
-}
-
-// Simple chat command (backward compatible)
-#[tauri::command]
-async fn chat_with_ai(message: String, context: Option<String>) -> Result<String, String> {
-    let request = ChatRequest {
-        message,
-        context,
-        book_title: None,
-        chapter_content: None,
-        conversation_summary: None,
-        history: None,
-        provider: None,
-        model: None,
-    };
-
-    chat_with_ai_advanced(request).await
-}
-
-// Advanced chat with full context
-#[tauri::command]
-async fn chat_with_ai_advanced(request: ChatRequest) -> Result<String, String> {
-    let prompt = build_prompt(&request);
-    run_ai_oneshot_with_fallback(&prompt, request.provider, request.model.as_deref())
-        .await
-        .ok_or_else(|| {
-            "No AI CLI available. Please install one of: hermes, codex, claude, or opencode CLI."
-                .to_string()
-        })
 }
 
 #[tauri::command]
@@ -1169,16 +1074,6 @@ fn validate_book_path_inner(app: &tauri::AppHandle, file_path: &str) -> bool {
     is_under_any_root(&candidate, &allowed_roots)
 }
 
-// Get the books directory path in app data
-#[tauri::command]
-fn get_books_directory(app: tauri::AppHandle) -> Result<String, String> {
-    let books_dir = ensure_books_dir(&app)?;
-    books_dir
-        .to_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "Invalid path encoding".to_string())
-}
-
 // Import a book by copying it to the app's books directory
 #[tauri::command]
 fn import_book_to_library(
@@ -1388,27 +1283,6 @@ fn ensure_directory(path: &Path) -> Result<PathBuf, String> {
     std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve directory: {}", e))
 }
 
-fn markdown_slug(input: &str) -> String {
-    let mut out = String::new();
-    let mut last_dash = false;
-    for c in input.chars().flat_map(|c| c.to_lowercase()) {
-        let keep = c.is_alphanumeric() || c == '-' || c == '_';
-        if keep {
-            out.push(c);
-            last_dash = false;
-        } else if !last_dash {
-            out.push('-');
-            last_dash = true;
-        }
-    }
-    let trimmed = out.trim_matches('-').to_string();
-    if trimmed.is_empty() {
-        "reading-memory-note".to_string()
-    } else {
-        trimmed.chars().take(72).collect()
-    }
-}
-
 fn safe_wiki_title(input: &str) -> String {
     let cleaned = input
         .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|', '.'], " ")
@@ -1605,58 +1479,6 @@ fn ensure_reading_memory_repository(root_path: String) -> Result<String, String>
 }
 
 #[tauri::command]
-fn ingest_reading_memory_note(
-    request: ReadingMemoryIngestRequest,
-) -> Result<ReadingMemoryIngestResult, String> {
-    let root = ensure_directory(Path::new(&request.root_path))?;
-    let inbox_dir = root.join("inbox");
-    let meta_dir = root.join(".reading-memory");
-    std::fs::create_dir_all(&inbox_dir).map_err(|e| format!("Failed to create inbox: {}", e))?;
-    std::fs::create_dir_all(&meta_dir)
-        .map_err(|e| format!("Failed to create metadata directory: {}", e))?;
-
-    let millis = timestamp_millis()?;
-    let slug = markdown_slug(&request.title);
-    let filename = format!("{}-{}.md", millis, slug);
-    let note_path = inbox_dir.join(filename);
-
-    let mut body = request.body;
-    if !body.ends_with('\n') {
-        body.push('\n');
-    }
-    std::fs::write(&note_path, body).map_err(|e| format!("Failed to write note: {}", e))?;
-
-    let log_path = meta_dir.join("ingestion-log.jsonl");
-    let mut log_entry = serde_json::json!({
-        "created_at_ms": millis,
-        "note_path": note_path.to_string_lossy(),
-        "title": request.title,
-        "metadata": request.metadata,
-    });
-    if let Some(obj) = log_entry.as_object_mut() {
-        obj.insert("source_app".to_string(), serde_json::json!("CReader"));
-    }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .map_err(|e| format!("Failed to open ingestion log: {}", e))?;
-    writeln!(file, "{}", log_entry)
-        .map_err(|e| format!("Failed to append ingestion log: {}", e))?;
-
-    Ok(ReadingMemoryIngestResult {
-        note_path: note_path
-            .to_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| "Invalid note path encoding".to_string())?,
-        log_path: log_path
-            .to_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| "Invalid log path encoding".to_string())?,
-    })
-}
-
-#[tauri::command]
 async fn ingest_reading_memory_direct(
     request: ReadingMemoryDirectIngestRequest,
 ) -> Result<ReadingMemoryDirectIngestResult, String> {
@@ -1819,27 +1641,20 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
-            greet,
-            chat_with_ai,
-            chat_with_ai_advanced,
             chat_with_ai_streaming,
             summarize_ai_conversation,
             check_ai_availability,
             refresh_ai_availability,
             get_ai_provider,
             set_ai_provider,
-            get_ai_allow_dangerous_permissions,
-            set_ai_allow_dangerous_permissions,
             cancel_ai_streaming,
             reset_ai_cancel,
-            get_books_directory,
             import_book_to_library,
             delete_book_file,
             validate_book_path,
             validate_book_paths,
             find_book_in_library,
             ensure_reading_memory_repository,
-            ingest_reading_memory_note,
             ingest_reading_memory_direct
         ])
         .run(tauri::generate_context!())
@@ -1872,15 +1687,6 @@ mod tests {
         assert!(!is_supported_book_extension(Path::new("a.markdown")));
         assert!(!is_supported_book_extension(Path::new("a.txt")));
         assert!(!is_supported_book_extension(Path::new("a")));
-    }
-
-    #[test]
-    fn markdown_slug_has_safe_fallback() {
-        assert_eq!(
-            markdown_slug("机会成本 / Decision Quality"),
-            "机会成本-decision-quality"
-        );
-        assert_eq!(markdown_slug("!!!"), "reading-memory-note");
     }
 
     #[test]
