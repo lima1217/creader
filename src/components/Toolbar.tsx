@@ -171,7 +171,7 @@ export function Toolbar() {
                     </button>
 
                     <button
-                        className={`btn toolbar-action toolbar-ai-action ${isAIPanelOpen ? 'btn-primary active' : 'btn-secondary'}`}
+                        className="btn btn-secondary toolbar-action toolbar-ai-action"
                         data-proximity-control
                         onClick={() => setAIPanelOpen(!isAIPanelOpen)}
                         title="AI 助手"

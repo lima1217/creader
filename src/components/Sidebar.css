@@ -946,23 +946,6 @@
 }
 
 
-/* Theme-aligned primary action correction */
-.sidebar-import-btn.btn-primary {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-}
-
-[data-theme="dark"] .sidebar-import-btn.btn-primary {
-    color: #0B0D0F;
-}
-
-.sidebar-import-btn.btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
-    border-color: var(--accent-hover);
-}
-
-
 /* Compact icon-only import action */
 .sidebar-import-btn.btn-icon {
     width: 36px;

@@ -986,7 +986,7 @@ fn ensure_package_index(dir: &Path, content: &str) -> Result<(), String> {
 
 const OKF_AGENTS_MD: &str = "# AGENTS.md\n\nThis is an OKF-compatible LLM Wiki package.\n\n- Read `index.md` first for scope and navigation.\n- Every note starts with YAML frontmatter and a non-empty `type`.\n- Cite sources via `source_refs` / `chapter_refs`; keep traceability.\n- Merge duplicates instead of creating parallel pages.\n- Record meaningful changes in `log.md`.\n- Put uncertainty in `questions/`.\n";
 
-const READING_MEMORY_ROOT_AGENTS_MD: &str = "# AGENTS.md\n\nThis Reading Memory repository is an OKF-compatible LLM Wiki.\n\n## Layout\n\n- `shared/` — cross-book concepts, claims, questions, glossary.\n- `<book-slug>/` — one OKF sub-package per book (chapters, concepts, claims,\n  questions, sources). Book-related notes land here.\n- Legacy directories (`books/`, `concepts/`, `claims/`, `questions/`) are kept\n  for backward compatibility; new writes prefer the book sub-packages.\n- `.reading-memory/ingestion-log.jsonl` records automatic writes for linting.\n\n## Rules\n\n- Read a book's `index.md` before adding notes to its sub-package.\n- Preserve source metadata (book, chapter, CFI, excerpt).\n- Merge duplicate notes; prefer concept/claim pages over recaps.\n- Mark low-value automatic blocks as archived during lint instead of deleting.\n";
+const READING_MEMORY_ROOT_AGENTS_MD: &str = "# AGENTS.md\n\nThis Reading Memory repository is an OKF-compatible LLM Wiki.\n\n## Layout\n\n- `shared/` — cross-book concepts, claims, questions, glossary.\n- `books/<book-slug>/` — one OKF sub-package per book (chapters, concepts,\n  claims, questions, sources). Book-related notes land here.\n- Legacy flat directories (`concepts/`, `claims/`, `questions/`) are kept for\n  backward compatibility; new writes prefer the book sub-packages.\n- `.reading-memory/ingestion-log.jsonl` records automatic writes for linting.\n\n## Rules\n\n- Read a book's `index.md` before adding notes to its sub-package.\n- Preserve source metadata (book, chapter, CFI, excerpt).\n- Merge duplicate notes; prefer concept/claim pages over recaps.\n- Mark low-value automatic blocks as archived during lint instead of deleting.\n";
 
 #[tauri::command]
 fn ensure_reading_memory_repository(root_path: String) -> Result<String, String> {
@@ -1008,7 +1008,7 @@ fn ensure_reading_memory_repository(root_path: String) -> Result<String, String>
     write_if_missing(&root.join("log.md"), "# log.md\n\nReading Memory repository log.\n")?;
     write_if_missing(
         &root.join("index.md"),
-        "# Reading Memory\n\nOKF-compatible LLM Wiki for CReader reading notes.\n\n## Structure\n\n- `shared/` — cross-book concepts, claims, questions, glossary.\n- `<book-slug>/` — one OKF sub-package per book.\n- `.reading-memory/ingestion-log.jsonl` — automatic write log.\n",
+        "# Reading Memory\n\nOKF-compatible LLM Wiki for CReader reading notes.\n\n## Structure\n\n- `shared/` — cross-book concepts, claims, questions, glossary.\n- `books/<book-slug>/` — one OKF sub-package per book.\n- `.reading-memory/ingestion-log.jsonl` — automatic write log.\n",
     )?;
 
     ensure_package_index(&root.join("shared"), "# shared\n\nCross-book, reusable knowledge.\n")?;
@@ -1020,7 +1020,7 @@ fn ensure_reading_memory_repository(root_path: String) -> Result<String, String>
     if !rules_path.exists() {
         std::fs::write(
             &rules_path,
-            "# Reading Memory Lint Rules\n\n- Preserve source metadata and original excerpts.\n- Prefer book sub-packages (`<book-slug>/`) for book-related notes.\n- Merge duplicate notes across packages.\n- Improve links and headings without removing source traceability.\n- Mark low-value automatic blocks as archived during routine lint instead of deleting them silently.\n",
+            "# Reading Memory Lint Rules\n\n- Preserve source metadata and original excerpts.\n- Prefer book sub-packages (`books/<book-slug>/`) for book-related notes.\n- Merge duplicate notes across packages.\n- Improve links and headings without removing source traceability.\n- Mark low-value automatic blocks as archived during routine lint instead of deleting them silently.\n",
         )
         .map_err(|e| format!("Failed to write lint-rules.md: {}", e))?;
     }
@@ -1036,7 +1036,7 @@ fn ensure_book_subpackage(
     book_author: Option<&str>,
 ) -> Result<PathBuf, String> {
     let slug = book_slug(book_title);
-    let pkg = root.join(&slug);
+    let pkg = root.join("books").join(&slug);
     std::fs::create_dir_all(&pkg)
         .map_err(|e| format!("Failed to create book package {}: {}", slug, e))?;
 
@@ -1127,9 +1127,6 @@ async fn ingest_reading_memory_direct(
         ensure_book_subpackage(&root, &request.book_title, request.book_author.as_deref())?;
     let book_subdir = match target_dir {
         "books" => "sources",
-        "concepts" => "concepts",
-        "claims" => "claims",
-        "questions" => "questions",
         other => other,
     };
     let dir = book_pkg.join(book_subdir);
@@ -1692,6 +1689,26 @@ mod tests {
         assert_eq!(allowed_reading_memory_dir("concepts"), Some("concepts"));
         assert_eq!(allowed_reading_memory_dir("../outside"), None);
         assert_eq!(normalize_note_type(Some("weird"), "claims"), "claim");
+    }
+
+    #[test]
+    fn book_subpackage_lives_under_root_books_dir() {
+        let root = std::env::temp_dir().join(format!(
+            "creader-memory-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let pkg = ensure_book_subpackage(&root, "左耳听风", Some("左耳朵耗子")).unwrap();
+        assert_eq!(pkg, root.join("books").join(book_slug("左耳听风")));
+        assert!(pkg.join("index.md").exists());
+        assert!(pkg.join("concepts").join("index.md").exists());
+        assert!(!pkg.join("books").exists());
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

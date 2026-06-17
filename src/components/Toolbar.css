@@ -499,18 +499,6 @@
     border-color: var(--border-accent);
 }
 
-.toolbar-ai-action.btn-primary,
-.toolbar-ai-action.btn-primary:hover:not(:disabled) {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-}
-
-[data-theme="dark"] .toolbar-ai-action.btn-primary,
-[data-theme="dark"] .toolbar-ai-action.btn-primary:hover:not(:disabled) {
-    color: #0B0D0F;
-}
-
 .toolbar-theme-button > svg,
 .toolbar-action > svg,
 .toolbar-ai-action > svg {

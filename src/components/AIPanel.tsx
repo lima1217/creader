@@ -730,11 +730,7 @@ export function AIPanel() {
                                 </button>
                             </div>
                         ) : (
-                            <div className="ai-empty-guide">
-                                <span className="ai-empty-guide-icon" aria-hidden="true">
-                                    <AILogoIcon size={26} />
-                                </span>
-                            </div>
+                            null
                         )}
                     </div>
                 ) : (

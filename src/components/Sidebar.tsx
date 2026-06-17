@@ -431,7 +431,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                     <button className="btn btn-secondary btn-icon" data-proximity-control onClick={handleAddCategory} title="新增标签" aria-label="新增标签">
                         <FolderIcon />
                     </button>
-                    <button className="btn btn-primary btn-icon sidebar-import-btn" data-proximity-control onClick={onImportBook} title="导入 EPUB" aria-label="导入 EPUB">
+                    <button className="btn btn-secondary btn-icon sidebar-import-btn" data-proximity-control onClick={onImportBook} title="导入 EPUB" aria-label="导入 EPUB">
                         <PlusIcon />
                     </button>
                 </div>

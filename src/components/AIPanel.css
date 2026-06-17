@@ -272,43 +272,6 @@
     font-size: var(--text-xs);
 }
 
-/* Empty-state guidance (provider available, no conversation yet) */
-.ai-empty-guide {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    padding: var(--space-4);
-    text-align: center;
-    max-width: 280px;
-}
-
-.ai-empty-guide-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    margin-bottom: var(--space-1);
-    color: var(--accent);
-    background: var(--accent-soft);
-    border-radius: var(--radius-surface);
-}
-
-.ai-empty-guide-title {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-.ai-empty-guide-hint {
-    margin: 0;
-    font-size: var(--text-xs);
-    line-height: 1.5;
-    color: var(--text-muted);
-}
-
 /* Jump-to-latest floating button */
 .ai-scroll-to-latest {
     position: sticky;
