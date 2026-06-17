@@ -53,12 +53,23 @@ export interface Settings {
   allowEpubScripts: boolean;
   readingMemoryPath?: string;
   readingMemoryAutoIngest: boolean;
-  aiProvider: string;
-  aiModel: string;
-  hermesModel: string;
   aiTextSize: number; // 13-20
   aiContextWindow: 5 | 20 | 40;
   aiAutoSummarize: boolean;
+}
+
+// OpenAI-compatible AI provider configuration. The API key is NOT stored here —
+// it lives in app config `ai_keys.env` and is read only by the backend.
+export interface AIProviderConfig {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+}
+
+export interface AIProviderStatus extends AIProviderConfig {
+  active: boolean;
+  hasKey: boolean;
 }
 
 // AI Chat message

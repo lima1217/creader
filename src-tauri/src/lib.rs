@@ -1,128 +1,20 @@
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command as StdCommand;
-use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
-use std::sync::OnceLock;
 use tauri::ipc::Channel;
 use tauri::Manager;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command as TokioCommand;
-use tokio::time::{timeout, Duration};
 
-// Global state for selected AI provider
-static SELECTED_PROVIDER: Mutex<Option<String>> = Mutex::new(None);
-// Cache for AI availability check (to avoid slow repeated checks)
-static AI_AVAILABILITY_CACHE: Mutex<Option<Vec<AIProviderInfo>>> = Mutex::new(None);
 // Global cancel flag for AI streaming requests
 static AI_CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
-const AI_TIMEOUT_SECS: u64 = 60;
-const AI_AVAILABILITY_TIMEOUT_SECS: u64 = 5;
+const AI_TIMEOUT_SECS: u64 = 120;
 
-static COMMAND_PATH_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+// ============================================================
+// Chat request / response structures
+// ============================================================
 
-fn command_path_cache() -> &'static Mutex<HashMap<String, String>> {
-    COMMAND_PATH_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn clear_command_path_cache() {
-    if let Ok(mut cache) = command_path_cache().lock() {
-        cache.clear();
-    }
-}
-
-fn configure_command_path(cmd: &mut TokioCommand, cmd_path: &str) {
-    let mut parts: Vec<String> = Vec::new();
-
-    if let Some(parent) = Path::new(cmd_path).parent() {
-        let p = parent.to_string_lossy().to_string();
-        if !p.is_empty() {
-            parts.push(p);
-        }
-    }
-
-    // Common GUI-app PATH gaps on macOS.
-    parts.push("/opt/homebrew/bin".to_string());
-    parts.push("/usr/local/bin".to_string());
-    parts.push("/usr/bin".to_string());
-    parts.push("/bin".to_string());
-
-    if let Ok(existing) = std::env::var("PATH") {
-        if !existing.is_empty() {
-            parts.push(existing);
-        }
-    }
-
-    // De-duplicate while preserving order.
-    let mut seen = std::collections::HashSet::<String>::new();
-    parts.retain(|p| seen.insert(p.clone()));
-
-    cmd.env("PATH", parts.join(":"));
-}
-
-fn ai_workdir() -> Option<PathBuf> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
-        .filter(|value| !value.is_empty())?;
-    let home = PathBuf::from(home);
-    let workdir = home.join(".creader").join("ai-workdir");
-
-    if std::fs::create_dir_all(&workdir).is_ok() {
-        Some(workdir)
-    } else {
-        Some(home)
-    }
-}
-
-fn configure_ai_command(cmd: &mut TokioCommand, cmd_path: &str) {
-    configure_command_path(cmd, cmd_path);
-    if let Some(workdir) = ai_workdir() {
-        cmd.current_dir(workdir);
-    }
-}
-
-fn append_model_arg(cmd: &mut TokioCommand, model: Option<&str>) {
-    if let Some(m) = model {
-        let trimmed = m.trim();
-        if !trimmed.is_empty() {
-            cmd.arg("--model").arg(trimmed);
-        }
-    }
-}
-
-fn new_ai_command(cmd_name: &str) -> TokioCommand {
-    let cmd_path = find_command(cmd_name);
-    let mut cmd = TokioCommand::new(&cmd_path);
-    configure_ai_command(&mut cmd, &cmd_path);
-    cmd
-}
-
-fn new_hermes_command() -> TokioCommand {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default();
-    let hermes_root = PathBuf::from(home).join(".hermes").join("hermes-agent");
-    let hermes_script = hermes_root.join("hermes");
-    let hermes_python = hermes_root.join("venv").join("bin").join("python");
-
-    if hermes_python.exists() && hermes_script.exists() {
-        let python_path = hermes_python.to_string_lossy().to_string();
-        let mut cmd = TokioCommand::new(&python_path);
-        configure_ai_command(&mut cmd, &python_path);
-        cmd.arg(hermes_script.to_string_lossy().to_string());
-        cmd
-    } else {
-        new_ai_command("hermes")
-    }
-}
-
-// Chat request structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
     pub message: String,
@@ -131,8 +23,6 @@ pub struct ChatRequest {
     pub chapter_content: Option<String>,
     pub conversation_summary: Option<String>,
     pub history: Option<Vec<ChatHistoryItem>>,
-    pub provider: Option<String>, // Optional: specify provider per request
-    pub model: Option<String>,    // Optional: specify model (e.g., "sonnet", "opus", "haiku")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,8 +36,6 @@ pub struct SummarizeConversationRequest {
     pub existing_summary: Option<String>,
     pub messages: Vec<ChatHistoryItem>,
     pub book_title: Option<String>,
-    pub provider: Option<String>,
-    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,8 +49,6 @@ pub struct ReadingMemoryDirectIngestRequest {
     pub user_question: String,
     pub selected_excerpt: Option<String>,
     pub assistant_answer: String,
-    pub provider: Option<String>,
-    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,37 +72,26 @@ struct ReadingMemoryDirectDecision {
     reason: Option<String>,
 }
 
-// AI Provider info for frontend
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AIProviderInfo {
-    pub id: String,
-    pub name: String,
-    pub model: String,
-    pub available: bool,
-}
-
 // Stream events for AI responses
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum StreamEvent {
-    /// Stream started
     Started { provider: String },
-    /// A chunk of text data
     Chunk { text: String },
-    /// Stream completed successfully
     Done { full_text: String },
-    /// An error occurred
     Error {
         message: String,
         provider: Option<String>,
     },
 }
 
-// Build a rich prompt with context
+// ============================================================
+// Prompt builders (provider-agnostic — reused by HTTP path)
+// ============================================================
+
 fn build_prompt(request: &ChatRequest) -> String {
     let mut prompt_parts = Vec::new();
 
-    // System context
     prompt_parts.push(
         r#"你是一个极其出色的阅读助手，同时诚实、并且关心这个世界。
 
@@ -232,16 +107,12 @@ fn build_prompt(request: &ChatRequest) -> String {
             .to_string(),
     );
 
-    // Book context
     if let Some(ref title) = request.book_title {
         prompt_parts.push(format!("\n\nCurrently reading: \"{}\"", title));
     }
 
-    // Chapter content context (if provided)
     if let Some(ref content) = request.chapter_content {
-        // Limit content to avoid token limits (safely handle UTF-8 char boundaries)
         let truncated = if content.len() > 3000 {
-            // Find the last valid char boundary before 3000 bytes
             let mut end = 3000;
             while end > 0 && !content.is_char_boundary(end) {
                 end -= 1;
@@ -256,7 +127,6 @@ fn build_prompt(request: &ChatRequest) -> String {
         ));
     }
 
-    // Selected text context
     if let Some(ref ctx) = request.context {
         prompt_parts.push(format!("\n\nUser has selected this text: \"{}\"", ctx));
     }
@@ -270,11 +140,9 @@ fn build_prompt(request: &ChatRequest) -> String {
         }
     }
 
-    // Include recent conversation history for context
     if let Some(ref history) = request.history {
         if !history.is_empty() {
             prompt_parts.push("\n\nRecent conversation:".to_string());
-            // Frontend controls the history window size from user settings.
             let recent: Vec<_> = history.iter().collect();
             for item in recent {
                 let role_label = if item.role == "user" {
@@ -287,7 +155,6 @@ fn build_prompt(request: &ChatRequest) -> String {
         }
     }
 
-    // Current user message
     prompt_parts.push(format!("\n\nUser's current question: {}", request.message));
     prompt_parts.push("\n\nPlease respond helpfully:".to_string());
 
@@ -423,576 +290,908 @@ Assistant answer:
     )
 }
 
-// Find command in common paths (GUI apps don't inherit shell PATH)
-fn find_command(cmd: &str) -> String {
-    if let Ok(cache) = command_path_cache().lock() {
-        if let Some(found) = cache.get(cmd) {
-            return found.clone();
+// ============================================================
+// AI providers (OpenAI-compatible HTTP)
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AIProviderConfig {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AIProviderStatus {
+    #[serde(flatten)]
+    pub config: AIProviderConfig,
+    pub active: bool,
+    pub has_key: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AIProviderStore {
+    providers: Vec<AIProviderConfig>,
+    active_id: Option<String>,
+}
+
+impl Default for AIProviderStore {
+    fn default() -> Self {
+        Self {
+            providers: Vec::new(),
+            active_id: None,
         }
     }
+}
 
-    // Get home directory - try multiple methods
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| {
-            // Fallback: try to get from user info on macOS
-            if let Ok(output) = StdCommand::new("sh").arg("-c").arg("echo $HOME").output() {
-                let home = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !home.is_empty() {
-                    return home;
-                }
+fn providers_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Failed to get app config directory: {}", e))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create app config directory: {}", e))?;
+    Ok(dir.join("ai_providers.json"))
+}
+
+fn load_provider_store(app: &tauri::AppHandle) -> Result<AIProviderStore, String> {
+    let path = providers_file(app)?;
+    if !path.exists() {
+        return Ok(AIProviderStore::default());
+    }
+    let data = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read ai_providers.json: {}", e))?;
+    if data.trim().is_empty() {
+        return Ok(AIProviderStore::default());
+    }
+    serde_json::from_str::<AIProviderStore>(&data)
+        .map_err(|e| format!("Failed to parse ai_providers.json: {}", e))
+}
+
+fn save_provider_store(app: &tauri::AppHandle, store: &AIProviderStore) -> Result<(), String> {
+    let path = providers_file(app)?;
+    let json = serde_json::to_string_pretty(store)
+        .map_err(|e| format!("Failed to serialize providers: {}", e))?;
+    std::fs::write(&path, json)
+        .map_err(|e| format!("Failed to write ai_providers.json: {}", e))
+}
+
+fn api_keys_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(providers_file(app)?.with_file_name("ai_keys.env"))
+}
+
+fn api_key_env_name(provider_id: &str) -> String {
+    let suffix: String = provider_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
             }
-            // Last resort - use a default that will likely fail gracefully
-            String::new()
-        });
+        })
+        .collect();
+    format!("AI_API_KEY_{}", suffix)
+}
 
-    // Build list of paths to check - prioritize common locations
-    let mut paths = vec![
-        format!("{}/.hermes/hermes-agent/{}", home, cmd), // Hermes local agent
-        format!("{}/.local/bin/{}", home, cmd),           // ~/.local/bin (Codex CLI)
-        format!("{}/.cargo/bin/{}", home, cmd),           // Cargo installs
-        format!("{}/.bun/bin/{}", home, cmd),             // Bun installs
-    ];
+fn read_api_key(app: &tauri::AppHandle, provider_id: &str) -> Option<String> {
+    match read_api_key_result(app, provider_id) {
+        Ok(opt) => opt,
+        Err(err) => {
+            eprintln!("[creader] read_api_key('{}') failed: {}", provider_id, err);
+            None
+        }
+    }
+}
 
-    // Check NVM versions dynamically
-    let nvm_versions_dir = format!("{}/.nvm/versions/node", home);
-    if let Ok(entries) = std::fs::read_dir(&nvm_versions_dir) {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                let bin_path = entry.path().join("bin").join(cmd);
-                if bin_path.exists() {
-                    return bin_path.to_string_lossy().to_string();
-                }
+fn read_api_key_result(app: &tauri::AppHandle, provider_id: &str) -> Result<Option<String>, String> {
+    let path = api_keys_file(app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let name = api_key_env_name(provider_id);
+    let data = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read ai_keys.env: {}", e))?;
+    for line in data.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || !trimmed.starts_with(&name) {
+            continue;
+        }
+        if let Some((key, value)) = trimmed.split_once('=') {
+            if key.trim() == name {
+                let value = value.trim().trim_matches('"').trim_matches('\'').to_string();
+                return Ok((!value.is_empty()).then_some(value));
             }
         }
     }
+    Ok(None)
+}
 
-    // Python version paths
-    for py_version in &["3.9", "3.10", "3.11", "3.12", "3.13"] {
-        paths.push(format!(
-            "{}/Library/Python/{}/bin/{}",
-            home, py_version, cmd
-        ));
+fn set_api_key(app: &tauri::AppHandle, provider_id: &str, key: &str) -> Result<(), String> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("API key cannot be empty.".to_string());
+    }
+    if key.contains('\n') || key.contains('\r') {
+        return Err("API key cannot contain newlines.".to_string());
     }
 
-    // System paths
-    paths.push("/opt/homebrew/bin/".to_string() + cmd); // Homebrew ARM
-    paths.push("/usr/local/bin/".to_string() + cmd); // Homebrew Intel / system
-    paths.push("/usr/bin/".to_string() + cmd); // System
+    let path = api_keys_file(app)?;
+    let name = api_key_env_name(provider_id);
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = existing
+        .lines()
+        .filter(|line| line.split_once('=').map(|(k, _)| k.trim() != name).unwrap_or(true))
+        .map(str::to_string)
+        .collect();
+    lines.push(format!("{}={}", name, key));
+    std::fs::write(&path, format!("{}\n", lines.join("\n")))
+        .map_err(|e| format!("Failed to write ai_keys.env: {}", e))
+}
 
-    for path in &paths {
-        if std::path::Path::new(path).exists() {
-            if let Ok(mut cache) = command_path_cache().lock() {
-                cache.insert(cmd.to_string(), path.clone());
+fn active_provider(
+    app: &tauri::AppHandle,
+) -> Result<(AIProviderConfig, String), String> {
+    let store = load_provider_store(app)?;
+    let active_id = store
+        .active_id
+        .as_deref()
+        .ok_or_else(|| "No active AI provider configured. Add one in Settings.".to_string())?;
+    let config = store
+        .providers
+        .iter()
+        .find(|p| p.id == active_id)
+        .cloned()
+        .ok_or_else(|| "Active provider not found. Select one in Settings.".to_string())?;
+    let api_key = match read_api_key_result(app, &config.id) {
+        Ok(Some(k)) => k,
+        Ok(None) => {
+            return Err("No API key set for the active provider.".to_string());
+        }
+        Err(e) => return Err(e),
+    };
+    Ok((config, api_key))
+}
+
+#[tauri::command]
+fn list_ai_providers(
+    app: tauri::AppHandle,
+) -> Result<Vec<AIProviderStatus>, String> {
+    let store = load_provider_store(&app)?;
+    let active_id = store.active_id.as_deref();
+    Ok(store
+        .providers
+        .into_iter()
+        .map(|config| {
+            let active = active_id == Some(config.id.as_str());
+            let has_key = read_api_key(&app, &config.id).is_some();
+            AIProviderStatus {
+                config,
+                active,
+                has_key,
             }
-            return path.clone();
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn save_ai_provider(
+    app: tauri::AppHandle,
+    config: AIProviderConfig,
+    activate: Option<bool>,
+) -> Result<AIProviderStatus, String> {
+    if config.name.trim().is_empty() {
+        return Err("Provider name is required.".to_string());
+    }
+    if config.base_url.trim().is_empty() {
+        return Err("Provider base URL is required.".to_string());
+    }
+    let mut store = load_provider_store(&app)?;
+    let id = config.id.clone();
+    if let Some(existing) = store.providers.iter_mut().find(|p| p.id == id) {
+        *existing = config.clone();
+    } else {
+        store.providers.push(config.clone());
+        if store.active_id.is_none() {
+            store.active_id = Some(id.clone());
         }
     }
-
-    // Fallback to just the command name (might work if PATH is set)
-    let fallback = cmd.to_string();
-    if let Ok(mut cache) = command_path_cache().lock() {
-        cache.insert(cmd.to_string(), fallback.clone());
+    if activate.unwrap_or(false) {
+        store.active_id = Some(id.clone());
     }
-    fallback
-}
-
-async fn run_with_timeout(mut cmd: TokioCommand) -> Option<std::process::Output> {
-    timeout(Duration::from_secs(AI_TIMEOUT_SECS), cmd.output())
-        .await
-        .ok()?
-        .ok()
-}
-
-// Try Codex CLI
-async fn try_codex(prompt: &str) -> Option<String> {
-    let output = run_with_timeout({
-        let mut cmd = new_ai_command("codex");
-        cmd.arg("-p").arg(prompt);
-        cmd
+    save_provider_store(&app, &store)?;
+    let has_key = read_api_key(&app, &id).is_some();
+    Ok(AIProviderStatus {
+        config,
+        active: store.active_id.as_deref() == Some(id.as_str()),
+        has_key,
     })
-    .await?;
-
-    if output.status.success() {
-        let response = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !response.is_empty() {
-            return Some(response);
-        }
-    }
-    None
 }
 
-async fn try_opencode(prompt: &str) -> Option<String> {
-    let output = run_with_timeout({
-        let mut cmd = new_ai_command("opencode");
-        cmd.arg("run").arg(prompt);
-        cmd
-    })
-    .await?;
-
-    if output.status.success() {
-        let response = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !response.is_empty() {
-            return Some(response);
-        }
+#[tauri::command]
+fn delete_ai_provider(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let mut store = load_provider_store(&app)?;
+    store.providers.retain(|p| p.id != id);
+    if store.active_id.as_deref() == Some(id.as_str()) {
+        store.active_id = store.providers.first().map(|p| p.id.clone());
     }
-
-    None
+    save_provider_store(&app, &store)?;
+    Ok(())
 }
 
-async fn try_hermes(prompt: &str, model: Option<&str>) -> Option<String> {
-    let output = run_with_timeout({
-        let mut cmd = new_hermes_command();
-        cmd.arg("-z").arg(prompt);
-        append_model_arg(&mut cmd, model);
-        cmd
-    })
-    .await?;
-
-    if output.status.success() {
-        let response = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !response.is_empty() {
-            return Some(response);
-        }
+#[tauri::command]
+fn set_active_ai_provider(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let mut store = load_provider_store(&app)?;
+    if !store.providers.iter().any(|p| p.id == id) {
+        return Err("Provider not found.".to_string());
     }
-
-    None
+    store.active_id = Some(id);
+    save_provider_store(&app, &store)
 }
 
-// Try Claude CLI
-async fn try_claude(prompt: &str, model: Option<&str>) -> Option<String> {
-    let output = run_with_timeout({
-        let mut cmd = new_ai_command("claude");
-        cmd.arg("-p").arg(prompt);
-        append_model_arg(&mut cmd, model);
-        cmd
-    })
-    .await?;
-
-    if output.status.success() {
-        let response = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !response.is_empty() {
-            return Some(response);
-        }
-    }
-    None
+#[tauri::command]
+fn get_active_ai_provider(app: tauri::AppHandle) -> Result<Option<AIProviderConfig>, String> {
+    let store = load_provider_store(&app)?;
+    Ok(store
+        .active_id
+        .and_then(|id| store.providers.into_iter().find(|p| p.id == id)))
 }
 
-// Try Claude CLI with streaming output (with cancel support)
-async fn try_claude_streaming(
+#[tauri::command]
+fn set_ai_api_key(app: tauri::AppHandle, id: String, key: String) -> Result<(), String> {
+    set_api_key(&app, &id, &key)
+}
+
+#[tauri::command]
+fn has_ai_api_key(app: tauri::AppHandle, id: String) -> bool {
+    read_api_key(&app, &id).is_some()
+}
+
+/// Normalize a base URL + path into a full endpoint. Accepts with or without a
+/// trailing slash, and with or without a `/v1` version segment.
+fn chat_completions_url(base_url: &str) -> String {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    // Strip a trailing /chat/completions if the user pasted the full endpoint.
+    let trimmed = trimmed
+        .trim_end_matches("/chat/completions")
+        .trim_end_matches('/');
+    format!("{}/chat/completions", trimmed)
+}
+
+/// Streaming chat completion over an OpenAI-compatible endpoint. Emits
+/// `StreamEvent`s through the Tauri Channel, honoring the global cancel flag.
+async fn chat_completion_stream(
     prompt: &str,
-    model: Option<&str>,
+    config: &AIProviderConfig,
+    api_key: &str,
     on_event: &Channel<StreamEvent>,
-) -> Option<String> {
-    let mut cmd = new_ai_command("claude");
-    cmd.arg("-p")
-        .arg(prompt)
-        .arg("--output-format")
-        .arg("stream-json")
-        .arg("--verbose")
-        .arg("--include-partial-messages");
+) -> Result<String, String> {
+    use futures_util::StreamExt;
 
-    append_model_arg(&mut cmd, model);
+    let url = chat_completions_url(&config.base_url);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(AI_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-    let mut child = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-
-    let stdout = child.stdout.take()?;
-    let reader = BufReader::new(stdout);
-    let mut lines = reader.lines();
-    let mut full_text = String::new();
-    let mut was_cancelled = false;
-
-    // Send started event
-    let _ = on_event.send(StreamEvent::Started {
-        provider: "claude".to_string(),
+    let body = serde_json::json!({
+        "model": config.model,
+        "messages": [{ "role": "user", "content": prompt }],
+        "stream": true,
+        "temperature": 0.7,
     });
 
-    // Process streaming output line by line
-    while let Ok(Some(line)) = lines.next_line().await {
-        // Check if cancelled
+    let response = client
+        .post(&url)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, truncate_for_prompt(&text, 500)));
+    }
+
+    let _ = on_event.send(StreamEvent::Started {
+        provider: config.name.clone(),
+    });
+
+    let mut stream = response.bytes_stream();
+    let mut full_text = String::new();
+    // Accumulate raw bytes and split on newlines, since SSE events arrive as
+    // `data: <json>\n\n` and a single network chunk may contain partial lines.
+    let mut buffer: Vec<u8> = Vec::new();
+
+    while let Some(chunk_result) = stream.next().await {
         if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
-            was_cancelled = true;
-            // Kill the child process
-            let _ = child.kill().await;
             break;
         }
+        let chunk = chunk_result
+            .map_err(|e| format!("Stream read error: {}", e))?;
+        buffer.extend_from_slice(&chunk);
 
-        // Parse JSON line to extract text delta
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-            // Check for content_block_delta with text_delta
-            if json.get("type").and_then(|t| t.as_str()) == Some("stream_event") {
-                if let Some(event) = json.get("event") {
-                    if event.get("type").and_then(|t| t.as_str()) == Some("content_block_delta") {
-                        if let Some(delta) = event.get("delta") {
-                            if delta.get("type").and_then(|t| t.as_str()) == Some("text_delta") {
-                                if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
-                                    full_text.push_str(text);
-                                    let _ = on_event.send(StreamEvent::Chunk {
-                                        text: text.to_string(),
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
+        // Process every complete line currently in the buffer.
+        while let Some(nl) = buffer.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = buffer.drain(..=nl).collect();
+            let line = String::from_utf8_lossy(&line_bytes);
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
             }
-            // Check for final result
-            if json.get("type").and_then(|t| t.as_str()) == Some("result") {
-                if let Some(result) = json.get("result").and_then(|r| r.as_str()) {
-                    // If we didn't get streaming chunks, use the final result
-                    if full_text.is_empty() {
-                        full_text = result.to_string();
-                    }
+            let payload = match trimmed.strip_prefix("data:").map(str::trim) {
+                Some("[DONE]") => {
+                    buffer.clear();
+                    return Ok(full_text);
+                }
+                Some(json) => json,
+                None => continue,
+            };
+            let delta = serde_json::from_str::<serde_json::Value>(payload)
+                .ok()
+                .and_then(|v| {
+                    v.get("choices")
+                        .and_then(|c| c.get(0))
+                        .and_then(|c| c.get("delta"))
+                        .and_then(|d| d.get("content"))
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string())
+                });
+            if let Some(piece) = delta {
+                if !piece.is_empty() {
+                    full_text.push_str(&piece);
+                    let _ = on_event.send(StreamEvent::Chunk { text: piece });
                 }
             }
         }
     }
 
-    // Wait for the process to finish
-    let _ = child.wait().await;
-
-    // Handle cancellation
-    if was_cancelled {
-        // Send cancelled event with partial content
-        let _ = on_event.send(StreamEvent::Done {
-            full_text: if full_text.is_empty() {
-                "[Generation stopped by user]".to_string()
-            } else {
-                format!("{}\n\n[Generation stopped by user]", full_text)
-            },
-        });
-        return Some(full_text);
-    }
-
-    if !full_text.is_empty() {
-        let _ = on_event.send(StreamEvent::Done {
-            full_text: full_text.clone(),
-        });
-        Some(full_text)
-    } else {
-        None
-    }
+    Ok(full_text)
 }
 
-fn selected_ai_provider(provider: Option<String>) -> String {
-    provider
-        .or_else(|| SELECTED_PROVIDER.lock().ok()?.clone())
-        .unwrap_or_else(|| "claude".to_string())
-}
+/// One-shot (non-streaming) chat completion. Returns the full assistant text.
+async fn chat_completion_oneshot(
+    prompt: &str,
+    config: &AIProviderConfig,
+    api_key: &str,
+) -> Result<String, String> {
+    let url = chat_completions_url(&config.base_url);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(AI_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-fn ai_fallback_order(provider: &str) -> Vec<&'static str> {
-    match provider {
-        "hermes" => vec!["claude", "codex", "opencode"],
-        "codex" => vec!["claude", "hermes", "opencode"],
-        "claude" => vec!["hermes", "codex", "opencode"],
-        "opencode" => vec!["hermes", "codex", "claude"],
-        _ => vec!["hermes", "codex", "claude", "opencode"],
-    }
-}
-
-async fn try_ai_provider(provider: &str, prompt: &str, model: Option<&str>) -> Option<String> {
-    match provider {
-        "codex" => try_codex(prompt).await,
-        "claude" => try_claude(prompt, model).await,
-        "opencode" => try_opencode(prompt).await,
-        "hermes" => try_hermes(prompt, model).await,
-        _ => None,
-    }
-}
-
-async fn check_cli_available(mut cmd: TokioCommand) -> bool {
-    timeout(
-        Duration::from_secs(AI_AVAILABILITY_TIMEOUT_SECS),
-        cmd.output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok())
-    .map(|o| o.status.success())
-    .unwrap_or(false)
-}
-
-async fn do_check_ai_availability() -> Vec<AIProviderInfo> {
-    let codex_task = tokio::spawn(async move {
-        check_cli_available({
-            let mut cmd = new_ai_command("codex");
-            cmd.arg("--version");
-            cmd
-        })
-        .await
-    });
-    let claude_task = tokio::spawn(async move {
-        check_cli_available({
-            let mut cmd = new_ai_command("claude");
-            cmd.arg("--version");
-            cmd
-        })
-        .await
-    });
-    let opencode_task = tokio::spawn(async move {
-        check_cli_available({
-            let mut cmd = new_ai_command("opencode");
-            cmd.arg("--version");
-            cmd
-        })
-        .await
-    });
-    let hermes_task = tokio::spawn(async move {
-        check_cli_available({
-            let mut cmd = new_hermes_command();
-            cmd.arg("--version");
-            cmd
-        })
-        .await
+    let body = serde_json::json!({
+        "model": config.model,
+        "messages": [{ "role": "user", "content": prompt }],
+        "stream": false,
+        "temperature": 0.3,
     });
 
-    let codex_available = codex_task.await.unwrap_or(false);
-    let claude_available = claude_task.await.unwrap_or(false);
-    let opencode_available = opencode_task.await.unwrap_or(false);
-    let hermes_available = hermes_task.await.unwrap_or(false);
+    let response = client
+        .post(&url)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
 
-    vec![
-        AIProviderInfo {
-            id: "hermes".to_string(),
-            name: "Hermes".to_string(),
-            model: "Hermes Agent".to_string(),
-            available: hermes_available,
-        },
-        AIProviderInfo {
-            id: "codex".to_string(),
-            name: "Codex CLI".to_string(),
-            model: "Codex".to_string(),
-            available: codex_available,
-        },
-        AIProviderInfo {
-            id: "claude".to_string(),
-            name: "Claude Code".to_string(),
-            model: "Claude".to_string(),
-            available: claude_available,
-        },
-        AIProviderInfo {
-            id: "opencode".to_string(),
-            name: "OpenCode".to_string(),
-            model: "OpenCode".to_string(),
-            available: opencode_available,
-        },
-    ]
-}
-
-// Check which AI CLIs are available and return detailed info (uses cache after first call)
-#[tauri::command]
-async fn check_ai_availability() -> Vec<AIProviderInfo> {
-    // Try to return cached result first
-    if let Ok(cache) = AI_AVAILABILITY_CACHE.lock() {
-        if let Some(ref cached) = *cache {
-            return cached.clone();
-        }
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, truncate_for_prompt(&text, 500)));
     }
 
-    // Perform actual check
-    let providers = do_check_ai_availability().await;
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse API response: {}", e))?;
 
-    // Cache the result
-    if let Ok(mut cache) = AI_AVAILABILITY_CACHE.lock() {
-        *cache = Some(providers.clone());
-    }
-
-    providers
+    json.get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|t| t.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "API response missing choices[0].message.content".to_string())
 }
 
-// Force refresh AI availability check (clears cache and re-checks)
-#[tauri::command]
-async fn refresh_ai_availability() -> Vec<AIProviderInfo> {
-    clear_command_path_cache();
-    let providers = do_check_ai_availability().await;
-
-    // Update cache
-    if let Ok(mut cache) = AI_AVAILABILITY_CACHE.lock() {
-        *cache = Some(providers.clone());
-    }
-
-    providers
-}
-
-// Get currently selected AI provider
-#[tauri::command]
-fn get_ai_provider() -> Option<String> {
-    SELECTED_PROVIDER.lock().ok()?.clone()
-}
-
-// Set AI provider
-#[tauri::command]
-fn set_ai_provider(provider: String) -> Result<(), String> {
-    let valid_providers = ["hermes", "codex", "claude", "opencode"];
-    if !valid_providers.contains(&provider.as_str()) {
-        return Err(format!(
-            "Invalid provider: {}. Valid options: {:?}",
-            provider, valid_providers
-        ));
-    }
-
-    if let Ok(mut selected) = SELECTED_PROVIDER.lock() {
-        *selected = Some(provider);
-        Ok(())
-    } else {
-        Err("Failed to set provider".to_string())
-    }
-}
-
-// Cancel ongoing AI streaming request
 #[tauri::command]
 fn cancel_ai_streaming() {
     AI_CANCEL_FLAG.store(true, Ordering::Relaxed);
 }
 
-// Reset AI cancel flag (call before starting a new request)
 #[tauri::command]
 fn reset_ai_cancel() {
     AI_CANCEL_FLAG.store(false, Ordering::Relaxed);
 }
 
+// ============================================================
+// AI Tauri commands
+// ============================================================
+
+#[tauri::command]
+async fn chat_with_ai_streaming(
+    app: tauri::AppHandle,
+    request: ChatRequest,
+    on_event: Channel<StreamEvent>,
+) -> Result<(), String> {
+    let (config, api_key) = match active_provider(&app) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = on_event.send(StreamEvent::Error {
+                message: e.clone(),
+                provider: None,
+            });
+            return Err(e);
+        }
+    };
+
+    let prompt = build_prompt(&request);
+
+    match chat_completion_stream(&prompt, &config, &api_key, &on_event).await {
+        Ok(full_text) => {
+            if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
+                let _ = on_event.send(StreamEvent::Done {
+                    full_text: "[Generation stopped by user]".to_string(),
+                });
+            } else if full_text.trim().is_empty() {
+                let _ = on_event.send(StreamEvent::Error {
+                    message: "The model returned an empty response.".to_string(),
+                    provider: Some(config.name.clone()),
+                });
+            } else {
+                let _ = on_event.send(StreamEvent::Done { full_text });
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let _ = on_event.send(StreamEvent::Error {
+                message: e.clone(),
+                provider: Some(config.name),
+            });
+            Err(e)
+        }
+    }
+}
+
 #[tauri::command]
 async fn summarize_ai_conversation(
+    app: tauri::AppHandle,
     request: SummarizeConversationRequest,
 ) -> Result<String, String> {
     if request.messages.is_empty() {
         return Ok(request.existing_summary.unwrap_or_default());
     }
-
+    let (config, api_key) = active_provider(&app)?;
     let prompt = build_summary_prompt(&request);
-    run_ai_oneshot_with_fallback(&prompt, request.provider, request.model.as_deref())
-        .await
-        .ok_or_else(|| "No AI CLI available to summarize conversation.".to_string())
+    chat_completion_oneshot(&prompt, &config, &api_key).await
 }
 
-async fn run_ai_oneshot_with_fallback(
-    prompt: &str,
-    provider: Option<String>,
-    model: Option<&str>,
-) -> Option<String> {
-    let provider = selected_ai_provider(provider);
+// ============================================================
+// Reading Memory ingestion (OKF Wiki)
+// ============================================================
 
-    let selected = try_ai_provider(&provider, prompt, model).await;
-    if selected.is_some() {
-        return selected;
+fn allowed_reading_memory_dir(dir: &str) -> Option<&'static str> {
+    match dir.trim() {
+        "books" => Some("books"),
+        "concepts" => Some("concepts"),
+        "questions" => Some("questions"),
+        "claims" => Some("claims"),
+        _ => None,
     }
+}
 
-    for fallback in ai_fallback_order(&provider) {
-        let response = try_ai_provider(fallback, prompt, model).await;
-        if response.is_some() {
-            return response;
+fn normalize_note_type(value: Option<&str>, target_dir: &str) -> &'static str {
+    match (value.map(|v| v.trim().to_lowercase()).as_deref(), target_dir) {
+        (Some("question"), _) => "question",
+        (Some("concept"), _) => "concept",
+        (Some("claim"), _) => "claim",
+        (Some("book"), _) => "book",
+        (_, "concepts") => "concept",
+        (_, "questions") => "question",
+        (_, "claims") => "claim",
+        (_, "books") => "book",
+        _ => "note",
+    }
+}
+
+fn extract_json_object(raw: &str) -> Option<&str> {
+    let start = raw.find('{')?;
+    let mut depth = 0;
+    let bytes = raw.as_bytes();
+    for (i, &b) in bytes.iter().enumerate().skip(start) {
+        match b {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&raw[start..=i]);
+                }
+            }
+            _ => {}
         }
     }
-
     None
 }
 
-// Streaming chat with AI using Tauri Channel
-#[tauri::command]
-async fn chat_with_ai_streaming(
-    request: ChatRequest,
-    on_event: Channel<StreamEvent>,
-) -> Result<(), String> {
-    let prompt = build_prompt(&request);
-
-    let provider = selected_ai_provider(request.provider.clone());
-
-    // Currently only Claude supports streaming
-    if provider == "claude" {
-        if let Some(_) = try_claude_streaming(&prompt, request.model.as_deref(), &on_event).await {
-            return Ok(());
-        }
-    }
-
-    // Fallback to non-streaming for other providers or if Claude streaming fails
-    // Check if cancelled before proceeding
-    if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
-        let _ = on_event.send(StreamEvent::Done {
-            full_text: "[Generation stopped by user]".to_string(),
-        });
-        return Ok(());
-    }
-
-    let result = try_ai_provider(&provider, &prompt, request.model.as_deref()).await;
-
-    // Check if cancelled after getting result
-    if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
-        let _ = on_event.send(StreamEvent::Done {
-            full_text: "[Generation stopped by user]".to_string(),
-        });
-        return Ok(());
-    }
-
-    if let Some(response) = result {
-        let _ = on_event.send(StreamEvent::Started {
-            provider: provider.clone(),
-        });
-        let _ = on_event.send(StreamEvent::Chunk {
-            text: response.clone(),
-        });
-        let _ = on_event.send(StreamEvent::Done {
-            full_text: response,
-        });
-        return Ok(());
-    }
-
-    // Try fallback providers
-    for fallback in ai_fallback_order(&provider) {
-        // Check if cancelled at start of each iteration
-        if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
-            let _ = on_event.send(StreamEvent::Done {
-                full_text: "[Generation stopped by user]".to_string(),
-            });
-            return Ok(());
-        }
-
-        // Try streaming for Claude in fallback
-        if fallback == "claude" {
-            if let Some(_) =
-                try_claude_streaming(&prompt, request.model.as_deref(), &on_event).await
-            {
-                return Ok(());
-            }
-        }
-
-        let result = try_ai_provider(fallback, &prompt, request.model.as_deref()).await;
-
-        // Check if cancelled after getting result
-        if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
-            let _ = on_event.send(StreamEvent::Done {
-                full_text: "[Generation stopped by user]".to_string(),
-            });
-            return Ok(());
-        }
-
-        if let Some(response) = result {
-            let _ = on_event.send(StreamEvent::Started {
-                provider: fallback.to_string(),
-            });
-            let _ = on_event.send(StreamEvent::Chunk {
-                text: response.clone(),
-            });
-            let _ = on_event.send(StreamEvent::Done {
-                full_text: response,
-            });
-            return Ok(());
-        }
-    }
-
-    let _ = on_event.send(StreamEvent::Error {
-        message: "No AI CLI available. Please install hermes, codex, claude, or opencode CLI."
-            .to_string(),
-        provider: Some(provider),
-    });
-
-    Err("No AI CLI available".to_string())
+fn content_hash(input: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    input.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
 }
 
-// Response for book import
+fn build_direct_reading_memory_markdown(
+    request: &ReadingMemoryDirectIngestRequest,
+    decision: &ReadingMemoryDirectDecision,
+    note_type: &str,
+    target_dir: &str,
+) -> String {
+    let source_excerpt = request
+        .selected_excerpt
+        .as_deref()
+        .map(|s| truncate_for_prompt(s, 1800))
+        .unwrap_or_default();
+    let links = decision
+        .links
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|l| safe_wiki_title(&l))
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>();
+    let links_block = if links.is_empty() {
+        format!("- [[{}]]", safe_wiki_title(&request.book_title))
+    } else {
+        links
+            .into_iter()
+            .map(|l| format!("- [[{}]]", l))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let body = decision
+        .body
+        .as_deref()
+        .or(decision.summary.as_deref())
+        .unwrap_or("")
+        .trim();
+
+    let title = decision
+        .title
+        .as_deref()
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or(&request.book_title);
+
+    format!(
+        r#"
+## CReader Ingestion
+
+```yaml
+type: {okf_type}
+title: {title}
+source_app: CReader
+source_refs: [{book_ref}]
+source_book: {source_book}
+source_author: {source_author}
+source_chapter: {source_chapter}
+source_cfi: {source_cfi}
+source_progress: {source_progress:.2}
+target_dir: {target_dir}
+tags: [creader, {note_type}]
+status: inbox
+timestamp: {timestamp}
+confidence: {confidence:.2}
+ingestion_reason: {reason}
+```
+
+### Source
+{source}
+
+### Question
+{question}
+
+### Note
+{body}
+
+### Links
+{links}
+"#,
+        okf_type = okf_type_for(note_type),
+        title = escape_json_string(title),
+        book_ref = escape_json_string(&safe_wiki_title(&request.book_title)),
+        source_book = escape_json_string(&request.book_title),
+        source_author = escape_json_string(request.book_author.as_deref().unwrap_or("")),
+        source_chapter = escape_json_string(request.source_chapter.as_deref().unwrap_or("")),
+        source_cfi = escape_json_string(request.source_cfi.as_deref().unwrap_or("")),
+        source_progress = request.source_progress.unwrap_or(0.0),
+        target_dir = target_dir,
+        note_type = note_type,
+        timestamp = iso_timestamp_from_millis(timestamp_millis().unwrap_or(0)),
+        confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0),
+        reason = escape_json_string(decision.reason.as_deref().unwrap_or("")),
+        source = if source_excerpt.is_empty() {
+            "_No selected excerpt was captured._".to_string()
+        } else {
+            source_excerpt
+                .lines()
+                .map(|line| format!("> {}", line))
+                .collect::<Vec<_>>()
+                .join("\n")
+        },
+        question = request.user_question.trim(),
+        body = body,
+        links = links_block
+    )
+}
+
+fn okf_type_for(note_type: &str) -> &'static str {
+    match note_type {
+        "question" => "OpenQuestions",
+        "concept" => "Concept",
+        "claim" => "Claim",
+        "book" => "ChapterNote",
+        _ => "ChapterNote",
+    }
+}
+
+fn iso_timestamp_from_millis(millis: u128) -> String {
+    let secs = (millis / 1000) as i64;
+    let days = secs.div_euclid(86400);
+    let rem = secs.rem_euclid(86400);
+    let z = days + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if m <= 2 { y + 1 } else { y };
+    let h = rem / 3600;
+    let mi = (rem % 3600) / 60;
+    let s = rem % 60;
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, m, d, h, mi, s)
+}
+
+fn escape_json_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
+}
+
+fn timestamp_millis() -> Result<u128, String> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .map_err(|e| format!("System clock error: {}", e))
+}
+
+fn write_if_missing(path: &Path, content: &str) -> Result<(), String> {
+    if !path.exists() {
+        std::fs::write(path, content)
+            .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    }
+    Ok(())
+}
+
+fn ensure_package_index(dir: &Path, content: &str) -> Result<(), String> {
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+    write_if_missing(&dir.join("index.md"), content)
+}
+
+const OKF_AGENTS_MD: &str = "# AGENTS.md\n\nThis is an OKF-compatible LLM Wiki package.\n\n- Read `index.md` first for scope and navigation.\n- Every note starts with YAML frontmatter and a non-empty `type`.\n- Cite sources via `source_refs` / `chapter_refs`; keep traceability.\n- Merge duplicates instead of creating parallel pages.\n- Record meaningful changes in `log.md`.\n- Put uncertainty in `questions/`.\n";
+
+const READING_MEMORY_ROOT_AGENTS_MD: &str = "# AGENTS.md\n\nThis Reading Memory repository is an OKF-compatible LLM Wiki.\n\n## Layout\n\n- `shared/` — cross-book concepts, claims, questions, glossary.\n- `<book-slug>/` — one OKF sub-package per book (chapters, concepts, claims,\n  questions, sources). Book-related notes land here.\n- Legacy directories (`books/`, `concepts/`, `claims/`, `questions/`) are kept\n  for backward compatibility; new writes prefer the book sub-packages.\n- `.reading-memory/ingestion-log.jsonl` records automatic writes for linting.\n\n## Rules\n\n- Read a book's `index.md` before adding notes to its sub-package.\n- Preserve source metadata (book, chapter, CFI, excerpt).\n- Merge duplicate notes; prefer concept/claim pages over recaps.\n- Mark low-value automatic blocks as archived during lint instead of deleting.\n";
+
+#[tauri::command]
+fn ensure_reading_memory_repository(root_path: String) -> Result<String, String> {
+    let root = ensure_directory(Path::new(&root_path))?;
+    for dir in [
+        "inbox",
+        "books",
+        "concepts",
+        "questions",
+        "claims",
+        "sources",
+        ".reading-memory",
+    ] {
+        std::fs::create_dir_all(root.join(dir))
+            .map_err(|e| format!("Failed to create {}: {}", dir, e))?;
+    }
+
+    write_if_missing(&root.join("AGENTS.md"), READING_MEMORY_ROOT_AGENTS_MD)?;
+    write_if_missing(&root.join("log.md"), "# log.md\n\nReading Memory repository log.\n")?;
+    write_if_missing(
+        &root.join("index.md"),
+        "# Reading Memory\n\nOKF-compatible LLM Wiki for CReader reading notes.\n\n## Structure\n\n- `shared/` — cross-book concepts, claims, questions, glossary.\n- `<book-slug>/` — one OKF sub-package per book.\n- `.reading-memory/ingestion-log.jsonl` — automatic write log.\n",
+    )?;
+
+    ensure_package_index(&root.join("shared"), "# shared\n\nCross-book, reusable knowledge.\n")?;
+    for sub in ["concepts", "claims", "questions", "glossary"] {
+        ensure_package_index(&root.join("shared").join(sub), &format!("# shared/{}\n\n", sub))?;
+    }
+
+    let rules_path = root.join(".reading-memory").join("lint-rules.md");
+    if !rules_path.exists() {
+        std::fs::write(
+            &rules_path,
+            "# Reading Memory Lint Rules\n\n- Preserve source metadata and original excerpts.\n- Prefer book sub-packages (`<book-slug>/`) for book-related notes.\n- Merge duplicate notes across packages.\n- Improve links and headings without removing source traceability.\n- Mark low-value automatic blocks as archived during routine lint instead of deleting them silently.\n",
+        )
+        .map_err(|e| format!("Failed to write lint-rules.md: {}", e))?;
+    }
+
+    root.to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Invalid repository path encoding".to_string())
+}
+
+fn ensure_book_subpackage(
+    root: &Path,
+    book_title: &str,
+    book_author: Option<&str>,
+) -> Result<PathBuf, String> {
+    let slug = book_slug(book_title);
+    let pkg = root.join(&slug);
+    std::fs::create_dir_all(&pkg)
+        .map_err(|e| format!("Failed to create book package {}: {}", slug, e))?;
+
+    write_if_missing(&pkg.join("AGENTS.md"), OKF_AGENTS_MD)?;
+    write_if_missing(&pkg.join("log.md"), &format!("# log.md\n\n{} reading log.\n", book_title))?;
+    write_if_missing(
+        &pkg.join("index.md"),
+        &format!(
+            "# {}\n\n{}OKF sub-package for this book.\n\n## Structure\n\n- `chapters/` — chapter notes.\n- `concepts/` — reusable concepts from this book.\n- `claims/` — claims and arguments.\n- `questions/` — open questions.\n- `sources/` — pinned source text.\n",
+            book_title,
+            book_author
+                .filter(|a| !a.trim().is_empty())
+                .map(|a| format!("> {}\n\n", a))
+                .unwrap_or_default()
+        ),
+    )?;
+
+    for sub in ["chapters", "concepts", "claims", "questions", "sources"] {
+        ensure_package_index(&pkg.join(sub), &format!("# {}/{}\n\n", slug, sub))?;
+    }
+
+    Ok(pkg)
+}
+
+#[tauri::command]
+async fn ingest_reading_memory_direct(
+    app: tauri::AppHandle,
+    request: ReadingMemoryDirectIngestRequest,
+) -> Result<ReadingMemoryDirectIngestResult, String> {
+    let root = ensure_directory(Path::new(&request.root_path))?;
+    let meta_dir = root.join(".reading-memory");
+    std::fs::create_dir_all(&meta_dir)
+        .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
+
+    // Resolve the active provider early so a missing config/key short-circuits
+    // with a clear message instead of writing a skipped log entry.
+    let (config, api_key) = active_provider(&app)?;
+
+    let prompt = build_reading_memory_direct_prompt(&request);
+    let raw = chat_completion_oneshot(&prompt, &config, &api_key)
+        .await
+        .map_err(|e| format!("Reading Memory review failed: {}", e))?;
+
+    let json_text = extract_json_object(&raw)
+        .ok_or_else(|| "Reading Memory ingestion review did not return JSON".to_string())?;
+    let decision: ReadingMemoryDirectDecision = serde_json::from_str(json_text)
+        .map_err(|e| format!("Failed to parse Reading Memory ingestion JSON: {}", e))?;
+    let confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0);
+    if !decision.should_ingest || confidence < 0.7 {
+        return Ok(ReadingMemoryDirectIngestResult {
+            note_path: String::new(),
+            log_path: meta_dir.join("ingestion-log.jsonl").to_string_lossy().to_string(),
+            skipped: true,
+            reason: decision
+                .reason
+                .unwrap_or_else(|| "AI decided not to ingest this turn".to_string()),
+        });
+    }
+    let target_dir = decision
+        .target_dir
+        .as_deref()
+        .and_then(allowed_reading_memory_dir)
+        .ok_or_else(|| "AI selected an invalid Reading Memory directory".to_string())?;
+    let title = safe_wiki_title(
+        decision
+            .title
+            .as_deref()
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or(&request.book_title),
+    );
+    let note_type = normalize_note_type(decision.note_type.as_deref(), target_dir);
+    let body_text = decision
+        .body
+        .as_deref()
+        .or(decision.summary.as_deref())
+        .unwrap_or("")
+        .trim();
+    if body_text.is_empty() {
+        return Ok(ReadingMemoryDirectIngestResult {
+            note_path: String::new(),
+            log_path: meta_dir.join("ingestion-log.jsonl").to_string_lossy().to_string(),
+            skipped: true,
+            reason: "AI chose ingestion but produced an empty note body".to_string(),
+        });
+    }
+
+    let book_pkg =
+        ensure_book_subpackage(&root, &request.book_title, request.book_author.as_deref())?;
+    let book_subdir = match target_dir {
+        "books" => "sources",
+        "concepts" => "concepts",
+        "claims" => "claims",
+        "questions" => "questions",
+        other => other,
+    };
+    let dir = book_pkg.join(book_subdir);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {}", book_subdir, e))?;
+    let note_path = dir.join(format!("{}.md", title));
+    let new_file = !note_path.exists();
+    let block = build_direct_reading_memory_markdown(&request, &decision, note_type, target_dir);
+    let block_hash = content_hash(&block);
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&note_path)
+        .map_err(|e| format!("Failed to open Reading Memory note: {}", e))?;
+    if new_file {
+        writeln!(file, "# {}\n", title)
+            .map_err(|e| format!("Failed to write Reading Memory title: {}", e))?;
+    }
+    writeln!(file, "\n{}", block)
+        .map_err(|e| format!("Failed to append Reading Memory note: {}", e))?;
+
+    let millis = timestamp_millis()?;
+    let log_path = meta_dir.join("ingestion-log.jsonl");
+    let log_entry = serde_json::json!({
+        "created_at_ms": millis,
+        "source_app": "CReader",
+        "mode": "direct",
+        "action": if new_file { "create" } else { "append" },
+        "note_path": note_path.to_string_lossy(),
+        "package_path": book_pkg.to_string_lossy(),
+        "book_slug": book_slug(&request.book_title),
+        "target_dir": target_dir,
+        "title": title,
+        "note_type": note_type,
+        "confidence": confidence,
+        "reason": decision.reason.unwrap_or_default(),
+        "block_hash": block_hash,
+        "source_book": request.book_title,
+        "source_chapter": request.source_chapter,
+        "source_cfi": request.source_cfi,
+    });
+    let mut log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| format!("Failed to open ingestion log: {}", e))?;
+    writeln!(log_file, "{}", log_entry)
+        .map_err(|e| format!("Failed to append ingestion log: {}", e))?;
+
+    Ok(ReadingMemoryDirectIngestResult {
+        note_path: note_path.to_str().map(|s| s.to_string()).unwrap_or_default(),
+        log_path: log_path.to_str().map(|s| s.to_string()).unwrap_or_default(),
+        skipped: false,
+        reason: "ingested".to_string(),
+    })
+}
+
+// ============================================================
+// Library / book file commands
+// ============================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportBookResult {
     pub new_path: String,
@@ -1074,7 +1273,6 @@ fn validate_book_path_inner(app: &tauri::AppHandle, file_path: &str) -> bool {
     is_under_any_root(&candidate, &allowed_roots)
 }
 
-// Import a book by copying it to the app's books directory
 #[tauri::command]
 fn import_book_to_library(
     app: tauri::AppHandle,
@@ -1083,7 +1281,6 @@ fn import_book_to_library(
 ) -> Result<ImportBookResult, String> {
     let source = Path::new(&source_path);
 
-    // Verify source file exists
     if !source.exists() {
         return Err(format!("Source file does not exist: {}", source_path));
     }
@@ -1101,14 +1298,12 @@ fn import_book_to_library(
         return Err("Refusing to import file outside allowed directories".to_string());
     }
 
-    // Get the file name
     let file_name = source
         .file_name()
         .ok_or("Invalid source file name")?
         .to_str()
         .ok_or("Invalid file name encoding")?;
 
-    // Create a unique file name using book_id to avoid conflicts
     let extension = source
         .extension()
         .and_then(|e| e.to_str())
@@ -1116,10 +1311,8 @@ fn import_book_to_library(
     let new_file_name = format!("{}_{}.{}", book_id, sanitize_filename(file_name), extension);
 
     let books_dir = ensure_books_dir(&app)?;
-
     let dest_path = books_dir.join(&new_file_name);
 
-    // Copy the file
     std::fs::copy(source, &dest_path).map_err(|e| format!("Failed to copy file: {}", e))?;
 
     let new_path = dest_path
@@ -1130,7 +1323,6 @@ fn import_book_to_library(
     Ok(ImportBookResult { new_path, book_id })
 }
 
-// Validate if a book file exists at the given path
 #[tauri::command]
 fn validate_book_path(app: tauri::AppHandle, file_path: String) -> bool {
     validate_book_path_inner(&app, &file_path)
@@ -1144,14 +1336,12 @@ fn validate_book_paths(app: tauri::AppHandle, file_paths: Vec<String>) -> Vec<bo
         .collect()
 }
 
-// Result for finding a book in the library
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindBookResult {
     pub found: bool,
     pub path: Option<String>,
 }
 
-// Try to find a book file in the app's books directory by book_id or filename pattern
 #[tauri::command]
 fn find_book_in_library(
     app: tauri::AppHandle,
@@ -1172,11 +1362,9 @@ fn find_book_in_library(
         });
     }
 
-    // First, try to find by book_id prefix
     if let Ok(entries) = std::fs::read_dir(&books_dir) {
         for entry in entries.flatten() {
             let file_name = entry.file_name().to_string_lossy().to_string();
-            // Check if file starts with the book_id
             if file_name.starts_with(&format!("{}_", book_id)) {
                 if let Some(path_str) = entry.path().to_str() {
                     return Ok(FindBookResult {
@@ -1188,9 +1376,7 @@ fn find_book_in_library(
         }
     }
 
-    // Second, try to find by original filename (partial match)
     if let Some(orig_name) = original_filename {
-        // Extract the base name without extension
         let orig_base = orig_name
             .rsplit_once('.')
             .map(|(n, _)| n)
@@ -1200,7 +1386,6 @@ fn find_book_in_library(
         if let Ok(entries) = std::fs::read_dir(&books_dir) {
             for entry in entries.flatten() {
                 let file_name = entry.file_name().to_string_lossy().to_string();
-                // Check if file contains the sanitized original name
                 if file_name.contains(&sanitized) {
                     if let Some(path_str) = entry.path().to_str() {
                         return Ok(FindBookResult {
@@ -1219,7 +1404,6 @@ fn find_book_in_library(
     })
 }
 
-// Delete a book file from the library
 #[tauri::command]
 fn delete_book_file(app: tauri::AppHandle, file_path: String) -> Result<(), String> {
     let path = std::path::Path::new(&file_path);
@@ -1254,12 +1438,9 @@ fn delete_book_file(app: tauri::AppHandle, file_path: String) -> Result<(), Stri
     Ok(())
 }
 
-// Helper function to sanitize file names
 fn sanitize_filename(name: &str) -> String {
-    // Remove the extension if present
     let name = name.rsplit_once('.').map(|(n, _)| n).unwrap_or(name);
 
-    // Replace invalid characters
     name.chars()
         .map(|c| {
             if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
@@ -1298,341 +1479,43 @@ fn safe_wiki_title(input: &str) -> String {
     }
 }
 
-fn allowed_reading_memory_dir(dir: &str) -> Option<&'static str> {
-    match dir.trim() {
-        "books" => Some("books"),
-        "concepts" => Some("concepts"),
-        "questions" => Some("questions"),
-        "claims" => Some("claims"),
-        _ => None,
-    }
-}
-
-fn normalize_note_type(value: Option<&str>, target_dir: &str) -> &'static str {
-    match value.unwrap_or("").trim() {
-        "book" => "book",
-        "concept" => "concept",
-        "question" => "question",
-        "claim" => "claim",
-        "note" => "note",
-        _ => match target_dir {
-            "books" => "book",
-            "concepts" => "concept",
-            "questions" => "question",
-            "claims" => "claim",
-            _ => "note",
-        },
-    }
-}
-
-fn extract_json_object(raw: &str) -> Option<&str> {
-    let start = raw.find('{')?;
-    let end = raw.rfind('}')?;
-    if end <= start {
-        return None;
-    }
-    Some(&raw[start..=end])
-}
-
-fn content_hash(input: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    input.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
-
-fn build_direct_reading_memory_markdown(
-    request: &ReadingMemoryDirectIngestRequest,
-    decision: &ReadingMemoryDirectDecision,
-    note_type: &str,
-    target_dir: &str,
-) -> String {
-    let source_excerpt = request
-        .selected_excerpt
-        .as_deref()
-        .map(|s| truncate_for_prompt(s, 1800))
-        .unwrap_or_default();
-    let links = decision
-        .links
-        .clone()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|l| safe_wiki_title(&l))
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>();
-    let links_block = if links.is_empty() {
-        format!("- [[{}]]", safe_wiki_title(&request.book_title))
-    } else {
-        links
-            .into_iter()
-            .map(|l| format!("- [[{}]]", l))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    let body = decision
-        .body
-        .as_deref()
-        .or(decision.summary.as_deref())
-        .unwrap_or("")
-        .trim();
-
-    format!(
-        r#"
-## CReader Ingestion
-
-```yaml
-type: {note_type}
-source_app: CReader
-source_book: {source_book}
-source_author: {source_author}
-source_chapter: {source_chapter}
-source_cfi: {source_cfi}
-source_progress: {source_progress:.2}
-target_dir: {target_dir}
-confidence: {confidence:.2}
-ingestion_reason: {reason}
-```
-
-### Source
-{source}
-
-### Question
-{question}
-
-### Note
-{body}
-
-### Links
-{links}
-"#,
-        note_type = note_type,
-        source_book = escape_json_string(&request.book_title),
-        source_author = escape_json_string(request.book_author.as_deref().unwrap_or("")),
-        source_chapter = escape_json_string(request.source_chapter.as_deref().unwrap_or("")),
-        source_cfi = escape_json_string(request.source_cfi.as_deref().unwrap_or("")),
-        source_progress = request.source_progress.unwrap_or(0.0),
-        target_dir = target_dir,
-        confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0),
-        reason = escape_json_string(decision.reason.as_deref().unwrap_or("")),
-        source = if source_excerpt.is_empty() {
-            "_No selected excerpt was captured._".to_string()
+fn book_slug(input: &str) -> String {
+    let slug: String = input
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let mut out = String::new();
+    let mut prev_dash = true;
+    for c in slug.chars() {
+        if c == '-' {
+            if !prev_dash {
+                out.push('-');
+                prev_dash = true;
+            }
         } else {
-            source_excerpt
-                .lines()
-                .map(|line| format!("> {}", line))
-                .collect::<Vec<_>>()
-                .join("\n")
-        },
-        question = request.user_question.trim(),
-        body = body,
-        links = links_block
-    )
-}
-
-fn escape_json_string(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
-}
-
-fn timestamp_millis() -> Result<u128, String> {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .map_err(|e| format!("System clock error: {}", e))
-}
-
-#[tauri::command]
-fn ensure_reading_memory_repository(root_path: String) -> Result<String, String> {
-    let root = ensure_directory(Path::new(&root_path))?;
-    for dir in [
-        "inbox",
-        "books",
-        "concepts",
-        "questions",
-        "claims",
-        "sources",
-        ".reading-memory",
-    ] {
-        std::fs::create_dir_all(root.join(dir))
-            .map_err(|e| format!("Failed to create {}: {}", dir, e))?;
-    }
-
-    let index_path = root.join("index.md");
-    if !index_path.exists() {
-        std::fs::write(
-            &index_path,
-            "# Reading Memory\n\n- `books/`, `concepts/`, `questions/`, and `claims/` capture AI-reviewed CReader ingestions.\n- `.reading-memory/ingestion-log.jsonl` records automatic writes for linting and rollback.\n",
-        )
-        .map_err(|e| format!("Failed to write index.md: {}", e))?;
-    }
-
-    let rules_path = root.join(".reading-memory").join("lint-rules.md");
-    if !rules_path.exists() {
-        std::fs::write(
-            &rules_path,
-            "# Reading Memory Lint Rules\n\n- Preserve source metadata and original excerpts.\n- Merge duplicate notes across `books/`, `concepts/`, `questions/`, and `claims/`.\n- Improve links and headings without removing source traceability.\n- Mark low-value automatic blocks as archived during routine lint instead of deleting them silently.\n",
-        )
-        .map_err(|e| format!("Failed to write lint-rules.md: {}", e))?;
-    }
-
-    root.to_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "Invalid repository path encoding".to_string())
-}
-
-#[tauri::command]
-async fn ingest_reading_memory_direct(
-    request: ReadingMemoryDirectIngestRequest,
-) -> Result<ReadingMemoryDirectIngestResult, String> {
-    let root = ensure_reading_memory_repository(request.root_path.clone())?;
-    let root = PathBuf::from(root);
-    let meta_dir = root.join(".reading-memory");
-    std::fs::create_dir_all(&meta_dir)
-        .map_err(|e| format!("Failed to create metadata directory: {}", e))?;
-
-    if request.assistant_answer.trim().is_empty()
-        || request.assistant_answer.contains("No AI CLI available")
-        || request.assistant_answer.contains("Generation stopped")
-    {
-        return Ok(ReadingMemoryDirectIngestResult {
-            note_path: String::new(),
-            log_path: meta_dir
-                .join("ingestion-log.jsonl")
-                .to_string_lossy()
-                .to_string(),
-            skipped: true,
-            reason: "assistant answer is empty, failed, or interrupted".to_string(),
-        });
-    }
-
-    let prompt = build_reading_memory_direct_prompt(&request);
-    let raw = match run_ai_oneshot_with_fallback(
-        &prompt,
-        request.provider.clone(),
-        request.model.as_deref(),
-    )
-    .await
-    {
-        Some(response) => response,
-        None => {
-            return Ok(ReadingMemoryDirectIngestResult {
-                note_path: String::new(),
-                log_path: meta_dir
-                    .join("ingestion-log.jsonl")
-                    .to_string_lossy()
-                    .to_string(),
-                skipped: true,
-                reason: "no AI provider available for Reading Memory ingestion review".to_string(),
-            });
+            out.push(c);
+            prev_dash = false;
         }
-    };
-
-    let json_text = extract_json_object(&raw)
-        .ok_or_else(|| "Reading Memory ingestion review did not return JSON".to_string())?;
-    let decision: ReadingMemoryDirectDecision = serde_json::from_str(json_text)
-        .map_err(|e| format!("Failed to parse Reading Memory ingestion JSON: {}", e))?;
-    let confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0);
-    if !decision.should_ingest || confidence < 0.7 {
-        return Ok(ReadingMemoryDirectIngestResult {
-            note_path: String::new(),
-            log_path: meta_dir
-                .join("ingestion-log.jsonl")
-                .to_string_lossy()
-                .to_string(),
-            skipped: true,
-            reason: decision
-                .reason
-                .unwrap_or_else(|| "AI decided not to ingest this turn".to_string()),
-        });
     }
-
-    let target_dir = decision
-        .target_dir
-        .as_deref()
-        .and_then(allowed_reading_memory_dir)
-        .ok_or_else(|| "AI selected an invalid Reading Memory directory".to_string())?;
-    let title = safe_wiki_title(
-        decision
-            .title
-            .as_deref()
-            .filter(|t| !t.trim().is_empty())
-            .unwrap_or(&request.book_title),
-    );
-    let note_type = normalize_note_type(decision.note_type.as_deref(), target_dir);
-    let body_text = decision
-        .body
-        .as_deref()
-        .or(decision.summary.as_deref())
-        .unwrap_or("")
-        .trim();
-    if body_text.is_empty() {
-        return Ok(ReadingMemoryDirectIngestResult {
-            note_path: String::new(),
-            log_path: meta_dir
-                .join("ingestion-log.jsonl")
-                .to_string_lossy()
-                .to_string(),
-            skipped: true,
-            reason: "AI chose ingestion but produced an empty note body".to_string(),
-        });
+    let trimmed = out.trim_matches('-');
+    let capped: String = trimmed.chars().take(60).collect();
+    if capped.is_empty() {
+        "untitled-book".to_string()
+    } else {
+        capped
     }
-
-    let dir = root.join(target_dir);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {}", target_dir, e))?;
-    let note_path = dir.join(format!("{}.md", title));
-    let new_file = !note_path.exists();
-    let block = build_direct_reading_memory_markdown(&request, &decision, note_type, target_dir);
-    let block_hash = content_hash(&block);
-
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&note_path)
-        .map_err(|e| format!("Failed to open Reading Memory note: {}", e))?;
-    if new_file {
-        writeln!(file, "# {}\n", title)
-            .map_err(|e| format!("Failed to write Reading Memory title: {}", e))?;
-    }
-    writeln!(file, "\n{}", block)
-        .map_err(|e| format!("Failed to append Reading Memory note: {}", e))?;
-
-    let millis = timestamp_millis()?;
-    let log_path = meta_dir.join("ingestion-log.jsonl");
-    let log_entry = serde_json::json!({
-        "created_at_ms": millis,
-        "source_app": "CReader",
-        "mode": "direct",
-        "action": if new_file { "create" } else { "append" },
-        "note_path": note_path.to_string_lossy(),
-        "target_dir": target_dir,
-        "title": title,
-        "note_type": note_type,
-        "confidence": confidence,
-        "reason": decision.reason.unwrap_or_default(),
-        "block_hash": block_hash,
-        "source_book": request.book_title,
-        "source_chapter": request.source_chapter,
-        "source_cfi": request.source_cfi,
-    });
-    let mut log_file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .map_err(|e| format!("Failed to open ingestion log: {}", e))?;
-    writeln!(log_file, "{}", log_entry)
-        .map_err(|e| format!("Failed to append ingestion log: {}", e))?;
-
-    Ok(ReadingMemoryDirectIngestResult {
-        note_path: note_path
-            .to_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| "Invalid note path encoding".to_string())?,
-        log_path: log_path
-            .to_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| "Invalid log path encoding".to_string())?,
-        skipped: false,
-        reason: "ingested".to_string(),
-    })
 }
+
+// ============================================================
+// App entry
+// ============================================================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -1643,10 +1526,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             chat_with_ai_streaming,
             summarize_ai_conversation,
-            check_ai_availability,
-            refresh_ai_availability,
-            get_ai_provider,
-            set_ai_provider,
+            list_ai_providers,
+            save_ai_provider,
+            delete_ai_provider,
+            set_active_ai_provider,
+            get_active_ai_provider,
+            set_ai_api_key,
+            has_ai_api_key,
             cancel_ai_streaming,
             reset_ai_cancel,
             import_book_to_library,
@@ -1740,8 +1626,6 @@ mod tests {
                     content: "u2".to_string(),
                 },
             ]),
-            provider: None,
-            model: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1771,8 +1655,6 @@ mod tests {
                 },
             ],
             book_title: Some("Book".to_string()),
-            provider: None,
-            model: None,
         };
 
         let prompt = build_summary_prompt(&request);
@@ -1795,8 +1677,6 @@ mod tests {
             user_question: "继续总结第二章".to_string(),
             selected_excerpt: Some("章节原文".to_string()),
             assistant_answer: "这章主要讲程序员如何用技术变现。".to_string(),
-            provider: None,
-            model: None,
         };
 
         let prompt = build_reading_memory_direct_prompt(&request);
@@ -1815,15 +1695,51 @@ mod tests {
     }
 
     #[test]
-    fn hermes_provider_is_valid() {
-        assert!(set_ai_provider("hermes".to_string()).is_ok());
-        assert_eq!(get_ai_provider(), Some("hermes".to_string()));
+    fn chat_completions_url_normalizes_base_urls() {
+        assert_eq!(
+            chat_completions_url("https://api.deepseek.com/v1"),
+            "https://api.deepseek.com/v1/chat/completions"
+        );
+        assert_eq!(
+            chat_completions_url("https://api.openai.com/v1/"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+        // A full pasted endpoint is collapsed, not doubled.
+        assert_eq!(
+            chat_completions_url("https://x.com/v1/chat/completions"),
+            "https://x.com/v1/chat/completions"
+        );
     }
 
     #[test]
-    fn ai_fallback_order_prefers_complementary_providers() {
-        assert_eq!(ai_fallback_order("claude"), vec!["hermes", "codex", "opencode"]);
-        assert_eq!(ai_fallback_order("hermes"), vec!["claude", "codex", "opencode"]);
-        assert_eq!(ai_fallback_order("unknown"), vec!["hermes", "codex", "claude", "opencode"]);
+    fn provider_config_uses_camel_case_json() {
+        // The frontend sends camelCase field names (baseUrl, hasKey, ...).
+        // This must round-trip through serde without "missing field base_url".
+        let json = r#"{"id":"p1","name":"DeepSeek","baseUrl":"https://api.deepseek.com/v1","model":"deepseek-chat"}"#;
+        let config: AIProviderConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.base_url, "https://api.deepseek.com/v1");
+
+        let status = AIProviderStatus {
+            config: config.clone(),
+            active: true,
+            has_key: true,
+        };
+        let serialized = serde_json::to_string(&status).unwrap();
+        assert!(serialized.contains("\"baseUrl\""));
+        assert!(serialized.contains("\"hasKey\""));
+        assert!(!serialized.contains("base_url"));
+        assert!(!serialized.contains("has_key"));
+    }
+
+    #[test]
+    fn api_key_env_name_is_stable_and_safe() {
+        assert_eq!(
+            api_key_env_name("prov_mqho78kn_keoyvy"),
+            "AI_API_KEY_PROV_MQHO78KN_KEOYVY"
+        );
+        assert_eq!(
+            api_key_env_name("custom.provider-1"),
+            "AI_API_KEY_CUSTOM_PROVIDER_1"
+        );
     }
 }

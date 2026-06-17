@@ -150,13 +150,24 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
             books = library.books.filter(b => b.categoryId === selectedCategoryId);
         }
 
-        const currentBookIndex = currentBook ? books.findIndex(book => book.id === currentBook.id) : -1;
-        if (currentBookIndex <= 0) return books;
+        // Order by most-recently-read first. lastReadAt is bumped both when the
+        // user opens a book and on every page turn, so frequently-read books
+        // float to the top and naturally stay near the front after switching.
+        // Books with no reading history keep their import order (stable sort).
+        const ordered = [...books].sort((a, b) => {
+            const aAt = bookProgressById[a.id]?.lastReadAt ?? a.lastReadAt ?? 0;
+            const bAt = bookProgressById[b.id]?.lastReadAt ?? b.lastReadAt ?? 0;
+            return bAt - aAt;
+        });
 
-        const nextBooks = [...books];
+        // Pin the currently-open book to the very top.
+        const currentBookIndex = currentBook ? ordered.findIndex(book => book.id === currentBook.id) : -1;
+        if (currentBookIndex <= 0) return ordered;
+
+        const nextBooks = [...ordered];
         const [activeBook] = nextBooks.splice(currentBookIndex, 1);
         return [activeBook, ...nextBooks];
-    }, [currentBook, library.books, selectedCategoryId]);
+    }, [currentBook, library.books, selectedCategoryId, bookProgressById]);
 
     const { containerRef: listContainerRef, virtualItems, totalHeight } = useVirtualList(filteredBooks, {
         itemHeight: BOOK_ITEM_HEIGHT,

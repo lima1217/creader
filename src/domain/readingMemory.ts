@@ -59,12 +59,28 @@ function excerpt(value: string | undefined, limit = 1400): string {
   return `${trimmed.slice(0, limit).trim()}...`;
 }
 
+/**
+ * Map an internal NoteType to an OKF frontmatter `type` value, matching the
+ * book-to-okf-wiki convention (Concept / Claim / OpenQuestions / ChapterNote).
+ */
+export function okfTypeFor(noteType: NoteType): string {
+  switch (noteType) {
+    case 'question': return 'OpenQuestions';
+    case 'concept': return 'Concept';
+    case 'claim': return 'Claim';
+    default: return 'ChapterNote';
+  }
+}
+
 function slugSeed(value: string): string {
+  // Keep this aligned with the Rust `book_slug` (src-tauri) so that source_refs
+  // cross-link to the same book sub-package directory name. Both lowercase,
+  // non-alphanumeric to '-', collapse runs, trim, cap at 60 chars.
   return value
     .toLowerCase()
     .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 36) || 'reading-memory';
+    .slice(0, 60) || 'reading-memory';
 }
 
 function inferNoteType(userText: string, assistantText: string): NoteType {
@@ -180,15 +196,18 @@ export function buildReadingMemoryMarkdown(input: ReadingMemoryIngestInput): Rea
   const sourceCfi = input.selectedCfiRange || input.userMessage.contextCfi || progress.currentCfi || '';
 
   const metadata = {
-    type: noteType,
+    type: okfTypeFor(noteType),
     status: 'inbox',
     created,
     source_app: 'CReader',
+    source_refs: [slugSeed(input.book.title)],
+    chapter_refs: progress.currentChapter ? [slugSeed(progress.currentChapter)] : [],
     source_book: input.book.title,
     source_author: input.book.author,
     source_chapter: progress.currentChapter || '',
     source_cfi: sourceCfi,
     source_progress: progress.percentage,
+    tags: ['creader', noteType],
     trigger: 'ai_answer',
     confidence: candidate.confidence,
     ingestion_reason: candidate.reason,
@@ -197,15 +216,19 @@ export function buildReadingMemoryMarkdown(input: ReadingMemoryIngestInput): Rea
 
   const frontmatter = [
     '---',
-    `type: ${noteType}`,
+    `type: ${okfTypeFor(noteType)}`,
+    `title: ${escapeYaml(title)}`,
     'status: inbox',
     `created: ${created}`,
     'source_app: CReader',
+    `source_refs: [${escapeYaml(slugSeed(input.book.title))}]`,
+    progress.currentChapter ? `chapter_refs: [${escapeYaml(slugSeed(progress.currentChapter))}]` : 'chapter_refs: []',
     `source_book: ${escapeYaml(input.book.title)}`,
     `source_author: ${escapeYaml(input.book.author)}`,
     `source_chapter: ${escapeYaml(progress.currentChapter || '')}`,
     `source_cfi: ${escapeYaml(sourceCfi)}`,
     `source_progress: ${Number(progress.percentage || 0).toFixed(2)}`,
+    `tags: [creader, ${noteType}]`,
     'trigger: ai_answer',
     `confidence: ${candidate.confidence.toFixed(2)}`,
     `ingestion_reason: ${escapeYaml(candidate.reason)}`,

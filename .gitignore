@@ -12,6 +12,9 @@ dist
 dist-ssr
 src-tauri/target
 *.local
+.env
+.env.*
+*.env
 
 # Local agent/tool workspaces
 .claude/settings.local.json

@@ -22,7 +22,7 @@ export async function ensureReadingMemoryRepository(rootPath: string): Promise<s
 }
 
 export async function ingestReadingMemoryDirect(
-  input: ReadingMemoryIngestInput & { provider?: string; model?: string }
+  input: ReadingMemoryIngestInput
 ): Promise<DirectIngestResult | null> {
   if (!input.rootPath || !input.book || !input.assistantMessage.content.trim()) return null;
   return await invoke<DirectIngestResult>('ingest_reading_memory_direct', {
@@ -36,8 +36,6 @@ export async function ingestReadingMemoryDirect(
       user_question: input.userMessage.content,
       selected_excerpt: input.selectedContext || input.userMessage.context || input.currentChapter || '',
       assistant_answer: input.assistantMessage.content,
-      provider: input.provider,
-      model: input.model,
     },
   });
 }

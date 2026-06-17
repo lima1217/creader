@@ -1,24 +1,16 @@
 import type { ChatRequest } from '../../domain/aiRequest';
+import type { AIProviderConfig, AIProviderStatus } from '../../types';
 
 /**
  * AI Panel Type Definitions
  */
 
-export interface AIProviderInfo {
-    id: string;
-    name: string;
-    model: string;
-    available: boolean;
-}
-
-export type { ChatRequest };
+export type { ChatRequest, AIProviderConfig, AIProviderStatus };
 
 export interface SummarizeConversationRequest {
     existing_summary?: string;
     messages: { role: string; content: string }[];
     book_title?: string;
-    provider?: string;
-    model?: string;
 }
 
 // Stream events from AI backend

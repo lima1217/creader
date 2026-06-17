@@ -1,116 +1,114 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { AIProviderInfo } from '../types';
+import type { AIProviderConfig, AIProviderStatus } from '../../../types';
 import { createLogger } from '../../../utils/logger';
 
 const logger = createLogger('useAIProviders');
 
-const fallbackProviders: AIProviderInfo[] = [
-  { id: 'hermes', name: 'Hermes', model: 'Hermes Agent', available: false },
-  { id: 'claude', name: 'Claude', model: 'sonnet', available: false },
-  { id: 'opencode', name: 'OpenCode', model: 'default', available: false },
-  { id: 'codex', name: 'Codex', model: 'default', available: false },
-];
+export type NewProviderInput = Omit<AIProviderConfig, 'id'> & { apiKey?: string };
 
 export function useAIProviders(options: { isTauri: boolean; active: boolean }) {
   const { isTauri, active } = options;
 
-  const [providers, setProviders] = useState<AIProviderInfo[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<string>('claude');
-  const [showProviderDropdown, setShowProviderDropdown] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<string>('opus');
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [providers, setProviders] = useState<AIProviderStatus[]>([]);
+  const [isEditing, setIsEditing] = useState(false);
 
-  const handleProviderChange = useCallback(
-    async (providerId: string) => {
-      setSelectedProvider(providerId);
-      setShowProviderDropdown(false);
-      if (!isTauri) return;
-      try {
-        await invoke('set_ai_provider', { provider: providerId });
-      } catch (e) {
-        logger.error('Failed to set provider:', e);
-      }
-    },
-    [isTauri]
-  );
-
-  const loadSavedProvider = useCallback(async () => {
+  const refresh = useCallback(async () => {
     if (!isTauri) return;
     try {
-      const saved = await invoke<string | null>('get_ai_provider');
-      if (saved) setSelectedProvider(saved);
+      const list = await invoke<AIProviderStatus[]>('list_ai_providers');
+      setProviders(list);
     } catch (e) {
-      logger.error('Failed to load saved provider:', e);
-    }
-  }, [isTauri]);
-
-  const checkAIAvailability = useCallback(async () => {
-    if (!isTauri) return;
-    try {
-      const available = await invoke<AIProviderInfo[]>('check_ai_availability');
-      setProviders(available);
-      const currentAvailable = available.find((p) => p.id === selectedProvider && p.available);
-      if (!currentAvailable) {
-        const firstAvailable = available.find((p) => p.available);
-        if (firstAvailable) {
-          void handleProviderChange(firstAvailable.id);
-        }
-      }
-    } catch (e) {
-      logger.error('Failed to check AI availability:', e);
+      logger.error('Failed to load AI providers:', e);
       setProviders([]);
     }
-  }, [handleProviderChange, isTauri, selectedProvider]);
-
-  const refreshAIAvailability = useCallback(async () => {
-    if (!isTauri) return;
-    try {
-      const available = await invoke<AIProviderInfo[]>('refresh_ai_availability');
-      setProviders(available);
-      const firstAvailable = available.find((p) => p.available);
-      if (firstAvailable) {
-        void handleProviderChange(firstAvailable.id);
-      }
-    } catch (e) {
-      logger.error('Failed to refresh AI availability:', e);
-    }
-  }, [handleProviderChange, isTauri]);
+  }, [isTauri]);
 
   useEffect(() => {
     if (!active) return;
     if (isTauri) {
-      void checkAIAvailability();
-      void loadSavedProvider();
+      void refresh();
     } else {
-      setProviders(fallbackProviders);
+      setProviders([]);
     }
-  }, [active, checkAIAvailability, isTauri, loadSavedProvider]);
+  }, [active, isTauri, refresh]);
 
-  const currentProvider = useMemo(() => {
-    return (
-      providers.find((p) => p.id === selectedProvider) || {
-        id: selectedProvider,
-        name: selectedProvider,
-        model: '',
-        available: false,
+  const activeProvider = useMemo(
+    () => providers.find((p) => p.active) ?? null,
+    [providers],
+  );
+
+  const saveProvider = useCallback(
+    async (config: AIProviderConfig, opts?: { activate?: boolean; apiKey?: string }) => {
+      if (!isTauri) return;
+      try {
+        if (opts?.apiKey) {
+          await invoke('set_ai_api_key', { id: config.id, key: opts.apiKey });
+        }
+        await invoke('save_ai_provider', {
+          config,
+          activate: opts?.activate ?? false,
+        });
+        await refresh();
+      } catch (e) {
+        logger.error('Failed to save provider:', e);
+        throw e;
       }
-    );
-  }, [providers, selectedProvider]);
+    },
+    [isTauri, refresh],
+  );
+
+  const deleteProvider = useCallback(
+    async (id: string) => {
+      if (!isTauri) return;
+      try {
+        await invoke('delete_ai_provider', { id });
+        await refresh();
+      } catch (e) {
+        logger.error('Failed to delete provider:', e);
+        throw e;
+      }
+    },
+    [isTauri, refresh],
+  );
+
+  const setActive = useCallback(
+    async (id: string) => {
+      if (!isTauri) return;
+      try {
+        await invoke('set_active_ai_provider', { id });
+        await refresh();
+      } catch (e) {
+        logger.error('Failed to set active provider:', e);
+        throw e;
+      }
+    },
+    [isTauri, refresh],
+  );
+
+  const setApiKey = useCallback(
+    async (id: string, key: string) => {
+      if (!isTauri) return;
+      try {
+        await invoke('set_ai_api_key', { id, key });
+        await refresh();
+      } catch (e) {
+        logger.error('Failed to set API key:', e);
+        throw e;
+      }
+    },
+    [isTauri, refresh],
+  );
 
   return {
     providers,
-    selectedProvider,
-    setSelectedProvider,
-    showProviderDropdown,
-    setShowProviderDropdown,
-    selectedModel,
-    setSelectedModel,
-    showModelDropdown,
-    setShowModelDropdown,
-    currentProvider,
-    handleProviderChange,
-    checkAIAvailability,
-    refreshAIAvailability,
+    activeProvider,
+    isEditing,
+    setIsEditing,
+    refresh,
+    saveProvider,
+    deleteProvider,
+    setActive,
+    setApiKey,
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Book, ChatMessage, Settings } from '../types';
-import { buildAIModelSettings, buildChatRequest, buildContextFromReadingSnapshot, createUserChatMessage } from './aiRequest';
+import { buildChatRequest, buildContextFromReadingSnapshot, createUserChatMessage } from './aiRequest';
 import { buildReadingContextSnapshot } from './readingSource';
 
 const book: Book = {
@@ -22,9 +22,6 @@ const settings: Settings = {
   lineHeight: 1.6,
   allowEpubScripts: true,
   readingMemoryAutoIngest: true,
-  aiProvider: 'claude',
-  aiModel: 'opus-4.7',
-  hermesModel: 'glm-5.1',
   aiTextSize: 14,
   aiContextWindow: 5,
   aiAutoSummarize: true,
@@ -70,12 +67,6 @@ describe('AI request domain', () => {
     });
   });
 
-  it('selects provider-specific model overrides', () => {
-    expect(buildAIModelSettings(settings)).toBe('opus-4.7');
-    expect(buildAIModelSettings({ ...settings, aiProvider: 'hermes' })).toBe('glm-5.1');
-    expect(buildAIModelSettings({ ...settings, aiProvider: 'codex' })).toBeUndefined();
-  });
-
   it('builds chat requests with trimmed history and nearby chapter context', () => {
     const focus = 'selected passage with enough length';
     const readingContext = buildReadingContextSnapshot({
@@ -97,8 +88,10 @@ describe('AI request domain', () => {
     expect(request.conversation_summary).toBe('Older discussion summary');
     expect(request.history).toHaveLength(5);
     expect(request.history?.[0]).toEqual({ role: 'user', content: 'message 3' });
-    expect(request.provider).toBe('claude');
-    expect(request.model).toBe('opus-4.7');
+    // The active provider/model is resolved by the backend; the request itself
+    // no longer carries provider/model fields.
+    expect((request as unknown as Record<string, unknown>).provider).toBeUndefined();
+    expect((request as unknown as Record<string, unknown>).model).toBeUndefined();
     expect(request.chapter_content).toContain('Surrounding chapter context near the selected text');
   });
 

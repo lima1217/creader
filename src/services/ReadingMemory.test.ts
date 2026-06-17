@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Book, ChatMessage } from '../types';
-import { buildReadingMemoryIngestInput, buildReadingMemoryMarkdown, classifyReadingMemoryCandidate } from '../domain/readingMemory';
+import { buildReadingMemoryIngestInput, buildReadingMemoryMarkdown, classifyReadingMemoryCandidate, okfTypeFor } from '../domain/readingMemory';
 import { buildReadingContextSnapshot } from '../domain/readingSource';
 
 const book: Book = {
@@ -53,6 +53,28 @@ describe('ReadingMemory markdown', () => {
 
     expect(note.metadata.source_cfi).toBe('epubcfi(/6/2[chapter]!/4/8,/1:0,/1:10)');
     expect(note.body).toContain('source_cfi: "epubcfi(/6/2[chapter]!/4/8,/1:0,/1:10)"');
+  });
+
+  it('emits OKF frontmatter types and source refs', () => {
+    expect(okfTypeFor('question')).toBe('OpenQuestions');
+    expect(okfTypeFor('concept')).toBe('Concept');
+    expect(okfTypeFor('claim')).toBe('Claim');
+    expect(okfTypeFor('note')).toBe('ChapterNote');
+
+    const note = buildReadingMemoryMarkdown({
+      ...input(
+        '解释这段',
+        '## 机会成本\n机会成本是一个可复用的决策概念，它强调每一次选择都隐含放弃的替代路径。',
+        { context: 'selected source passage' }
+      ),
+    });
+
+    // concept -> OKF Concept type, with source_refs / chapter_refs for tracing.
+    expect(note.body).toContain('type: Concept');
+    expect(note.body).toContain('source_refs:');
+    expect(note.body).toContain('tags: [creader, concept]');
+    expect(Array.isArray(note.metadata.source_refs)).toBe(true);
+    expect(note.metadata.source_refs).toHaveLength(1);
   });
 
   it('rejects translation requests by default', () => {

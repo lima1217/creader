@@ -21,9 +21,6 @@ const defaultSettings: Settings = {
     allowEpubScripts: true,
     readingMemoryPath: undefined,
     readingMemoryAutoIngest: true,
-    aiProvider: 'claude',
-    aiModel: 'opus',
-    hermesModel: 'glm-5.1',
     aiTextSize: 14,
     aiContextWindow: 20,
     aiAutoSummarize: true,
@@ -445,21 +442,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        const storedProgress = bookProgressById[book.id];
-        if (!storedProgress) {
-            setCurrentBookState(book);
-            return;
-        }
+        // Opening a book marks it as recently read, so the sidebar ordering
+        // (by lastReadAt) keeps frequently-opened books near the top even
+        // when the user hasn't turned a page yet. Merge any stored progress
+        // (cfi/percentage) so the reader resumes at the right spot.
+        const now = Date.now();
+        setBookProgressById(prev => {
+            const existing = prev[book.id];
+            const next = existing
+                ? { ...existing, lastReadAt: now }
+                : { ...book.progress, lastReadAt: now };
+            return { ...prev, [book.id]: next };
+        });
 
-        const { lastReadAt: storedLastReadAt, ...progress } = storedProgress;
+        const storedProgress = bookProgressById[book.id];
+        const progress = storedProgress
+            ? {
+                ...book.progress,
+                currentCfi: storedProgress.currentCfi,
+                percentage: storedProgress.percentage,
+            }
+            : book.progress;
 
         setCurrentBookState({
             ...book,
-            progress: {
-                ...book.progress,
-                ...progress,
-            },
-            lastReadAt: storedLastReadAt || book.lastReadAt,
+            progress,
+            lastReadAt: now,
         });
     }, [bookProgressById]);
 

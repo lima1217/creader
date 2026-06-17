@@ -47,9 +47,6 @@ export function getInitialSettings(defaultSettings: Settings): Settings {
     ...defaultSettings,
     ...stored,
     allowEpubScripts: true,
-    hermesModel: typeof stored.hermesModel === 'string' && stored.hermesModel.trim()
-      ? stored.hermesModel
-      : defaultSettings.hermesModel,
     aiTextSize: typeof stored.aiTextSize === 'number'
       ? Math.min(20, Math.max(13, stored.aiTextSize))
       : defaultSettings.aiTextSize,

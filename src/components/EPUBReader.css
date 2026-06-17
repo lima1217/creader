@@ -122,10 +122,27 @@
     left: 50%;
     z-index: 5;
     transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
     color: var(--text-tertiary);
     background: var(--bg-control);
+    border: 1px solid var(--border-soft);
     border-radius: var(--radius-control);
+}
+
+.reader-loading-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--border-primary);
+    border-top-color: var(--accent);
+    animation: readerSpinner 0.7s linear infinite;
+}
+
+@keyframes readerSpinner {
+    to { transform: rotate(360deg); }
 }
 
 .reader-loading p {
@@ -141,7 +158,7 @@
     background: var(--bg-control);
     color: var(--text-tertiary);
     box-shadow: none;
-    opacity: 0.12;
+    opacity: 0.38;
     transform-origin: center;
     transition:
         opacity var(--transition-fast),
@@ -313,7 +330,8 @@
 }
 
 .reader-accumulated-btn:hover + .reader-accumulated-preview,
-.reader-accumulated-btn:focus-visible + .reader-accumulated-preview {
+.reader-accumulated-btn:focus-visible + .reader-accumulated-preview,
+.reader-accumulated-preview.preview-open {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
@@ -411,6 +429,13 @@
 .reader-toc-item:focus-visible {
     background: var(--bg-control);
     color: var(--text-primary);
+}
+
+.reader-toc-item.current {
+    color: var(--accent);
+    background: var(--accent-soft);
+    font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .reader-toc-subitem {
@@ -522,6 +547,21 @@
 .reader-search-result:focus-visible {
     background: var(--bg-control);
     color: var(--text-primary);
+}
+
+.reader-search-meta {
+    padding: var(--space-1) var(--space-2) var(--space-2);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.reader-search-chapter {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 560;
 }
 
 .reader-search-excerpt {

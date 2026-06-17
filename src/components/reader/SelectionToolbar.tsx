@@ -29,6 +29,17 @@ export function SelectionToolbar(props: {
 
   if (!visible || !selectedText || !position) return null;
 
+  // If the hint would overflow the bottom of the viewport, render it above the
+  // toolbar instead of always 60px below it.
+  const HINT_HEIGHT = 32;
+  const hintOffset = 60;
+  const placeHintAbove =
+    typeof window !== 'undefined' &&
+    position.y + hintOffset + HINT_HEIGHT > window.innerHeight;
+  const hintTop = placeHintAbove
+    ? position.y - hintOffset
+    : position.y + hintOffset;
+
   return (
     <>
       <div
@@ -45,7 +56,7 @@ export function SelectionToolbar(props: {
           title="加入跨页选文"
         >
           {addIcon}
-          <span>加入 ({accumulatedCount})</span>
+          <span>加入选文{accumulatedCount > 0 ? ` (${accumulatedCount})` : ''}</span>
         </button>
         <button className="reader-selection-btn" onClick={onAsk} title="用选文询问 AI">
           {askIcon}
@@ -60,7 +71,7 @@ export function SelectionToolbar(props: {
           className="reader-selection-hint"
           style={{
             left: `${position.x}px`,
-            top: `${position.y + 60}px`,
+            top: `${hintTop}px`,
           }}
         >
           可先加入多段选文，再一起询问 AI

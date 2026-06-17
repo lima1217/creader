@@ -10,14 +10,6 @@ export interface ChatRequest {
   chapter_content?: string;
   conversation_summary?: string;
   history?: { role: string; content: string }[];
-  provider?: string;
-  model?: string;
-}
-
-export function buildAIModelSettings(settings: Pick<Settings, 'aiProvider' | 'aiModel' | 'hermesModel'>): string | undefined {
-  if (settings.aiProvider === 'claude') return settings.aiModel;
-  if (settings.aiProvider === 'hermes') return settings.hermesModel;
-  return undefined;
 }
 
 export function buildContextFromReadingSnapshot(snapshot: ReadingContextSnapshot): {
@@ -53,10 +45,13 @@ export function buildChatRequest(params: {
   readingContext: ReadingContextSnapshot;
   conversationSummary?: string;
   chatMessages: ChatMessage[];
-  settings: Pick<Settings, 'aiProvider' | 'aiModel' | 'hermesModel' | 'aiContextWindow'>;
+  settings: Pick<Settings, 'aiContextWindow'>;
 }): ChatRequest {
   const derivedContext = buildContextFromReadingSnapshot(params.readingContext);
 
+  // The active provider/model is resolved by the backend from the user's
+  // configured OpenAI-compatible provider; the request carries only the prompt
+  // and reading context.
   return {
     message: params.message,
     context: derivedContext.combinedContext,
@@ -70,7 +65,5 @@ export function buildChatRequest(params: {
       role: message.role,
       content: message.content,
     })),
-    provider: params.settings.aiProvider,
-    model: buildAIModelSettings(params.settings),
   };
 }

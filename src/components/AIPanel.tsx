@@ -10,7 +10,7 @@ import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../const
 // Import from refactored modules
 import {
     SendIcon, AILogoIcon, TrashIcon, BookIcon,
-    QuoteIcon, CopyIcon, CheckIcon, StopIcon,
+    QuoteIcon, CopyIcon, CheckIcon, StopIcon, CloseIcon,
 } from './ai/icons';
 import { FormatMessage } from './ai/MarkdownRenderer';
 import {
@@ -18,17 +18,26 @@ import {
     loadQuickActionConfigs,
     QUICK_ACTIONS_CHANGED_EVENT,
 } from './ai/quickActions';
-import { buildAIModelSettings, buildChatRequest, buildContextFromReadingSnapshot, createUserChatMessage } from '../domain/aiRequest';
+import { buildChatRequest, buildContextFromReadingSnapshot, createUserChatMessage } from '../domain/aiRequest';
 import { buildReadingContextSnapshot } from '../domain/readingSource';
 import type { ReadingContextSnapshot } from '../domain/readingSource';
 import { getMessagesToSummarize } from './ai/conversationMemory';
 import { createOnceCommitter } from './ai/streamCommit';
 import type { QuickActionConfig } from './ai/quickActions';
-import type { AIProviderInfo, ChatRequest, StreamEvent, SummarizeConversationRequest } from './ai/types';
+import type { AIProviderStatus, ChatRequest, StreamEvent, SummarizeConversationRequest } from './ai/types';
 import './AIPanel.css';
 import './AIPanelMarkdown.css';
 
 const logger = createLogger('AIPanel');
+
+function ScrollDownIcon() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <polyline points="19 12 12 19 5 12" />
+        </svg>
+    );
+}
 
 // Note: Icons, Types, and FormatMessage are now imported from ./ai/ modules
 
@@ -61,7 +70,7 @@ export function AIPanel() {
     const [isLoading, setIsLoading] = useState(false);
     const [streamingContent, setStreamingContent] = useState('');
     const streamingContentRef = useRef('');
-    const [providers, setProviders] = useState<AIProviderInfo[]>([]);
+    const [providers, setProviders] = useState<AIProviderStatus[]>([]);
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
     const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(loadQuickActionConfigs);
     const [showQuickActionOverflow, setShowQuickActionOverflow] = useState(false);
@@ -161,8 +170,19 @@ export function AIPanel() {
         const el = messagesContainerRef.current;
         if (!el) return;
         const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
-        isAutoScrollEnabledRef.current = distanceToBottom < 80;
+        const pinned = distanceToBottom < 80;
+        isAutoScrollEnabledRef.current = pinned;
+        setIsPinnedToBottom(pinned);
     }, []);
+
+    // Show a "jump to latest" affordance when the user has scrolled up.
+    const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
+
+    const scrollToLatest = useCallback(() => {
+        isAutoScrollEnabledRef.current = true;
+        setIsPinnedToBottom(true);
+        scheduleScrollToBottom('smooth');
+    }, [scheduleScrollToBottom]);
 
     useEffect(() => {
         if (!isAutoScrollEnabledRef.current) return;
@@ -187,41 +207,31 @@ export function AIPanel() {
 
     // Focus input when panel opens
     useEffect(() => {
-        if (isAIPanelOpen) {
-            inputRef.current?.focus();
-            if (isTauri) {
-                checkAIAvailability();
-            } else {
-                setProviders([
-                    { id: 'hermes', name: 'Hermes', model: 'Hermes Agent', available: false },
-                    { id: 'claude', name: 'Claude', model: 'sonnet', available: false },
-                    { id: 'opencode', name: 'OpenCode', model: 'default', available: false },
-                    { id: 'codex', name: 'Codex', model: 'default', available: false },
-                ]);
-            }
+        if (isAIPanelOpen && isTauri) {
+            checkAIAvailability();
         }
     }, [isAIPanelOpen, isTauri]);
 
-    // Check which AI CLIs are available
+    // Load configured OpenAI-compatible providers and their key status.
     const checkAIAvailability = async () => {
         try {
             if (!isTauri) return;
-            const available = await invoke<AIProviderInfo[]>('check_ai_availability');
+            const available = await invoke<AIProviderStatus[]>('list_ai_providers');
             setProviders(available);
         } catch (e) {
-            logger.error('Failed to check AI availability:', e);
+            logger.error('Failed to load AI providers:', e);
             setProviders([]);
         }
     };
 
-    // 刷新 AI availability
+    // Refresh provider list (used after settings changes).
     const refreshAIAvailability = async () => {
         try {
             if (!isTauri) return;
-            const available = await invoke<AIProviderInfo[]>('refresh_ai_availability');
+            const available = await invoke<AIProviderStatus[]>('list_ai_providers');
             setProviders(available);
         } catch (e) {
-            logger.error('Failed to refresh AI availability:', e);
+            logger.error('Failed to refresh AI providers:', e);
         }
     };
 
@@ -254,7 +264,6 @@ export function AIPanel() {
         if (!settings.readingMemoryAutoIngest || !settings.readingMemoryPath || !readingContext.book) return;
 
         try {
-            const model = buildAIModelSettings(settings);
             const ingestInput = buildReadingMemoryIngestInput({
                 rootPath: settings.readingMemoryPath,
                 readingContext,
@@ -263,19 +272,13 @@ export function AIPanel() {
             });
             if (!ingestInput) return;
 
-            await ingestReadingMemoryDirect({
-                ...ingestInput,
-                provider: settings.aiProvider,
-                model,
-            });
+            // The active provider/model is resolved by the backend.
+            await ingestReadingMemoryDirect(ingestInput);
         } catch (error) {
             logger.warn('Reading Memory ingest skipped:', error);
         }
     }, [
         isTauri,
-        settings.aiModel,
-        settings.aiProvider,
-        settings.hermesModel,
         settings.readingMemoryAutoIngest,
         settings.readingMemoryPath,
     ]);
@@ -304,8 +307,6 @@ export function AIPanel() {
                 content: message.content,
             })),
             book_title: currentBook?.title,
-            provider: settings.aiProvider,
-            model: buildAIModelSettings(settings),
         };
 
         try {
@@ -337,9 +338,6 @@ export function AIPanel() {
         setConversationMemory,
         settings.aiAutoSummarize,
         settings.aiContextWindow,
-        settings.aiModel,
-        settings.aiProvider,
-        settings.hermesModel,
     ]);
 
     const sendMessage = async () => {
@@ -372,6 +370,7 @@ export function AIPanel() {
         setStreamingContent('');
         const perfKey = `ai:sendMessage:${userMessage.id}`;
         perfMark(`${perfKey}:start`);
+        let streamComplete = false;
 
         try {
             if (!isTauri) {
@@ -402,7 +401,6 @@ export function AIPanel() {
             let fullContent = '';
             let pendingChunks: string[] = [];
             let flushRaf: number | null = null;
-            let streamComplete = false;
 
             const finalizeContent = () => {
                 if (pendingChunks.length > 0) {
@@ -489,10 +487,11 @@ export function AIPanel() {
             }
         } catch (error) {
             logger.error('AI error:', error);
+            if (streamComplete) return;
             const errorMessage: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: `AI 请求失败：${error}\n\n请确认已安装并配置 hermes、claude、opencode 或 codex。`,
+                content: `AI 请求失败：${error}`,
                 timestamp: Date.now(),
             };
             addChatMessage(errorMessage);
@@ -680,8 +679,9 @@ export function AIPanel() {
                                 className="ai-source-clear"
                                 onClick={() => setSelectedText('')}
                                 title="清除选区"
+                                aria-label="清除选区"
                             >
-                                x
+                                <CloseIcon />
                             </button>
                         </div>
                     )}
@@ -707,8 +707,9 @@ export function AIPanel() {
                                             className="ai-source-clear"
                                             onClick={() => removeAccumulatedText(index)}
                                             title="移除这段文本"
+                                            aria-label="移除这段文本"
                                         >
-                                            x
+                                            <CloseIcon />
                                         </button>
                                     </div>
                                 ))}
@@ -721,12 +722,18 @@ export function AIPanel() {
             <div className="ai-panel-messages" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
                 {chatMessages.length === 0 ? (
                     <div className="ai-panel-empty">
-                        {!providers.some(p => p.available) && (
+                        {!providers.some(p => p.active && p.hasKey) ? (
                             <div className="ai-warning">
-                                <p>未检测到 AI CLI，请安装 hermes、claude、opencode 或 codex。</p>
+                                <p>尚未配置可用的 AI 服务。请在设置中添加一个 OpenAI 兼容服务并填入 API Key。</p>
                                 <button className="btn btn-ghost btn-sm" onClick={refreshAIAvailability}>
                                     刷新
                                 </button>
+                            </div>
+                        ) : (
+                            <div className="ai-empty-guide">
+                                <span className="ai-empty-guide-icon" aria-hidden="true">
+                                    <AILogoIcon size={26} />
+                                </span>
                             </div>
                         )}
                     </div>
@@ -752,6 +759,17 @@ export function AIPanel() {
                     </div>
                 )}
                 <div ref={messagesEndRef} />
+
+                {chatMessages.length > 0 && !isPinnedToBottom && (
+                    <button
+                        className="ai-scroll-to-latest"
+                        onClick={scrollToLatest}
+                        title="回到底部"
+                        aria-label="回到底部"
+                    >
+                        <ScrollDownIcon />
+                    </button>
+                )}
             </div>
 
             {quickActionControls}
@@ -762,7 +780,7 @@ export function AIPanel() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder=""
+                    placeholder="提问，或选中正文后问 AI…"
                     rows={1}
                     disabled={isLoading}
                 />
@@ -779,6 +797,7 @@ export function AIPanel() {
                         className="btn btn-primary btn-icon"
                         onClick={sendMessage}
                         disabled={!input.trim()}
+                        title="发送（Enter）"
                     >
                         <SendIcon />
                     </button>

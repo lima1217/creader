@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Book as EpubBook, Rendition } from 'epubjs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useAI, useLibrary, useSettings, useUI, useBookProgress } from '../stores/AppContext';
@@ -44,6 +44,41 @@ export function EPUBReader() {
 
     const [toc, setToc] = useState<NavItem[]>([]);
     const [showToc, setShowToc] = useState(false);
+    // Active TOC href for "you are here" highlighting. Updated whenever the
+    // reader relocates, derived from the rendition's current location start.
+    const [currentTocHref, setCurrentTocHref] = useState<string>('');
+
+    // Map a spine href to a human-readable chapter label, so search results can
+    // show a real chapter title instead of the raw OPF idref / href. Flattens
+    // nested TOC entries and normalizes anchor + path prefixes.
+    const chapterLabelByHref = useMemo(() => {
+        const map = new Map<string, string>();
+        const normalize = (href: string) => (href || '').split('#')[0].trim();
+        const walk = (items: NavItem[]) => {
+            for (const item of items) {
+                const key = normalize(item.href);
+                if (key && item.label && !map.has(key)) map.set(key, item.label);
+                if (item.subitems?.length) walk(item.subitems);
+            }
+        };
+        walk(toc);
+        return map;
+    }, [toc]);
+
+    const resolveChapterLabel = useCallback((result: { section?: string; cfi?: string }) => {
+        // Prefer resolving via the result's href (carried on `cfi` in the slow
+        // path); fall back to the existing `section` if it is already a title.
+        const href = (result.cfi || '').split('#')[0].trim();
+        const viaHref = href ? chapterLabelByHref.get(href) : undefined;
+        if (viaHref) return viaHref;
+        const section = result.section || '';
+        // Heuristic: epubjs `section` is the spine idref (e.g. "id123") or a
+        // filename ("x.xhtml") when no label exists. Only show it when it looks
+        // like a real title rather than a raw id/filename.
+        if (section && !/^(id\d+|.*\.(x?html|htm|xhtml))$/i.test(section)) return section;
+        return '';
+    }, [chapterLabelByHref]);
+
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isFileNotFound, setIsFileNotFound] = useState(false);
@@ -59,6 +94,9 @@ export function EPUBReader() {
     const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
     const [showSelectionHint, setShowSelectionHint] = useState(false);
     const [chapterCopied, setChapterCopied] = useState(false);
+    // Accumulated-texts preview: toggled by click so it works on touch devices,
+    // while hover still reveals it on desktop.
+    const [accumulatedPreviewOpen, setAccumulatedPreviewOpen] = useState(false);
 
     useEffect(() => {
         if (!scriptsEnabled) {
@@ -110,6 +148,32 @@ export function EPUBReader() {
         setShowSelectionToolbar,
         setShowSelectionHint,
     });
+
+    // Track the active TOC href so the table of contents can highlight the
+    // chapter the reader is currently on.
+    useEffect(() => {
+        const rendition = renditionRef.current;
+        if (!rendition) return;
+
+        const updateHref = () => {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const loc = (rendition as any).currentLocation?.();
+                const href = loc?.start?.href;
+                if (typeof href === 'string') setCurrentTocHref(href);
+            } catch {
+                // currentLocation can throw before the book is fully laid out.
+            }
+        };
+
+        updateHref();
+        rendition.on('relocated', updateHref);
+        rendition.on('locationChanged', updateHref);
+        return () => {
+            rendition.off('relocated', updateHref);
+            rendition.off('locationChanged', updateHref);
+        };
+    }, [renditionKey]);
 
     const {
         searchQuery,
@@ -306,6 +370,7 @@ export function EPUBReader() {
             {/* Loading indicator */}
             {isLoading && (
                 <div className="reader-loading">
+                    <span className="reader-loading-spinner" aria-hidden="true" />
                     <p>正在打开书籍...</p>
                 </div>
             )}
@@ -323,30 +388,37 @@ export function EPUBReader() {
                         {toc.length === 0 ? (
                             <li className="reader-toc-empty">没有可用章节</li>
                         ) : (
-                            toc.map(item => (
+                            toc.map(item => {
+                                const isActive = item.href === currentTocHref ||
+                                    (currentTocHref && item.href && currentTocHref.startsWith(item.href));
+                                return (
                                 <li key={item.id}>
                                     <button
-                                        className="reader-toc-item"
+                                        className={`reader-toc-item ${isActive ? 'current' : ''}`}
                                         onClick={() => handleTocClick(item.href)}
                                     >
                                         {item.label}
                                     </button>
                                     {item.subitems && item.subitems.length > 0 && (
                                         <ul className="reader-toc-sublist">
-                                            {item.subitems.map(sub => (
+                                            {item.subitems.map(sub => {
+                                                const subActive = sub.href === currentTocHref;
+                                                return (
                                                 <li key={sub.id}>
                                                     <button
-                                                        className="reader-toc-item reader-toc-subitem"
+                                                        className={`reader-toc-item reader-toc-subitem ${subActive ? 'current' : ''}`}
                                                         onClick={() => handleTocClick(sub.href)}
                                                     >
                                                         {sub.label}
                                                     </button>
                                                 </li>
-                                            ))}
+                                                );
+                                            })}
                                         </ul>
                                     )}
                                 </li>
-                            ))
+                                );
+                            })
                         )}
                     </ul>
                 </div>
@@ -398,13 +470,17 @@ export function EPUBReader() {
                 <div className="reader-accumulated-indicator">
                     <button
                         className="reader-chrome-control reader-accumulated-btn"
-                        onClick={() => setAIPanelOpen(true)}
+                        onClick={() => {
+                            setAccumulatedPreviewOpen(open => !open);
+                            setAIPanelOpen(true);
+                        }}
                         title={`${accumulatedTexts.length} 段选文，发送给 AI`}
+                        aria-expanded={accumulatedPreviewOpen}
                     >
                         <LayersIcon />
                         <span>{accumulatedTexts.length} 段选文</span>
                     </button>
-                    <div className="reader-accumulated-preview">
+                    <div className={`reader-accumulated-preview ${accumulatedPreviewOpen ? 'preview-open' : ''}`}>
                         {accumulatedTexts.slice(-3).map((text, idx) => (
                             <div key={idx} className="reader-accumulated-preview-item">
                                 {text.slice(0, 60)}{text.length > 60 ? '...' : ''}
@@ -474,15 +550,26 @@ export function EPUBReader() {
                         ) : searchResults.length === 0 && searchQuery ? (
                             <div className="reader-search-status">没有找到结果</div>
                         ) : (
-                            searchResults.map((result, index) => (
-                                <button
-                                    key={index}
-                                    className="reader-search-result"
-                                    onClick={() => handleSearchResultClick(result.cfi)}
-                                >
-                                    <span className="reader-search-excerpt">{result.excerpt}</span>
-                                </button>
-                            ))
+                            <>
+                                {searchResults.length > 0 && (
+                                    <div className="reader-search-meta">共 {searchResults.length} 个结果</div>
+                                )}
+                                {searchResults.map((result, index) => {
+                                    const chapterLabel = resolveChapterLabel(result);
+                                    return (
+                                    <button
+                                        key={index}
+                                        className="reader-search-result"
+                                        onClick={() => handleSearchResultClick(result.cfi)}
+                                    >
+                                        {chapterLabel && (
+                                            <span className="reader-search-chapter">{chapterLabel}</span>
+                                        )}
+                                        <span className="reader-search-excerpt">{result.excerpt}</span>
+                                    </button>
+                                    );
+                                })}
+                            </>
                         )}
                     </div>
                 </div>

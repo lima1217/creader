@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { useSettings } from '../stores/AppContext';
 import { ensureReadingMemoryRepository } from '../services/ReadingMemory';
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
-import type { AIProviderInfo } from './ai/types';
-import { CheckIcon, ChevronDownIcon, PlusIcon } from './ai/icons';
+import { useAIProviders } from './ai/hooks/useAIProviders';
+import type { AIProviderConfig } from '../types';
+import { CheckIcon, CloseIcon, PlusIcon } from './ai/icons';
 import {
     defaultQuickActions,
     getMissingDefaultQuickActions,
@@ -20,6 +20,28 @@ import './SettingsPanel.css';
 
 const logger = createLogger('SettingsPanel');
 
+// Quick-fill templates for common OpenAI-compatible endpoints.
+const providerTemplates: Array<{ name: string; baseUrl: string; model: string }> = [
+    { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+    { name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
+    { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    { name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+    { name: 'Ollama 本地', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' },
+];
+
+function newProviderId() {
+    return `prov_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function SettingsGlyph() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+    );
+}
+
 type SettingsSection = 'ai' | 'memory' | 'prompts';
 
 const contextWindowOptions = [
@@ -29,16 +51,9 @@ const contextWindowOptions = [
 ] as const;
 
 const sectionTabs: Array<{ id: SettingsSection; label: string; hint: string }> = [
-    { id: 'ai', label: 'AI', hint: '模型与上下文' },
+    { id: 'ai', label: 'AI', hint: '服务与上下文' },
     { id: 'memory', label: '阅读记忆', hint: '本地知识库' },
     { id: 'prompts', label: '快捷提示词', hint: '底部按钮' },
-];
-
-const fallbackProviders: AIProviderInfo[] = [
-    { id: 'hermes', name: 'Hermes', model: 'Hermes Agent', available: false },
-    { id: 'claude', name: 'Claude Code', model: 'Claude', available: false },
-    { id: 'opencode', name: 'OpenCode', model: 'OpenCode', available: false },
-    { id: 'codex', name: 'Codex CLI', model: 'Codex', available: false },
 ];
 
 type SettingsPanelProps = {
@@ -49,37 +64,29 @@ type SettingsPanelProps = {
 export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const { settings, setSettings } = useSettings();
     const isTauri = isTauriRuntime();
-    const [providers, setProviders] = useState<AIProviderInfo[]>([]);
-    const [isProviderOpen, setProviderOpen] = useState(false);
+    const aiProviders = useAIProviders({ isTauri, active: isOpen });
     const [isMemoryBusy, setMemoryBusy] = useState(false);
     const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(loadQuickActionConfigs);
     const [editingActionId, setEditingActionId] = useState<string | null>(quickActionConfigs[0]?.id || null);
     const [quickActionDraft, setQuickActionDraft] = useState({ label: '', prompt: '' });
     const [activeSection, setActiveSection] = useState<SettingsSection>('ai');
 
-    const refreshProviders = useCallback(async () => {
-        if (!isTauri) {
-            setProviders(fallbackProviders);
-            return;
-        }
-        try {
-            const available = await invoke<AIProviderInfo[]>('refresh_ai_availability');
-            setProviders(available);
-        } catch (error) {
-            logger.error('Failed to refresh AI providers:', error);
-            setProviders([]);
-        }
-    }, [isTauri]);
+    // Provider editor state.
+    const emptyDraft: AIProviderConfig = useMemo(() => ({ id: newProviderId(), name: '', baseUrl: '', model: '' }), []);
+    const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
+    const [draftKey, setDraftKey] = useState('');
+    const [providerError, setProviderError] = useState('');
 
     useEffect(() => {
         if (!isOpen) return;
         setActiveSection('ai');
-        setProviderOpen(false);
-        void refreshProviders();
+        setEditingProvider(null);
+        setDraftKey('');
+        setProviderError('');
         const loadedActions = loadQuickActionConfigs();
         setQuickActionConfigs(loadedActions);
         setEditingActionId(loadedActions[0]?.id || null);
-    }, [isOpen, refreshProviders]);
+    }, [isOpen]);
 
     useEffect(() => {
         const editingAction = quickActionConfigs.find(action => action.id === editingActionId);
@@ -98,31 +105,45 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         return () => document.removeEventListener('keydown', onKeyDown);
     }, [isOpen, onClose]);
 
-    const selectedProvider = providers.find(p => p.id === settings.aiProvider) || {
-        id: settings.aiProvider,
-        name: settings.aiProvider,
-        model: '',
-        available: false,
-    };
+    const startNewProvider = useCallback(() => {
+        setProviderError('');
+        setDraftKey('');
+        setEditingProvider({ ...emptyDraft, id: newProviderId() });
+    }, [emptyDraft]);
 
-    const setProvider = async (providerId: string) => {
-        setSettings({ ...settings, aiProvider: providerId });
-        setProviderOpen(false);
-        if (!isTauri) return;
-        try {
-            await invoke('set_ai_provider', { provider: providerId });
-        } catch (error) {
-            logger.error('Failed to set AI provider:', error);
+    const startEditProvider = useCallback((config: AIProviderConfig) => {
+        setProviderError('');
+        setDraftKey('');
+        setEditingProvider({ ...config });
+    }, []);
+
+    const applyTemplate = useCallback((template: { name: string; baseUrl: string; model: string }) => {
+        setEditingProvider(prev => prev ? {
+            ...prev,
+            name: prev.name.trim() || template.name,
+            baseUrl: template.baseUrl,
+            model: template.model,
+        } : prev);
+    }, []);
+
+    const saveEditingProvider = useCallback(async (activate: boolean) => {
+        if (!editingProvider) return;
+        if (!editingProvider.name.trim() || !editingProvider.baseUrl.trim() || !editingProvider.model.trim()) {
+            setProviderError('名称、地址和模型都需要填写。');
+            return;
         }
-    };
-
-    const setModel = (modelId: string) => {
-        setSettings({ ...settings, aiModel: modelId });
-    };
-
-    const setHermesModel = (modelId: string) => {
-        setSettings({ ...settings, hermesModel: modelId });
-    };
+        try {
+            await aiProviders.saveProvider(editingProvider, {
+                activate,
+                apiKey: draftKey.trim() || undefined,
+            });
+            setEditingProvider(null);
+            setDraftKey('');
+            setProviderError('');
+        } catch (error) {
+            setProviderError(String(error instanceof Error ? error.message : error));
+        }
+    }, [aiProviders, editingProvider, draftKey]);
 
     const adjustAITextSize = (delta: number) => {
         const nextSize = Math.min(20, Math.max(13, settings.aiTextSize + delta));
@@ -211,7 +232,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
     const selectSection = (section: SettingsSection) => {
         setActiveSection(section);
-        setProviderOpen(false);
     };
 
     if (!isOpen) return null;
@@ -226,11 +246,18 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 onMouseDown={event => event.stopPropagation()}
             >
                 <header className="settings-panel-header">
-                    <div>
-                        <h2 id="settings-title">设置</h2>
-                        <p>阅读记忆与 AI 运行方式</p>
+                    <div className="settings-panel-heading">
+                        <span className="settings-panel-badge" aria-hidden="true">
+                            <SettingsGlyph />
+                        </span>
+                        <div>
+                            <h2 id="settings-title">设置</h2>
+                            <p>阅读记忆与 AI 运行方式</p>
+                        </div>
                     </div>
-                    <button className="settings-close" onClick={onClose} aria-label="关闭设置">x</button>
+                    <button className="settings-close" onClick={onClose} aria-label="关闭设置">
+                        <CloseIcon />
+                    </button>
                 </header>
 
                 <nav className="settings-primary-tabs" aria-label="设置分类">
@@ -248,69 +275,139 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
                 {activeSection === 'ai' && (
                     <div className="settings-section">
-                        <div className="settings-section-title">AI</div>
-                    <div className="settings-field">
-                        <div className="settings-field-copy">
-                            <div className="settings-field-label">提供方</div>
-                            <div className="settings-field-hint">阅读时不显示模型控制，只保留旁注入口。</div>
+                        <div className="settings-section-title">AI 服务</div>
+
+                    {editingProvider ? (
+                        <div className="settings-provider-editor">
+                            <label className="settings-provider-edit-row">
+                                <span>名称</span>
+                                <input
+                                    className="settings-text-input"
+                                    value={editingProvider.name}
+                                    onChange={event => setEditingProvider({ ...editingProvider, name: event.target.value })}
+                                    placeholder="如 DeepSeek"
+                                />
+                            </label>
+                            <label className="settings-provider-edit-row">
+                                <span>Base URL（OpenAI 兼容）</span>
+                                <input
+                                    className="settings-text-input"
+                                    value={editingProvider.baseUrl}
+                                    onChange={event => setEditingProvider({ ...editingProvider, baseUrl: event.target.value })}
+                                    placeholder="https://api.deepseek.com/v1"
+                                />
+                            </label>
+                            <label className="settings-provider-edit-row">
+                                <span>模型</span>
+                                <input
+                                    className="settings-text-input"
+                                    value={editingProvider.model}
+                                    onChange={event => setEditingProvider({ ...editingProvider, model: event.target.value })}
+                                    placeholder="deepseek-chat"
+                                />
+                            </label>
+                            <label className="settings-provider-edit-row">
+                                <span>API Key（存入本地配置文件，不回显）</span>
+                                <input
+                                    className="settings-text-input"
+                                    type="password"
+                                    value={draftKey}
+                                    onChange={event => setDraftKey(event.target.value)}
+                                    placeholder="留空则保留已保存的 Key"
+                                />
+                            </label>
+
+                            <div className="settings-provider-templates">
+                                <small>快捷填充：</small>
+                                {providerTemplates.map(template => (
+                                    <button
+                                        key={template.name}
+                                        className="settings-provider-template-btn"
+                                        onClick={() => applyTemplate(template)}
+                                        type="button"
+                                    >
+                                        {template.name}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {providerError && <p className="settings-provider-error">{providerError}</p>}
+
+                            <div className="settings-provider-edit-actions">
+                                <button
+                                    className="settings-secondary-action"
+                                    onClick={() => { setEditingProvider(null); setProviderError(''); }}
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    className="settings-secondary-action"
+                                    onClick={() => saveEditingProvider(false)}
+                                >
+                                    保存
+                                </button>
+                                <button
+                                    className="settings-primary-action"
+                                    onClick={() => saveEditingProvider(true)}
+                                >
+                                    保存并启用
+                                </button>
+                            </div>
                         </div>
-                        <div className="settings-control-cluster settings-select">
-                            <button className="settings-select-trigger" onClick={() => setProviderOpen(open => !open)}>
-                                <span className={`settings-provider-dot ${selectedProvider.available ? 'available' : 'unavailable'}`} />
-                                <span>{selectedProvider.name}</span>
-                                <ChevronDownIcon />
-                            </button>
-                            {isProviderOpen && (
-                                <div className="settings-select-menu">
-                                    {providers.map(provider => (
-                                        <button
+                    ) : (
+                        <>
+                            {aiProviders.providers.length === 0 ? (
+                                <p className="settings-provider-empty">尚未添加 AI 服务。点下方「添加」配置一个 OpenAI 兼容服务。</p>
+                            ) : (
+                                <ul className="settings-provider-list">
+                                    {aiProviders.providers.map(provider => (
+                                        <li
                                             key={provider.id}
-                                            className={`settings-select-option ${provider.id === settings.aiProvider ? 'selected' : ''}`}
-                                            onClick={() => setProvider(provider.id)}
-                                            disabled={!provider.available && isTauri}
+                                            className={`settings-provider-item ${provider.active ? 'active' : ''}`}
                                         >
-                                            <span className={`settings-provider-dot ${provider.available ? 'available' : 'unavailable'}`} />
-                                            <span className="settings-option-copy">
-                                                <span>{provider.name}</span>
-                                                <small>{provider.model}</small>
-                                            </span>
-                                            {provider.id === settings.aiProvider && <CheckIcon />}
-                                        </button>
+                                            <button
+                                                className="settings-provider-main"
+                                                onClick={() => !provider.active && aiProviders.setActive(provider.id)}
+                                                title={provider.active ? '当前启用的服务' : '点此启用'}
+                                            >
+                                                <span className={`settings-provider-dot ${provider.hasKey ? 'available' : 'unavailable'}`} />
+                                                <span className="settings-provider-copy">
+                                                    <span className="settings-provider-name">
+                                                        {provider.name}
+                                                        {provider.active && <CheckIcon />}
+                                                    </span>
+                                                    <small>{provider.model} · {provider.hasKey ? 'Key 已设置' : '未设置 Key'}</small>
+                                                    <small className="settings-provider-url">{provider.baseUrl}</small>
+                                                </span>
+                                            </button>
+                                            <div className="settings-provider-actions">
+                                                <button
+                                                    className="settings-icon-btn"
+                                                    onClick={() => startEditProvider(provider)}
+                                                    title="编辑"
+                                                >
+                                                    编辑
+                                                </button>
+                                                <button
+                                                    className="settings-icon-btn settings-danger-action"
+                                                    onClick={() => aiProviders.deleteProvider(provider.id)}
+                                                    title="删除"
+                                                >
+                                                    删除
+                                                </button>
+                                            </div>
+                                        </li>
                                     ))}
-                                </div>
+                                </ul>
                             )}
-                        </div>
-                    </div>
 
-                    {settings.aiProvider === 'claude' && (
-                        <div className="settings-field">
-                            <div className="settings-field-copy">
-                                <div className="settings-field-label">Claude 模型</div>
-                                <div className="settings-field-hint">传给 Claude Code 的 --model，可按当前 CLI 支持填写。</div>
-                            </div>
-                            <input
-                                className="settings-text-input"
-                                value={settings.aiModel}
-                                onChange={(event) => setModel(event.target.value)}
-                                placeholder="opus-4.7"
-                            />
-                        </div>
+                            <button className="settings-secondary-action" onClick={startNewProvider} disabled={!isTauri}>
+                                <PlusIcon /> 添加 AI 服务
+                            </button>
+                        </>
                     )}
 
-                    {settings.aiProvider === 'hermes' && (
-                        <div className="settings-field">
-                            <div className="settings-field-copy">
-                                <div className="settings-field-label">Hermes 模型</div>
-                                <div className="settings-field-hint">默认读取 Hermes 配置，也可在这里覆盖。</div>
-                            </div>
-                            <input
-                                className="settings-text-input"
-                                value={settings.hermesModel}
-                                onChange={(event) => setHermesModel(event.target.value)}
-                                placeholder="glm-5.1"
-                            />
-                        </div>
-                    )}
+                    <div className="settings-divider" />
 
                     <div className="settings-field">
                         <div className="settings-field-copy">
@@ -360,16 +457,15 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             <strong>自动压缩</strong>
                             <small>超过轮次后，将更早对话压成隐藏摘要继续带上。</small>
                         </span>
-                        <input
-                            type="checkbox"
-                            checked={settings.aiAutoSummarize}
-                            onChange={event => setSettings({ ...settings, aiAutoSummarize: event.target.checked })}
-                        />
+                        <span className="settings-switch">
+                            <input
+                                type="checkbox"
+                                checked={settings.aiAutoSummarize}
+                                onChange={event => setSettings({ ...settings, aiAutoSummarize: event.target.checked })}
+                            />
+                            <span className="settings-switch-track" aria-hidden="true" />
+                        </span>
                     </label>
-
-                    <button className="settings-secondary-action" onClick={refreshProviders} disabled={!isTauri}>
-                        刷新可用提供方
-                    </button>
                     </div>
                 )}
 
@@ -398,11 +494,14 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             <strong>自动沉淀</strong>
                             <small>AI 判断有长期价值时，自动写入本地仓库。</small>
                         </span>
-                        <input
-                            type="checkbox"
-                            checked={settings.readingMemoryAutoIngest}
-                            onChange={event => setSettings({ ...settings, readingMemoryAutoIngest: event.target.checked })}
-                        />
+                        <span className="settings-switch">
+                            <input
+                                type="checkbox"
+                                checked={settings.readingMemoryAutoIngest}
+                                onChange={event => setSettings({ ...settings, readingMemoryAutoIngest: event.target.checked })}
+                            />
+                            <span className="settings-switch-track" aria-hidden="true" />
+                        </span>
                     </label>
                     </div>
                 )}
@@ -434,7 +533,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                             onClick={() => hideQuickAction(action.id)}
                                             aria-label={`隐藏 ${action.label}`}
                                         >
-                                            x
+                                            <CloseIcon />
                                         </button>
                                     </div>
                                 ))

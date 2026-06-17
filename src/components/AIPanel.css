@@ -23,7 +23,7 @@
 
 .ai-panel-resize-handle {
     position: absolute;
-    z-index: 100;
+    z-index: 90;
     top: 0;
     bottom: 0;
     left: -4px;
@@ -272,6 +272,74 @@
     font-size: var(--text-xs);
 }
 
+/* Empty-state guidance (provider available, no conversation yet) */
+.ai-empty-guide {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: var(--space-4);
+    text-align: center;
+    max-width: 280px;
+}
+
+.ai-empty-guide-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    margin-bottom: var(--space-1);
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: var(--radius-surface);
+}
+
+.ai-empty-guide-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.ai-empty-guide-hint {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+/* Jump-to-latest floating button */
+.ai-scroll-to-latest {
+    position: sticky;
+    bottom: 8px;
+    align-self: center;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--border-secondary);
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-float);
+    cursor: default;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.ai-scroll-to-latest:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+/* Icon-sized clear buttons */
+.ai-source-clear svg {
+    width: 13px;
+    height: 13px;
+}
+
 .ai-message {
     position: relative;
     display: flex;
@@ -502,6 +570,7 @@
 
 /* Composer */
 .ai-panel-input {
+    position: relative;
     display: flex;
     align-items: flex-end;
     gap: 8px;

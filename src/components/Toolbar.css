@@ -13,7 +13,7 @@
     padding: 0 var(--space-3);
     flex-shrink: 0;
     position: relative;
-    z-index: 100;
+    z-index: 110;
 }
 
 /* Layout Sections */
