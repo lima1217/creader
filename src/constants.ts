@@ -7,9 +7,6 @@
 // UI Constants
 // ============================================
 
-/** Height of each book item in the sidebar virtual list (in pixels) */
-export const BOOK_ITEM_HEIGHT = 92;
-
 /** Width of the AI panel (in pixels) */
 export const AI_PANEL_WIDTH = 380;
 
@@ -25,17 +22,6 @@ export const AI_PANEL_MAX_WIDTH = 700;
 
 /** Maximum number of chat messages to persist in local storage */
 export const MAX_CHAT_MESSAGES_STORED = 100;
-
-export const SEARCH_TEXT_CACHE_MAX_TOTAL_BYTES = 25 * 1024 * 1024;
-export const SEARCH_TEXT_CACHE_MAX_ENTRIES = 400;
-export const SEARCH_TEXT_CACHE_MAX_ENTRY_BYTES = 2 * 1024 * 1024;
-
-// ============================================
-// AI Constants
-// ============================================
-
-/** Timeout for AI requests (in seconds) - must match backend AI_TIMEOUT_SECS */
-export const AI_TIMEOUT_SECONDS = 60;
 
 /** Maximum length of chapter content to send to AI (in characters) */
 export const MAX_CHAPTER_CONTENT_LENGTH = 50000;

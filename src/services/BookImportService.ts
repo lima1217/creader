@@ -1,7 +1,6 @@
 import { extractEpubMetadata } from '../utils/epub';
 import { saveCover } from './CoverStore';
-import { getBookFormat } from '../utils/bookFormat';
-import type { Book, BookFormat } from '../types';
+import type { Book } from '../types';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('BookImportService');
@@ -40,7 +39,9 @@ export async function importBookFromPath(params: {
     return { status: 'skipped', reason: 'duplicate' };
   }
 
-  const format: BookFormat = getBookFormat(filePath);
+  if (!filePath.toLowerCase().endsWith('.epub')) {
+    throw new Error('Only EPUB files are supported.');
+  }
   const { finalPath } = await tryCopyBookToLibrary({ sourcePath: filePath, bookId });
 
   let title = 'Unknown';
@@ -64,7 +65,7 @@ export async function importBookFromPath(params: {
     id: bookId,
     title,
     author,
-    format,
+    format: 'epub',
     coverKey,
     filePath: finalPath,
     addedAt: Date.now(),

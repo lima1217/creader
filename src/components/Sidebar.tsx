@@ -2,10 +2,8 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { useLibrary, useUI, useBookProgress } from '../stores/AppContext';
 import type { Book, BookCategory } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
-import { BOOK_ITEM_HEIGHT, CATEGORY_COLORS } from '../constants';
-import { useVirtualList } from '../hooks/useVirtualList';
+import { CATEGORY_COLORS } from '../constants';
 import { useAppDialog } from './AppDialog';
-import { useProximityGroup } from './useProximityGroup';
 import {
     EditIcon,
     FolderIcon,
@@ -30,7 +28,7 @@ interface EditBookState {
 }
 
 // Lazy loaded book cover component
-function LazyBookCover({ book, coverUrls }: { book: Book; coverUrls: Record<string, string> }) {
+function LazyBookCover({ book }: { book: Book }) {
     const [isVisible, setIsVisible] = useState(false);
     const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
     const ref = useRef<HTMLDivElement>(null);
@@ -59,7 +57,7 @@ function LazyBookCover({ book, coverUrls }: { book: Book; coverUrls: Record<stri
         if (!isVisible) return;
 
         // Check if we already have the URL
-        const existingUrl = book.cover || coverUrls[book.id];
+        const existingUrl = book.cover;
         if (existingUrl) {
             setLoadedUrl(existingUrl);
             return;
@@ -71,7 +69,7 @@ function LazyBookCover({ book, coverUrls }: { book: Book; coverUrls: Record<stri
                 if (url) setLoadedUrl(url);
             }).catch(() => { });
         }
-    }, [isVisible, book, coverUrls]);
+    }, [isVisible, book]);
 
     return (
         <div ref={ref} className="book-cover">
@@ -102,7 +100,6 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
     const { bookProgressById } = useBookProgress();
     const { isSidebarOpen, setSidebarOpen } = useUI();
 
-    const [coverUrls] = useState<Record<string, string>>({});
     const [bookToEdit, setBookToEdit] = useState<EditBookState | null>(null);
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -168,16 +165,6 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
         const [activeBook] = nextBooks.splice(currentBookIndex, 1);
         return [activeBook, ...nextBooks];
     }, [currentBook, library.books, selectedCategoryId, bookProgressById]);
-
-    const { containerRef: listContainerRef, virtualItems, totalHeight } = useVirtualList(filteredBooks, {
-        itemHeight: BOOK_ITEM_HEIGHT,
-        overscan: 3,
-    });
-    const headerActionsRef = useProximityGroup<HTMLDivElement>({
-        radius: 96,
-        maxScale: 0.08,
-        minOpacity: 0.8,
-    });
 
     const handleBookClick = (book: Book) => {
         setCurrentBook(book);
@@ -427,11 +414,11 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                 >
                     <SidebarPanelIcon size={23} strokeWidth={1.7} />
                 </button>
-                <div className="sidebar-header-actions" ref={headerActionsRef}>
-                    <button className="btn btn-secondary btn-icon" data-proximity-control onClick={handleAddCategory} title="新增标签" aria-label="新增标签">
+                <div className="sidebar-header-actions">
+                    <button className="btn btn-secondary btn-icon" onClick={handleAddCategory} title="新增标签" aria-label="新增标签">
                         <FolderIcon />
                     </button>
-                    <button className="btn btn-secondary btn-icon sidebar-import-btn" data-proximity-control onClick={onImportBook} title="导入 EPUB" aria-label="导入 EPUB">
+                    <button className="btn btn-secondary btn-icon sidebar-import-btn" onClick={onImportBook} title="导入 EPUB" aria-label="导入 EPUB">
                         <PlusIcon />
                     </button>
                 </div>
@@ -520,7 +507,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                 </div>
             </div>
 
-            <div className="sidebar-content" ref={listContainerRef}>
+            <div className="sidebar-content">
                 {filteredBooks.length === 0 ? (
                     <div className="sidebar-empty">
                         <div className="sidebar-empty-icon">
@@ -534,17 +521,16 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                         </button>
                     </div>
                 ) : (
-                    <div className="book-list-virtual" style={{ height: totalHeight, position: 'relative' }}>
-                        {virtualItems.map(({ item: book, style }) => {
+                    <div className="book-list">
+                        {filteredBooks.map((book) => {
                             const percentage = bookProgressById[book.id]?.percentage ?? book.progress.percentage;
                             return (
                                 <div
                                     key={book.id}
                                     className={`book-item ${currentBook?.id === book.id ? 'active' : ''}`}
-                                    style={style}
                                     onClick={() => handleBookClick(book)}
                                 >
-                                    <LazyBookCover book={book} coverUrls={coverUrls} />
+                                    <LazyBookCover book={book} />
                                     <div className="book-info">
                                         <span className="book-title-row">
                                             <span className="book-title">{book.title}</span>

@@ -283,11 +283,6 @@
     max-width: 200px;
 }
 
-/* Book List - Virtual */
-.book-list-virtual {
-    min-height: 100%;
-}
-
 .book-list {
     list-style: none;
     display: flex;
@@ -874,16 +869,7 @@
     width: 36px;
     height: 36px;
     border-radius: 4px;
-    transform-origin: center;
-    will-change: scale, opacity;
-    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), scale var(--transition-fast);
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .sidebar-header-actions [data-proximity-control] {
-        scale: 1 !important;
-        opacity: 1 !important;
-    }
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .sidebar-import-btn {

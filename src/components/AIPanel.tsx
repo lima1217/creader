@@ -5,9 +5,8 @@ import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
 import { perfMark, perfMeasure } from '../utils/perf';
 import { buildReadingMemoryIngestInput, ingestReadingMemoryDirect } from '../services/ReadingMemory';
-import type { ChatMessage } from '../types';
+import type { AIProviderStatus, ChatMessage } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
-// Import from refactored modules
 import {
     SendIcon, AILogoIcon, TrashIcon, BookIcon,
     QuoteIcon, CopyIcon, CheckIcon, StopIcon, CloseIcon,
@@ -19,16 +18,28 @@ import {
     QUICK_ACTIONS_CHANGED_EVENT,
 } from './ai/quickActions';
 import { buildChatRequest, buildContextFromReadingSnapshot, createUserChatMessage } from '../domain/aiRequest';
+import type { ChatRequest } from '../domain/aiRequest';
 import { buildReadingContextSnapshot } from '../domain/readingSource';
 import type { ReadingContextSnapshot } from '../domain/readingSource';
 import { getMessagesToSummarize } from './ai/conversationMemory';
 import { createOnceCommitter } from './ai/streamCommit';
 import type { QuickActionConfig } from './ai/quickActions';
-import type { AIProviderStatus, ChatRequest, StreamEvent, SummarizeConversationRequest } from './ai/types';
 import './AIPanel.css';
 import './AIPanelMarkdown.css';
 
 const logger = createLogger('AIPanel');
+
+type SummarizeConversationRequest = {
+    existing_summary?: string;
+    messages: { role: string; content: string }[];
+    book_title?: string;
+};
+
+type StreamEvent =
+    | { event: 'started'; data: { provider: string } }
+    | { event: 'chunk'; data: { text: string } }
+    | { event: 'done'; data: { fullText: string } }
+    | { event: 'error'; data: { message: string; provider?: string } };
 
 function ScrollDownIcon() {
     return (
@@ -38,12 +49,6 @@ function ScrollDownIcon() {
         </svg>
     );
 }
-
-// Note: Icons, Types, and FormatMessage are now imported from ./ai/ modules
-
-// ============================================
-// Main Component
-// ============================================
 
 export function AIPanel() {
     const { isAIPanelOpen } = useUI();
@@ -205,15 +210,7 @@ export function AIPanel() {
         };
     }, []);
 
-    // Focus input when panel opens
-    useEffect(() => {
-        if (isAIPanelOpen && isTauri) {
-            checkAIAvailability();
-        }
-    }, [isAIPanelOpen, isTauri]);
-
-    // Load configured OpenAI-compatible providers and their key status.
-    const checkAIAvailability = async () => {
+    const refreshProviders = useCallback(async () => {
         try {
             if (!isTauri) return;
             const available = await invoke<AIProviderStatus[]>('list_ai_providers');
@@ -222,18 +219,14 @@ export function AIPanel() {
             logger.error('Failed to load AI providers:', e);
             setProviders([]);
         }
-    };
+    }, [isTauri]);
 
-    // Refresh provider list (used after settings changes).
-    const refreshAIAvailability = async () => {
-        try {
-            if (!isTauri) return;
-            const available = await invoke<AIProviderStatus[]>('list_ai_providers');
-            setProviders(available);
-        } catch (e) {
-            logger.error('Failed to refresh AI providers:', e);
+    // Focus input when panel opens
+    useEffect(() => {
+        if (isAIPanelOpen && isTauri) {
+            void refreshProviders();
         }
-    };
+    }, [isAIPanelOpen, isTauri, refreshProviders]);
 
     // Copy message content
     const copyMessage = useCallback(async (messageId: string, content: string) => {
@@ -252,7 +245,7 @@ export function AIPanel() {
         setStreamingContent('');
         setSelectedText('');
         clearAccumulatedTexts();
-        await refreshAIAvailability();
+        await refreshProviders();
     };
 
     const autoIngestReadingMemory = useCallback(async (
@@ -725,7 +718,7 @@ export function AIPanel() {
                         {!providers.some(p => p.active && p.hasKey) ? (
                             <div className="ai-warning">
                                 <p>尚未配置可用的 AI 服务。请在设置中添加一个 OpenAI 兼容服务并填入 API Key。</p>
-                                <button className="btn btn-ghost btn-sm" onClick={refreshAIAvailability}>
+                                <button className="btn btn-ghost btn-sm" onClick={refreshProviders}>
                                     刷新
                                 </button>
                             </div>

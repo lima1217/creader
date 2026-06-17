@@ -2,12 +2,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ReadingMemoryIngestInput } from '../domain/readingMemory';
 
 export {
-  buildReadingMemoryMarkdown,
   buildReadingMemoryIngestInput,
-  classifyReadingMemoryCandidate,
-  type ReadingMemoryCandidate,
   type ReadingMemoryIngestInput,
-  type ReadingMemoryMarkdown,
 } from '../domain/readingMemory';
 
 type DirectIngestResult = {

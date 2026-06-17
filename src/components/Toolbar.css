@@ -138,19 +138,6 @@
     filter: none;
 }
 
-.toolbar [data-proximity-control] {
-    transform-origin: center;
-    will-change: scale, opacity;
-    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), scale var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .toolbar [data-proximity-control] {
-        scale: 1 !important;
-        opacity: 1 !important;
-    }
-}
-
 /* ============================================
    Active State Button
    ============================================ */

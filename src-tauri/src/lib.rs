@@ -1684,11 +1684,87 @@ mod tests {
     }
 
     #[test]
+    fn reading_memory_direct_prompt_keeps_selective_ingestion_rules() {
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: "/tmp/memory".to_string(),
+            book_title: "Book".to_string(),
+            book_author: Some("Author".to_string()),
+            source_chapter: Some("Chapter 1".to_string()),
+            source_cfi: Some("epubcfi(/6/8)".to_string()),
+            source_progress: Some(12.5),
+            user_question: "翻译这段".to_string(),
+            selected_excerpt: Some("source".to_string()),
+            assistant_answer: "translated text".to_string(),
+        };
+
+        let prompt = build_reading_memory_direct_prompt(&request);
+        for rule in [
+            "翻译",
+            "闲聊",
+            "短期追问",
+            "苏格拉底式出题",
+            "工具提示词",
+            "重复解释",
+            "低于 0.7 应该 should_ingest=false",
+        ] {
+            assert!(prompt.contains(rule), "missing ingestion rule: {}", rule);
+        }
+    }
+
+    #[test]
     fn safe_wiki_title_and_allowed_dirs_restrict_model_output() {
         assert_eq!(safe_wiki_title("../概念/机会成本?.md"), "概念 机会成本 md");
         assert_eq!(allowed_reading_memory_dir("concepts"), Some("concepts"));
         assert_eq!(allowed_reading_memory_dir("../outside"), None);
         assert_eq!(normalize_note_type(Some("weird"), "claims"), "claim");
+    }
+
+    #[test]
+    fn reading_memory_note_type_maps_to_okf_types() {
+        assert_eq!(normalize_note_type(None, "concepts"), "concept");
+        assert_eq!(normalize_note_type(None, "questions"), "question");
+        assert_eq!(normalize_note_type(None, "claims"), "claim");
+        assert_eq!(normalize_note_type(None, "books"), "book");
+        assert_eq!(okf_type_for("concept"), "Concept");
+        assert_eq!(okf_type_for("question"), "OpenQuestions");
+        assert_eq!(okf_type_for("claim"), "Claim");
+        assert_eq!(okf_type_for("book"), "ChapterNote");
+    }
+
+    #[test]
+    fn reading_memory_markdown_preserves_source_traceability() {
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: "/tmp/memory".to_string(),
+            book_title: "Book".to_string(),
+            book_author: Some("Author".to_string()),
+            source_chapter: Some("Chapter 1".to_string()),
+            source_cfi: Some("epubcfi(/6/8,/1:0,/1:10)".to_string()),
+            source_progress: Some(12.5),
+            user_question: "解释这个概念".to_string(),
+            selected_excerpt: Some("source excerpt".to_string()),
+            assistant_answer: "assistant answer".to_string(),
+        };
+        let decision = ReadingMemoryDirectDecision {
+            should_ingest: true,
+            target_dir: Some("concepts".to_string()),
+            title: Some("机会成本".to_string()),
+            note_type: Some("concept".to_string()),
+            summary: None,
+            body: Some("这是一个可复用概念。".to_string()),
+            links: Some(vec!["Related".to_string()]),
+            confidence: Some(0.82),
+            reason: Some("形成可复用概念".to_string()),
+        };
+
+        let markdown = build_direct_reading_memory_markdown(&request, &decision, "concept", "concepts");
+        assert!(markdown.contains("type: Concept"));
+        assert!(markdown.contains("source_refs: [\"Book\"]"));
+        assert!(markdown.contains("source_chapter: \"Chapter 1\""));
+        assert!(markdown.contains("source_cfi: \"epubcfi(/6/8,/1:0,/1:10)\""));
+        assert!(markdown.contains("tags: [creader, concept]"));
+        assert!(markdown.contains("> source excerpt"));
+        assert!(markdown.contains("这是一个可复用概念。"));
+        assert!(markdown.contains("- [[Related]]"));
     }
 
     #[test]

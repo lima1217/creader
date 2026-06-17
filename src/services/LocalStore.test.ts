@@ -6,13 +6,13 @@ describe('LocalStore', () => {
     localStorage.clear();
   });
 
-  it('saves and loads envelope values', () => {
+  it('saves and loads JSON values', () => {
     saveStored('k', { a: 1 });
     expect(loadStored('k', { a: 0 })).toEqual({ a: 1 });
   });
 
-  it('loads legacy non-envelope values', () => {
-    localStorage.setItem('k', JSON.stringify({ a: 2 }));
+  it('loads old envelope values', () => {
+    localStorage.setItem('k', JSON.stringify({ v: 1, data: { a: 2 } }));
     expect(loadStored('k', { a: 0 })).toEqual({ a: 2 });
   });
 
