@@ -14,12 +14,18 @@ export function useEpubProgressTracking(params: {
   bookLikeRef: RefObject<EpubBookLike | null>;
   renditionKey: number;
   bookId: string | null;
+  locationsStatus: 'pending' | 'ready' | 'unavailable';
   updateBookProgress: (bookId: string, update: { kind: 'epub'; currentCfi: string; percentage: number }) => void;
   setCurrentChapterContent: (content: string) => void;
 }) {
-  const { renditionRef, bookLikeRef, renditionKey, bookId, updateBookProgress, setCurrentChapterContent } = params;
+  const { renditionRef, bookLikeRef, renditionKey, bookId, locationsStatus, updateBookProgress, setCurrentChapterContent } = params;
   const progressStateRef = useRef({ lastTs: 0, lastCfi: '', lastPercentage: 0 });
   const chapterStateRef = useRef({ lastTs: 0, lastCfi: '' });
+
+  useEffect(() => {
+    progressStateRef.current = { lastTs: 0, lastCfi: '', lastPercentage: 0 };
+    chapterStateRef.current = { lastTs: 0, lastCfi: '' };
+  }, [bookId]);
 
   useEffect(() => {
     const rendition = renditionRef.current;
@@ -40,7 +46,9 @@ export function useEpubProgressTracking(params: {
 
       percentage = computeEpubPercentage({ location, cfi, bookAny });
 
-      if (cfi) {
+      // The first relocation happens before cached locations are restored. Do
+      // not replace a saved exact percentage with the coarse spine fallback.
+      if (cfi && locationsStatus !== 'pending') {
         const now = Date.now();
         const last = progressStateRef.current;
         const percentageDelta = Math.abs(percentage - last.lastPercentage);
@@ -81,9 +89,23 @@ export function useEpubProgressTracking(params: {
     rendition.on('locationChanged', handleLocationChange);
     rendition.on('relocated', handleLocationChange);
 
+    // Restoring locations does not emit another relocation. Re-evaluate the
+    // visible page once exact percentages become available (or fallback is final).
+    if (locationsStatus !== 'pending') {
+      try {
+        const current = (rendition as any).currentLocation?.();
+        if (current?.then) {
+          void current.then(handleLocationChange);
+        } else if (current) {
+          handleLocationChange(current);
+        }
+      } catch {
+      }
+    }
+
     return () => {
       rendition.off('locationChanged', handleLocationChange);
       rendition.off('relocated', handleLocationChange);
     };
-  }, [renditionKey, bookId, updateBookProgress, setCurrentChapterContent]);
+  }, [renditionKey, bookId, locationsStatus, updateBookProgress, setCurrentChapterContent]);
 }

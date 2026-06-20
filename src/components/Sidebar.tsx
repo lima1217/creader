@@ -19,6 +19,7 @@ import './Sidebar.css';
 interface SidebarProps {
     onImportBook: () => void;
     onOpenSettings: () => void;
+    onPreloadReader: () => Promise<unknown>;
 }
 
 interface EditBookState {
@@ -84,7 +85,7 @@ function LazyBookCover({ book }: { book: Book }) {
     );
 }
 
-export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
+export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: SidebarProps) {
     const { confirm } = useAppDialog();
     const {
         library,
@@ -528,6 +529,7 @@ export function Sidebar({ onImportBook, onOpenSettings }: SidebarProps) {
                                 <div
                                     key={book.id}
                                     className={`book-item ${currentBook?.id === book.id ? 'active' : ''}`}
+                                    onMouseEnter={() => void onPreloadReader()}
                                     onClick={() => handleBookClick(book)}
                                 >
                                     <LazyBookCover book={book} />

@@ -29,6 +29,7 @@ export function useEpubBookLifecycle(params: {
   setError: (error: string | null) => void;
   setIsFileNotFound: (isNotFound: boolean) => void;
   onRenditionCreated?: (rendition: Rendition) => void;
+  onLocationsResolved?: (available: boolean) => void;
 }) {
   const {
     currentBook,
@@ -44,6 +45,7 @@ export function useEpubBookLifecycle(params: {
     setError,
     setIsFileNotFound,
     onRenditionCreated,
+    onLocationsResolved,
   } = params;
 
   useEffect(() => {
@@ -89,26 +91,6 @@ export function useEpubBookLifecycle(params: {
         const bookAny = book as unknown as EpubBookLike;
         bookLikeRef.current = bookAny;
 
-        try {
-          // Load cached locations if available (fast). Generating locations can be
-          // expensive for large books, so defer generation until after first render.
-          const loaded = await perfSpan('epub:locations:load', async () => loadLocationsIfAvailable(bookAny, currentBook.id));
-          if (!loaded) {
-            setTimeout(() => {
-              if (cancelled) return;
-              void perfSpan('epub:locations:generate', async () => generateAndPersistLocations(bookAny, currentBook.id)).catch(
-                (locErr) => {
-                  logger.warn('Failed to generate locations, progress may be inaccurate:', locErr);
-                }
-              );
-            }, 400);
-          }
-        } catch (locErr) {
-          logger.warn('Failed to generate locations, progress may be inaccurate:', locErr);
-        }
-
-        if (cancelled) return;
-
         const navigation = bookAny.navigation;
         if (navigation && navigation.toc) {
           const navItems: NavItem[] = navigation.toc.map((item: { id: string; href: string; label: string; subitems?: { id: string; href: string; label: string }[] }) => ({
@@ -148,12 +130,33 @@ export function useEpubBookLifecycle(params: {
         });
 
         if (currentBook.progress.currentCfi) {
-          await rendition.display(currentBook.progress.currentCfi);
+          await perfSpan('epub:firstDisplay', async () => rendition.display(currentBook.progress.currentCfi));
         } else {
-          await rendition.display();
+          await perfSpan('epub:firstDisplay', async () => rendition.display());
         }
 
         setIsLoading(false);
+
+        // Locations improve percentage accuracy but are not needed to show the
+        // requested chapter. Restore/generate them only after the first page is visible.
+        const restoreLocations = async () => {
+          try {
+            const loaded = await perfSpan('epub:locations:load', async () => loadLocationsIfAvailable(bookAny, currentBook.id));
+            if (cancelled) return;
+            if (loaded) {
+              onLocationsResolved?.(true);
+              return;
+            }
+            await new Promise<void>((resolve) => setTimeout(resolve, 400));
+            if (cancelled) return;
+            const generated = await perfSpan('epub:locations:generate', async () => generateAndPersistLocations(bookAny, currentBook.id));
+            if (!cancelled) onLocationsResolved?.(generated);
+          } catch (locErr) {
+            logger.warn('Failed to restore locations, progress may be inaccurate:', locErr);
+            if (!cancelled) onLocationsResolved?.(false);
+          }
+        };
+        void restoreLocations();
       } catch (err) {
         logger.error('Failed to load book:', err);
         if (!cancelled) {

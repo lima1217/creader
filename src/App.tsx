@@ -1,12 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
+import { lazy, Suspense, useState, useCallback, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { AppProvider, useLibrary } from './stores/AppContext';
+import { AppProvider, useLibrary, useUI } from './stores/AppContext';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
-import { Reader } from './components/Reader';
-import { AIPanel } from './components/AIPanel';
-import { SettingsPanel } from './components/SettingsPanel';
+import { preloadEpubReader, Reader } from './components/Reader';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppDialogProvider, useAppDialog } from './components/AppDialog';
 import { importBookFromPath } from './services/BookImportService';
@@ -17,15 +15,29 @@ import './index.css';
 import './App.css';
 import './components/ErrorBoundary.css';
 
+const AIPanel = lazy(() => import('./components/AIPanel').then(mod => ({ default: mod.AIPanel })));
+const SettingsPanel = lazy(() => import('./components/SettingsPanel').then(mod => ({ default: mod.SettingsPanel })));
+
 const logger = createLogger('App');
 const importLogger = createLogger('Import');
 
 function AppContent() {
   const { addBook, library } = useLibrary();
+  const { isAIPanelOpen } = useUI();
   const { notice } = useAppDialog();
   const [isImporting, setIsImporting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [hasLoadedAIPanel, setHasLoadedAIPanel] = useState(isAIPanelOpen);
+  const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
+
+  useEffect(() => {
+    if (isAIPanelOpen) setHasLoadedAIPanel(true);
+  }, [isAIPanelOpen]);
+
+  useEffect(() => {
+    if (isSettingsOpen) setHasLoadedSettings(true);
+  }, [isSettingsOpen]);
 
   // Import a book from file path
   const importBook = useCallback(async (filePath: string) => {
@@ -159,8 +171,16 @@ function AppContent() {
       )}
       <div className="app-body">
         <ErrorBoundary>
-          <Sidebar onImportBook={handleImportBook} onOpenSettings={() => setSettingsOpen(true)} />
-          <SettingsPanel isOpen={isSettingsOpen} onClose={() => setSettingsOpen(false)} />
+          <Sidebar
+            onImportBook={handleImportBook}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onPreloadReader={preloadEpubReader}
+          />
+          {(isSettingsOpen || hasLoadedSettings) && (
+            <Suspense fallback={null}>
+              <SettingsPanel isOpen={isSettingsOpen} onClose={() => setSettingsOpen(false)} />
+            </Suspense>
+          )}
         </ErrorBoundary>
         <div className="app-main">
           <Toolbar />
@@ -169,7 +189,11 @@ function AppContent() {
           </ErrorBoundary>
         </div>
         <ErrorBoundary>
-          <AIPanel />
+          {(isAIPanelOpen || hasLoadedAIPanel) && (
+            <Suspense fallback={null}>
+              <AIPanel />
+            </Suspense>
+          )}
         </ErrorBoundary>
       </div>
     </div>

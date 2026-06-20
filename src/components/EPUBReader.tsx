@@ -41,6 +41,13 @@ export function EPUBReader() {
     const epubScriptsAllowedRef = useRef(false);
     const lastMousePosRef = useRef({ x: 0, y: 0 });
     const [renditionKey, setRenditionKey] = useState(0);
+    const [locationsState, setLocationsState] = useState<{
+        bookId: string | null;
+        status: 'ready' | 'unavailable';
+    }>({ bookId: null, status: 'unavailable' });
+    const locationsStatus = currentBook && locationsState.bookId === currentBook.id
+        ? locationsState.status
+        : 'pending';
 
     const [toc, setToc] = useState<NavItem[]>([]);
     const [showToc, setShowToc] = useState(false);
@@ -126,6 +133,12 @@ export function EPUBReader() {
         setError,
         setIsFileNotFound,
         onRenditionCreated: () => setRenditionKey(k => k + 1),
+        onLocationsResolved: (available) => {
+            setLocationsState({
+                bookId: currentBook?.id ?? null,
+                status: available ? 'ready' : 'unavailable',
+            });
+        },
     });
 
     useEpubProgressTracking({
@@ -133,6 +146,7 @@ export function EPUBReader() {
         bookLikeRef,
         renditionKey,
         bookId: currentBook?.id ?? null,
+        locationsStatus,
         updateBookProgress,
         setCurrentChapterContent,
     });

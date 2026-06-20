@@ -1,9 +1,20 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { useLibrary } from '../stores/AppContext';
 import './Reader.css';
 
+let epubReaderPromise: ReturnType<typeof importEpubReader> | undefined;
+
+function importEpubReader() {
+    return import('./EPUBReader');
+}
+
+export function preloadEpubReader() {
+    epubReaderPromise ??= importEpubReader();
+    return epubReaderPromise;
+}
+
 const EPUBReader = lazy(async () => {
-    const mod = await import('./EPUBReader');
+    const mod = await preloadEpubReader();
     return { default: mod.EPUBReader };
 });
 
@@ -19,6 +30,24 @@ const ReaderLoading = () => (
 
 export function Reader() {
     const { currentBook } = useLibrary();
+
+    useEffect(() => {
+        if (currentBook) return;
+
+        // Keep EPUB code off the startup critical path, then warm it before the
+        // user is likely to open the first book. A click reuses the same promise.
+        const w = window as typeof window & {
+            requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+            cancelIdleCallback?: (handle: number) => void;
+        };
+        if (w.requestIdleCallback) {
+            const handle = w.requestIdleCallback(() => void preloadEpubReader(), { timeout: 2500 });
+            return () => w.cancelIdleCallback?.(handle);
+        }
+
+        const timer = window.setTimeout(() => void preloadEpubReader(), 1500);
+        return () => window.clearTimeout(timer);
+    }, [currentBook]);
 
     if (!currentBook) {
         return (
