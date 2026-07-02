@@ -1,14 +1,14 @@
 const DB_NAME = 'creader';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export const STORES = {
   covers: 'covers',
   locations: 'locations',
-  searchText: 'searchText',
-  searchResults: 'searchResults',
   chatMessages: 'chatMessages',
   conversationMemory: 'conversationMemory',
 } as const;
+
+const OBSOLETE_STORES = ['searchText', 'searchResults'];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -20,6 +20,11 @@ export function getDb(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = () => {
       const db = request.result;
+      for (const name of OBSOLETE_STORES) {
+        if (db.objectStoreNames.contains(name)) {
+          db.deleteObjectStore(name);
+        }
+      }
       for (const name of Object.values(STORES)) {
         if (!db.objectStoreNames.contains(name)) {
           db.createObjectStore(name);

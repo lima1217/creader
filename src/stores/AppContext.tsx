@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext, ReactNode, useRef, useCallback, useMemo } from 'react';
-import type { Settings, Book, Library, ChatMessage, BookCategory, BookProgressUpdate, ReadingProgress, ConversationMemory } from '../types';
+import type { Settings, Book, Library, ChatMessage, BookCategory, BookProgressUpdate, ReadingProgress, ConversationMemory, SearchIndexSummary } from '../types';
 import { dataUrlToBlob, deleteCover, revokeCoverUrl, saveCover } from '../services/CoverStore';
 import { loadStored, STORAGE_KEYS } from '../services/LocalStore';
 import { validateAndFixLibraryPaths } from '../services/BookPathValidator';
@@ -37,6 +37,7 @@ type LibraryContextValue = {
     removeBook: (id: string) => void;
     updateBook: (id: string, updates: Partial<Pick<Book, 'title' | 'author' | 'categoryId'>>) => void;
     updateBookFilePath: (id: string, newFilePath: string) => void;
+    updateBookSearchIndex: (id: string, searchIndex: SearchIndexSummary) => void;
     addCategory: (name: string, color: string) => BookCategory;
     removeCategory: (id: string) => void;
     updateCategory: (id: string, updates: Partial<Pick<BookCategory, 'name' | 'color'>>) => void;
@@ -409,11 +410,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setLibraryState(prev => ({
             ...prev,
             books: prev.books.map(b =>
-                b.id === id ? { ...b, filePath: newFilePath } : b
+                b.id === id ? { ...b, filePath: newFilePath, searchIndex: { state: 'pending' } } : b
             ),
             lastUpdated: Date.now(),
         }));
-        setCurrentBookState(prev => prev?.id === id ? { ...prev, filePath: newFilePath } : prev);
+        setCurrentBookState(prev => prev?.id === id ? { ...prev, filePath: newFilePath, searchIndex: { state: 'pending' } } : prev);
+    }, []);
+
+    const updateBookSearchIndex = useCallback((id: string, searchIndex: SearchIndexSummary) => {
+        setLibraryState(prev => ({
+            ...prev,
+            books: prev.books.map(b => b.id === id ? { ...b, searchIndex } : b),
+            lastUpdated: Date.now(),
+        }));
+        setCurrentBookState(prev => prev?.id === id ? { ...prev, searchIndex } : prev);
     }, []);
 
     const updateBookProgress = useCallback((id: string, update: BookProgressUpdate) => {
@@ -564,6 +574,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         removeBook,
         updateBook,
         updateBookFilePath,
+        updateBookSearchIndex,
         addCategory,
         removeCategory,
         updateCategory,
@@ -577,6 +588,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         removeBook,
         updateBook,
         updateBookFilePath,
+        updateBookSearchIndex,
         addCategory,
         removeCategory,
         updateCategory,

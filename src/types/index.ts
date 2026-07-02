@@ -22,6 +22,15 @@ export interface Book {
   lastReadAt?: number;
   progress: ReadingProgress;
   categoryId?: string; // Optional category assignment
+  searchIndex?: SearchIndexSummary;
+}
+
+export type SearchIndexState = 'missing' | 'pending' | 'ready' | 'failed' | 'stale';
+
+export interface SearchIndexSummary {
+  state: SearchIndexState;
+  error?: string;
+  indexedAtMs?: number;
 }
 
 // Reading progress

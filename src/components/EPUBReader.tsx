@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Book as EpubBook, Rendition } from 'epubjs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useAI, useLibrary, useSettings, useUI, useBookProgress } from '../stores/AppContext';
-import type { NavItem } from '../types';
+import type { Book, NavItem } from '../types';
 import type { EpubBookLike } from '../services/reader/epubAdapter';
 import { tryCopyBookToLibrary } from '../services/BookImportService';
+import { rebuildSearchIndexQuietly, toSearchIndexSummary } from '../services/reader/searchIndex';
 import { createLogger } from '../utils/logger';
 import { applyEpubTheme } from './reader/epubTheme';
 import { SelectionToolbar } from './reader/SelectionToolbar';
@@ -20,8 +21,23 @@ import { BookOpenIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, EpubTocIcon
 
 const logger = createLogger('EPUBReader');
 
+function searchIndexMessage(state: string, error?: string): string {
+    switch (state) {
+        case 'pending':
+            return '搜索索引正在构建，稍后即可搜索。';
+        case 'failed':
+            return error || '搜索索引构建失败，可以重试。';
+        case 'stale':
+            return '书籍文件已变化，需要重建搜索索引。';
+        case 'missing':
+            return '这本书还没有搜索索引。';
+        default:
+            return '';
+    }
+}
+
 export function EPUBReader() {
-    const { currentBook, updateBookFilePath } = useLibrary();
+    const { currentBook, updateBookFilePath, updateBookSearchIndex } = useLibrary();
     const { updateBookProgress } = useBookProgress();
     const { settings } = useSettings();
     const { isSearchOpen, setSearchOpen, setAIPanelOpen } = useUI();
@@ -95,6 +111,9 @@ export function EPUBReader() {
 
     // Search state
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const handleSearchIndexStatus = useCallback((status: NonNullable<Book['searchIndex']>) => {
+        if (currentBook) updateBookSearchIndex(currentBook.id, status);
+    }, [currentBook, updateBookSearchIndex]);
 
     // Selection toolbar state
     const [selectionToolbarPos, setSelectionToolbarPos] = useState<{ x: number; y: number } | null>(null);
@@ -194,13 +213,17 @@ export function EPUBReader() {
         setSearchQuery,
         searchResults,
         isSearching,
+        isRebuildingIndex,
+        searchError,
         handleSearch,
+        refreshIndexStatus,
+        rebuildCurrentIndex,
         cancelSearch,
         handleSearchResultClick,
     } = useEpubSearch({
-        bookRef,
         renditionRef,
         currentBook,
+        onSearchIndexStatus: handleSearchIndexStatus,
         onCloseSearch: () => setSearchOpen(false),
     });
 
@@ -246,8 +269,9 @@ export function EPUBReader() {
     useEffect(() => {
         if (isSearchOpen) {
             setTimeout(() => searchInputRef.current?.focus(), 50);
+            void refreshIndexStatus().catch(err => logger.warn('Failed to refresh search index status:', err));
         }
-    }, [isSearchOpen]);
+    }, [isSearchOpen, refreshIndexStatus]);
 
     const handlePrev = () => {
         renditionRef.current?.prev();
@@ -302,6 +326,11 @@ export function EPUBReader() {
 
                 // Update the book's file path
                 updateBookFilePath(currentBook.id, finalPath);
+                void rebuildSearchIndexQuietly({
+                    bookId: currentBook.id,
+                    filePath: finalPath,
+                    onStatus: status => updateBookSearchIndex(currentBook.id, toSearchIndexSummary(status)),
+                });
                 // Clear error state to trigger reload
                 setError(null);
                 setIsFileNotFound(false);
@@ -378,6 +407,10 @@ export function EPUBReader() {
             </div>
         );
     }
+
+    const searchIndexState = currentBook.searchIndex?.state || 'missing';
+    const searchIndexNeedsRebuild = searchIndexState === 'missing' || searchIndexState === 'failed' || searchIndexState === 'stale';
+    const searchStatusText = searchError || searchIndexMessage(searchIndexState, currentBook.searchIndex?.error);
 
     return (
         <div className={`reader ${showToc ? 'toc-open' : ''}`}>
@@ -561,6 +594,17 @@ export function EPUBReader() {
                     <div className="reader-search-results">
                         {isSearching ? (
                             <div className="reader-search-status">正在搜索...</div>
+                        ) : isRebuildingIndex ? (
+                            <div className="reader-search-status">正在重建搜索索引...</div>
+                        ) : searchStatusText && (Boolean(searchError) || searchIndexState !== 'ready') ? (
+                            <div className="reader-search-status">
+                                <span>{searchStatusText}</span>
+                                {searchIndexNeedsRebuild && (
+                                    <button className="btn btn-secondary reader-search-action" onClick={rebuildCurrentIndex}>
+                                        {searchIndexState === 'failed' ? '重试索引' : '重建索引'}
+                                    </button>
+                                )}
+                            </div>
                         ) : searchResults.length === 0 && searchQuery ? (
                             <div className="reader-search-status">没有找到结果</div>
                         ) : (
@@ -574,7 +618,7 @@ export function EPUBReader() {
                                     <button
                                         key={index}
                                         className="reader-search-result"
-                                        onClick={() => handleSearchResultClick(result.cfi)}
+                                        onClick={() => handleSearchResultClick(result)}
                                     >
                                         {chapterLabel && (
                                             <span className="reader-search-chapter">{chapterLabel}</span>

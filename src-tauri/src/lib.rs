@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::ipc::Channel;
 use tauri::Manager;
 
+mod search_index;
+
 // Global cancel flag for AI streaming requests
 static AI_CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
 const AI_TIMEOUT_SECS: u64 = 120;
@@ -1324,6 +1326,57 @@ pub struct FindBookResult {
 }
 
 #[tauri::command]
+fn extract_epub_search_preview(
+    file_path: String,
+) -> Result<search_index::EpubExtraction, String> {
+    search_index::extract_epub_for_search(Path::new(&file_path))
+}
+
+#[tauri::command]
+fn get_search_index_status(
+    app: tauri::AppHandle,
+    book_id: String,
+    file_path: String,
+) -> Result<search_index::SearchIndexStatus, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    Ok(search_index::get_index_status(
+        &app_data_dir,
+        &book_id,
+        Path::new(&file_path),
+    ))
+}
+
+#[tauri::command]
+fn rebuild_search_index(
+    app: tauri::AppHandle,
+    book_id: String,
+    file_path: String,
+) -> Result<search_index::SearchIndexStatus, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    search_index::rebuild_index(&app_data_dir, &book_id, Path::new(&file_path))
+}
+
+#[tauri::command]
+fn search_book(
+    app: tauri::AppHandle,
+    book_id: String,
+    file_path: String,
+    query: String,
+) -> Result<Vec<search_index::SearchResult>, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    search_index::search_index(&app_data_dir, &book_id, Path::new(&file_path), &query)
+}
+
+#[tauri::command]
 fn find_book_in_library(
     app: tauri::AppHandle,
     book_id: String,
@@ -1521,6 +1574,10 @@ pub fn run() {
             validate_book_path,
             validate_book_paths,
             find_book_in_library,
+            extract_epub_search_preview,
+            get_search_index_status,
+            rebuild_search_index,
+            search_book,
             ensure_reading_memory_repository,
             ingest_reading_memory_direct
         ])

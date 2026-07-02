@@ -8,6 +8,7 @@ import { preloadEpubReader, Reader } from './components/Reader';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppDialogProvider, useAppDialog } from './components/AppDialog';
 import { importBookFromPath } from './services/BookImportService';
+import { rebuildSearchIndexQuietly, toSearchIndexSummary } from './services/reader/searchIndex';
 import { isTauriRuntime } from './utils/tauri';
 import { createLogger } from './utils/logger';
 import type { Book } from './types';
@@ -22,7 +23,7 @@ const logger = createLogger('App');
 const importLogger = createLogger('Import');
 
 function AppContent() {
-  const { addBook, library } = useLibrary();
+  const { addBook, library, updateBookSearchIndex } = useLibrary();
   const { isAIPanelOpen } = useUI();
   const { notice } = useAppDialog();
   const [isImporting, setIsImporting] = useState(false);
@@ -62,9 +63,14 @@ function AppContent() {
         return;
       }
 
-      const newBook: Book = result.book;
+      const newBook: Book = { ...result.book, searchIndex: { state: 'pending' } };
       importLogger.debug('Adding book to library:', newBook);
       addBook(newBook);
+      void rebuildSearchIndexQuietly({
+        bookId: newBook.id,
+        filePath: newBook.filePath,
+        onStatus: status => updateBookSearchIndex(newBook.id, toSearchIndexSummary(status)),
+      });
       importLogger.debug('Import completed successfully');
     } catch (error) {
       importLogger.error('Failed to import book:', error);
@@ -76,7 +82,7 @@ function AppContent() {
     } finally {
       setIsImporting(false);
     }
-  }, [isImporting, library.books, addBook]);
+  }, [isImporting, library.books, addBook, updateBookSearchIndex]);
 
   // Handle file dialog import
   const handleImportBook = async () => {
