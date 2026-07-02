@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
+import { TabList, Tab } from '@astryxdesign/core/TabList';
+import { TextInput } from '@astryxdesign/core/TextInput';
+import { Field } from '@astryxdesign/core/Field';
+import { FieldStatus } from '@astryxdesign/core/FieldStatus';
+import { Switch } from '@astryxdesign/core/Switch';
+import { Button } from '@astryxdesign/core/Button';
+import { ButtonGroup } from '@astryxdesign/core/ButtonGroup';
 import { useSettings } from '../stores/AppContext';
 import { ensureReadingMemoryRepository } from '../services/ReadingMemory';
 import { isTauriRuntime } from '../utils/tauri';
@@ -41,15 +50,6 @@ const providerTemplates: Array<{ name: string; baseUrl: string; model: string }>
 
 function newProviderId() {
     return `prov_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function SettingsGlyph() {
-    return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-    );
 }
 
 type SettingsSection = 'ai' | 'memory' | 'prompts';
@@ -105,15 +105,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             prompt: editingAction?.prompt || '',
         });
     }, [editingActionId, quickActionConfigs]);
-
-    useEffect(() => {
-        if (!isOpen) return;
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') onClose();
-        };
-        document.addEventListener('keydown', onKeyDown);
-        return () => document.removeEventListener('keydown', onKeyDown);
-    }, [isOpen, onClose]);
 
     const startNewProvider = useCallback(() => {
         setProviderError('');
@@ -225,48 +216,35 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
     const missingDefaultQuickActions = getMissingDefaultQuickActions(quickActionConfigs);
 
-    const selectSection = (section: SettingsSection) => {
-        setActiveSection(section);
-    };
-
-    if (!isOpen) return null;
-
     return (
-        <div className="settings-overlay" role="presentation" onMouseDown={onClose}>
-            <section
-                className="settings-panel"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="settings-title"
-                onMouseDown={event => event.stopPropagation()}
-            >
-                <header className="settings-panel-header">
-                    <div className="settings-panel-heading">
-                        <span className="settings-panel-badge" aria-hidden="true">
-                            <SettingsGlyph />
-                        </span>
-                        <div>
-                            <h2 id="settings-title">设置</h2>
-                            <p>阅读记忆与 AI 运行方式</p>
-                        </div>
-                    </div>
-                    <button className="settings-close" onClick={onClose} aria-label="关闭设置">
-                        <CloseIcon />
-                    </button>
-                </header>
-
-                <nav className="settings-primary-tabs" aria-label="设置分类">
-                    {sectionTabs.map(tab => (
-                        <button
-                            key={tab.id}
-                            className={activeSection === tab.id ? 'active' : ''}
-                            onClick={() => selectSection(tab.id)}
+        <Dialog
+            isOpen={isOpen}
+            onOpenChange={open => { if (!open) onClose(); }}
+            width={560}
+            maxHeight="80vh"
+            purpose="form"
+            className="settings-dialog"
+        >
+            <Layout>
+                <DialogHeader
+                    title="设置"
+                    subtitle="阅读记忆与 AI 运行方式"
+                    onOpenChange={open => { if (!open) onClose(); }}
+                />
+                <LayoutContent isScrollable>
+                    <div className="settings-tabs-row">
+                        <TabList
+                            value={activeSection}
+                            onChange={value => setActiveSection(value as SettingsSection)}
+                            layout="fill"
+                            hasDivider
+                            aria-label="设置分类"
                         >
-                            <span>{tab.label}</span>
-                            <small>{tab.hint}</small>
-                        </button>
-                    ))}
-                </nav>
+                            {sectionTabs.map(tab => (
+                                <Tab key={tab.id} value={tab.id} label={tab.label} />
+                            ))}
+                        </TabList>
+                    </div>
 
                 {activeSection === 'ai' && (
                     <div className="settings-section">
@@ -274,79 +252,99 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
                     {editingProvider ? (
                         <div className="settings-provider-editor">
-                            <label className="settings-provider-edit-row">
-                                <span>名称</span>
-                                <input
-                                    className="settings-text-input"
+                            <Field
+                                inputID="settings-provider-name"
+                                label="名称"
+                                isRequired
+                            >
+                                <TextInput
+                                    label="名称"
+                                    isLabelHidden
                                     value={editingProvider.name}
-                                    onChange={event => setEditingProvider({ ...editingProvider, name: event.target.value })}
+                                    onChange={value => setEditingProvider({ ...editingProvider, name: value })}
                                     placeholder="如 DeepSeek"
+                                    htmlName="settings-provider-name"
                                 />
-                            </label>
-                            <label className="settings-provider-edit-row">
-                                <span>Base URL（OpenAI 兼容）</span>
-                                <input
-                                    className="settings-text-input"
+                            </Field>
+                            <Field
+                                inputID="settings-provider-base-url"
+                                label="Base URL（OpenAI 兼容）"
+                                isRequired
+                            >
+                                <TextInput
+                                    label="Base URL（OpenAI 兼容）"
+                                    isLabelHidden
                                     value={editingProvider.baseUrl}
-                                    onChange={event => setEditingProvider({ ...editingProvider, baseUrl: event.target.value })}
+                                    onChange={value => setEditingProvider({ ...editingProvider, baseUrl: value })}
                                     placeholder="https://api.deepseek.com/v1"
+                                    htmlName="settings-provider-base-url"
                                 />
-                            </label>
-                            <label className="settings-provider-edit-row">
-                                <span>模型</span>
-                                <input
-                                    className="settings-text-input"
+                            </Field>
+                            <Field
+                                inputID="settings-provider-model"
+                                label="模型"
+                                isRequired
+                            >
+                                <TextInput
+                                    label="模型"
+                                    isLabelHidden
                                     value={editingProvider.model}
-                                    onChange={event => setEditingProvider({ ...editingProvider, model: event.target.value })}
+                                    onChange={value => setEditingProvider({ ...editingProvider, model: value })}
                                     placeholder="deepseek-chat"
+                                    htmlName="settings-provider-model"
                                 />
-                            </label>
-                            <label className="settings-provider-edit-row">
-                                <span>API Key（存入本地配置文件，不回显）</span>
-                                <input
-                                    className="settings-text-input"
+                            </Field>
+                            <Field
+                                inputID="settings-provider-key"
+                                label="API Key（存入本地配置文件，不回显）"
+                                description="留空则保留已保存的 Key"
+                            >
+                                <TextInput
+                                    label="API Key（存入本地配置文件，不回显）"
+                                    isLabelHidden
                                     type="password"
                                     value={draftKey}
-                                    onChange={event => setDraftKey(event.target.value)}
+                                    onChange={value => setDraftKey(value)}
                                     placeholder="留空则保留已保存的 Key"
+                                    htmlName="settings-provider-key"
                                 />
-                            </label>
+                            </Field>
 
                             <div className="settings-provider-templates">
                                 <small>快捷填充：</small>
-                                {providerTemplates.map(template => (
-                                    <button
-                                        key={template.name}
-                                        className="settings-provider-template-btn"
-                                        onClick={() => applyTemplate(template)}
-                                        type="button"
-                                    >
-                                        {template.name}
-                                    </button>
-                                ))}
+                                <ButtonGroup label="快捷填充">
+                                    {providerTemplates.map(template => (
+                                        <Button
+                                            key={template.name}
+                                            variant="secondary"
+                                            size="sm"
+                                            label={template.name}
+                                            onClick={() => applyTemplate(template)}
+                                        />
+                                    ))}
+                                </ButtonGroup>
                             </div>
 
-                            {providerError && <p className="settings-provider-error">{providerError}</p>}
+                            {providerError && (
+                                <FieldStatus type="error" message={providerError} variant="detached" />
+                            )}
 
                             <div className="settings-provider-edit-actions">
-                                <button
-                                    className="settings-secondary-action"
+                                <Button
+                                    variant="ghost"
+                                    label="取消"
                                     onClick={() => { setEditingProvider(null); setProviderError(''); }}
-                                >
-                                    取消
-                                </button>
-                                <button
-                                    className="settings-secondary-action"
+                                />
+                                <Button
+                                    variant="secondary"
+                                    label="保存"
                                     onClick={() => saveEditingProvider(false)}
-                                >
-                                    保存
-                                </button>
-                                <button
-                                    className="settings-primary-action"
+                                />
+                                <Button
+                                    variant="primary"
+                                    label="保存并启用"
                                     onClick={() => saveEditingProvider(true)}
-                                >
-                                    保存并启用
-                                </button>
+                                />
                             </div>
                         </div>
                     ) : (
@@ -396,9 +394,15 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                 </ul>
                             )}
 
-                            <button className="settings-secondary-action" onClick={startNewProvider} disabled={!isTauri}>
-                                <PlusIcon /> 添加 AI 服务
-                            </button>
+                            <div className="settings-provider-add">
+                                <Button
+                                    variant="secondary"
+                                    label="添加 AI 服务"
+                                    icon={<PlusIcon />}
+                                    onClick={startNewProvider}
+                                    isDisabled={!isTauri}
+                                />
+                            </div>
                         </>
                     )}
 
@@ -409,58 +413,50 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             <div className="settings-field-label">AI 文字大小</div>
                             <div className="settings-field-hint">调整旁注正文和输入框文字。</div>
                         </div>
-                        <div className="settings-stepper" aria-label="AI 文字大小">
-                            <button
+                        <ButtonGroup label="AI 文字大小" size="sm">
+                            <Button
+                                label="减小 AI 文字"
+                                isIconOnly
+                                icon={<span aria-hidden="true">−</span>}
                                 onClick={() => adjustAITextSize(-1)}
-                                disabled={settings.aiTextSize <= 13}
-                                aria-label="减小 AI 文字"
-                            >
-                                -
-                            </button>
-                            <span>{settings.aiTextSize}px</span>
-                            <button
+                                isDisabled={settings.aiTextSize <= 13}
+                            />
+                            <span className="settings-stepper-value" aria-live="polite">{settings.aiTextSize}px</span>
+                            <Button
+                                label="增大 AI 文字"
+                                isIconOnly
+                                icon={<span aria-hidden="true">+</span>}
                                 onClick={() => adjustAITextSize(1)}
-                                disabled={settings.aiTextSize >= 20}
-                                aria-label="增大 AI 文字"
-                            >
-                                +
-                            </button>
-                        </div>
+                                isDisabled={settings.aiTextSize >= 20}
+                            />
+                        </ButtonGroup>
                     </div>
 
-                    <div className="settings-field settings-field-stacked">
-                        <div className="settings-field-copy">
-                            <div className="settings-field-label">上下文轮次</div>
-                            <div className="settings-field-hint">每次提问带上的最近记录，越多越连贯，也越慢。</div>
-                        </div>
-                        <div className="settings-segmented" aria-label="AI 上下文轮次">
+                    <Field
+                        className="settings-field settings-field-stacked"
+                        inputID="settings-context-window"
+                        label="上下文轮次"
+                        description="每次提问带上的最近记录，越多越连贯，也越慢。"
+                    >
+                        <div className="settings-segmented" aria-label="AI 上下文轮次" id="settings-context-window">
                             {contextWindowOptions.map(option => (
-                                <button
+                                <Button
                                     key={option.value}
-                                    className={settings.aiContextWindow === option.value ? 'active' : ''}
+                                    variant={settings.aiContextWindow === option.value ? 'primary' : 'secondary'}
+                                    size="sm"
+                                    label={option.label}
                                     onClick={() => setSettings({ ...settings, aiContextWindow: option.value })}
-                                >
-                                    <span>{option.label}</span>
-                                    <small>{option.hint}</small>
-                                </button>
+                                />
                             ))}
                         </div>
-                    </div>
+                    </Field>
 
-                    <label className="settings-toggle-row">
-                        <span>
-                            <strong>自动压缩</strong>
-                            <small>超过轮次后，将更早对话压成隐藏摘要继续带上。</small>
-                        </span>
-                        <span className="settings-switch">
-                            <input
-                                type="checkbox"
-                                checked={settings.aiAutoSummarize}
-                                onChange={event => setSettings({ ...settings, aiAutoSummarize: event.target.checked })}
-                            />
-                            <span className="settings-switch-track" aria-hidden="true" />
-                        </span>
-                    </label>
+                    <Switch
+                        label="自动压缩"
+                        description="超过轮次后，将更早对话压成隐藏摘要继续带上。"
+                        value={settings.aiAutoSummarize}
+                        onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
+                    />
                     </div>
                 )}
 
@@ -597,7 +593,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     <div className="settings-field-hint settings-quick-help">旁注面板底部最多显示前 6 个按钮，其余进入“更多”。</div>
                     </div>
                 )}
-            </section>
-        </div>
+                </LayoutContent>
+            </Layout>
+        </Dialog>
     );
 }
