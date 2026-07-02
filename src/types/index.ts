@@ -51,7 +51,7 @@ export interface Library {
 }
 
 // Theme
-export type Theme = 'light' | 'dark' | 'sepia';
+export type Theme = 'light' | 'dark';
 
 // App settings
 export interface Settings {

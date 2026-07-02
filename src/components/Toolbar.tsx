@@ -3,7 +3,6 @@ import { useLibrary, useSettings, useUI, useBookProgress } from '../stores/AppCo
 import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import {
-    CoffeeIcon,
     MinusIcon,
     MoonIcon,
     PlusIcon,
@@ -24,17 +23,15 @@ export function Toolbar() {
 
     const displayProgress = currentBook ? (bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage ?? 0) : 0;
 
-    const themes: Theme[] = ['light', 'dark', 'sepia'];
+    const themes: Theme[] = ['light', 'dark'];
     const themeIcons = {
         light: <SunIcon />,
         dark: <MoonIcon />,
-        sepia: <CoffeeIcon />,
     };
 
     const themeLabels: Record<Theme, string> = {
         light: '亮色',
         dark: '暗色',
-        sepia: '护眼',
     };
 
     const selectTheme = (theme: Theme) => {
