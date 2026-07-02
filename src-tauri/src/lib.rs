@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tauri::ipc::Channel;
 use tauri::Manager;
 
@@ -62,7 +63,7 @@ pub struct ReadingMemoryDirectIngestResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct ReadingMemoryDirectDecision {
+pub struct ReadingMemoryDirectDecision {
     should_ingest: bool,
     target_dir: Option<String>,
     title: Option<String>,
@@ -72,6 +73,20 @@ struct ReadingMemoryDirectDecision {
     links: Option<Vec<String>>,
     confidence: Option<f64>,
     reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadingMemoryDirectReviewResult {
+    pub skipped: bool,
+    pub reason: String,
+    pub decision: Option<ReadingMemoryDirectDecision>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadingMemoryPageRewriteResult {
+    pub page_path: String,
+    pub skipped: bool,
+    pub reason: String,
 }
 
 // Stream events for AI responses
@@ -544,19 +559,121 @@ fn chat_completions_url(base_url: &str) -> String {
     format!("{}/chat/completions", trimmed)
 }
 
-/// Streaming chat completion over an OpenAI-compatible endpoint. Emits
-/// `StreamEvent`s through the Tauri Channel, honoring the global cancel flag.
-async fn chat_completion_stream(
+/// Normalize a configured base URL for async-openai, which appends
+/// `/chat/completions` itself.
+fn openai_api_base(base_url: &str) -> String {
+    chat_completions_url(base_url)
+        .trim_end_matches("/chat/completions")
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn build_openai_chat_request(
+    prompt: &str,
+    model: &str,
+    system_prompt: Option<&str>,
+    stream: bool,
+    temperature: f32,
+) -> Result<async_openai::types::chat::CreateChatCompletionRequest, String> {
+    use async_openai::types::chat::{
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
+        ChatCompletionRequestUserMessage, CreateChatCompletionRequestArgs,
+    };
+
+    let mut messages: Vec<ChatCompletionRequestMessage> = Vec::new();
+    if let Some(system_prompt) = system_prompt {
+        messages.push(ChatCompletionRequestSystemMessage::from(system_prompt).into());
+    }
+    messages.push(ChatCompletionRequestUserMessage::from(prompt).into());
+
+    CreateChatCompletionRequestArgs::default()
+        .model(model)
+        .messages(messages)
+        .stream(stream)
+        .temperature(temperature)
+        .build()
+        .map_err(|e| format!("Failed to build chat request: {}", e))
+}
+
+fn openai_client(
+    config: &AIProviderConfig,
+    api_key: &str,
+) -> async_openai::Client<async_openai::config::OpenAIConfig> {
+    let openai_config = async_openai::config::OpenAIConfig::new()
+        .with_api_base(openai_api_base(&config.base_url))
+        .with_api_key(api_key);
+    async_openai::Client::with_config(openai_config)
+}
+
+async fn chat_completion_stream_typed<F>(
     prompt: &str,
     config: &AIProviderConfig,
     api_key: &str,
-    on_event: &Channel<StreamEvent>,
-) -> Result<String, String> {
+    mut on_chunk: F,
+) -> Result<String, String>
+where
+    F: FnMut(String),
+{
+    use futures_util::StreamExt;
+
+    let client = openai_client(config, api_key);
+    let request = build_openai_chat_request(
+        prompt,
+        &config.model,
+        Some(READING_AI_SYSTEM_PROMPT),
+        true,
+        0.7,
+    )?;
+
+    let chat = client.chat();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(AI_TIMEOUT_SECS);
+    let stream_future = chat.create_stream(request);
+    let mut stream = tokio::time::timeout_at(deadline, stream_future)
+        .await
+        .map_err(|_| format!("AI request timed out after {} seconds", AI_TIMEOUT_SECS))?
+        .map_err(|e| format!("OpenAI client stream request failed: {}", e))?;
+
+    let mut full_text = String::new();
+    loop {
+        if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
+            break;
+        }
+        let next = tokio::time::timeout_at(deadline, stream.next())
+            .await
+            .map_err(|_| format!("AI stream timed out after {} seconds", AI_TIMEOUT_SECS))?;
+        let Some(chunk_result) = next else {
+            break;
+        };
+        let chunk = chunk_result.map_err(|e| format!("OpenAI client stream read failed: {}", e))?;
+        for choice in chunk.choices {
+            if let Some(piece) = choice.delta.content {
+                if !piece.is_empty() {
+                    full_text.push_str(&piece);
+                    on_chunk(piece);
+                }
+            }
+        }
+    }
+
+    Ok(full_text)
+}
+
+/// Compatibility streaming path over an OpenAI-compatible endpoint. This keeps
+/// endpoints that do not quite match async-openai's typed stream parser working.
+async fn chat_completion_stream_compat<F>(
+    prompt: &str,
+    config: &AIProviderConfig,
+    api_key: &str,
+    mut on_chunk: F,
+) -> Result<String, String>
+where
+    F: FnMut(String),
+{
     use futures_util::StreamExt;
 
     let url = chat_completions_url(&config.base_url);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(AI_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(AI_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -583,10 +700,6 @@ async fn chat_completion_stream(
         let text = response.text().await.unwrap_or_default();
         return Err(format!("API error {}: {}", status, truncate_for_prompt(&text, 500)));
     }
-
-    let _ = on_event.send(StreamEvent::Started {
-        provider: config.name.clone(),
-    });
 
     let mut stream = response.bytes_stream();
     let mut full_text = String::new();
@@ -631,7 +744,7 @@ async fn chat_completion_stream(
             if let Some(piece) = delta {
                 if !piece.is_empty() {
                     full_text.push_str(&piece);
-                    let _ = on_event.send(StreamEvent::Chunk { text: piece });
+                    on_chunk(piece);
                 }
             }
         }
@@ -640,15 +753,103 @@ async fn chat_completion_stream(
     Ok(full_text)
 }
 
+/// Streaming chat completion over an OpenAI-compatible endpoint. Emits
+/// `StreamEvent`s through the Tauri Channel, honoring the global cancel flag.
+async fn chat_completion_stream(
+    prompt: &str,
+    config: &AIProviderConfig,
+    api_key: &str,
+    on_event: &Channel<StreamEvent>,
+) -> Result<String, String> {
+    let _ = on_event.send(StreamEvent::Started {
+        provider: config.name.clone(),
+    });
+
+    let mut emitted_any_chunk = false;
+    let typed_result = chat_completion_stream_typed(prompt, config, api_key, |piece| {
+        emitted_any_chunk = true;
+        let _ = on_event.send(StreamEvent::Chunk { text: piece });
+    })
+    .await;
+
+    match typed_result {
+        Ok(full_text) => Ok(full_text),
+        Err(typed_error) if !emitted_any_chunk => {
+            eprintln!(
+                "[creader] async-openai stream failed for provider '{}'; falling back to compatibility parser: {}",
+                config.name, typed_error
+            );
+            chat_completion_stream_compat(prompt, config, api_key, |piece| {
+                let _ = on_event.send(StreamEvent::Chunk { text: piece });
+            })
+            .await
+            .map_err(|compat_error| {
+                format!(
+                    "{}; compatibility fallback also failed: {}",
+                    typed_error, compat_error
+                )
+            })
+        }
+        Err(typed_error) => Err(typed_error),
+    }
+}
+
 /// One-shot (non-streaming) chat completion. Returns the full assistant text.
 async fn chat_completion_oneshot(
     prompt: &str,
     config: &AIProviderConfig,
     api_key: &str,
 ) -> Result<String, String> {
+    let typed_result = chat_completion_oneshot_typed(prompt, config, api_key).await;
+    match typed_result {
+        Ok(text) => Ok(text),
+        Err(typed_error) => {
+            eprintln!(
+                "[creader] async-openai one-shot failed for provider '{}'; falling back to compatibility request: {}",
+                config.name, typed_error
+            );
+            chat_completion_oneshot_compat(prompt, config, api_key)
+                .await
+                .map_err(|compat_error| {
+                    format!(
+                        "{}; compatibility fallback also failed: {}",
+                        typed_error, compat_error
+                    )
+                })
+        }
+    }
+}
+
+async fn chat_completion_oneshot_typed(
+    prompt: &str,
+    config: &AIProviderConfig,
+    api_key: &str,
+) -> Result<String, String> {
+    let client = openai_client(config, api_key);
+    let request = build_openai_chat_request(prompt, &config.model, None, false, 0.3)?;
+
+    let chat = client.chat();
+    let response = tokio::time::timeout(Duration::from_secs(AI_TIMEOUT_SECS), chat.create(request))
+        .await
+        .map_err(|_| format!("AI request timed out after {} seconds", AI_TIMEOUT_SECS))?
+        .map_err(|e| format!("OpenAI client request failed: {}", e))?;
+
+    response
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|choice| choice.message.content)
+        .ok_or_else(|| "API response missing choices[0].message.content".to_string())
+}
+
+async fn chat_completion_oneshot_compat(
+    prompt: &str,
+    config: &AIProviderConfig,
+    api_key: &str,
+) -> Result<String, String> {
     let url = chat_completions_url(&config.base_url);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(AI_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(AI_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -854,14 +1055,12 @@ fn build_direct_reading_memory_markdown(
         .unwrap_or(&request.book_title);
 
     format!(
-        r#"
-## CReader Ingestion
-
-```yaml
+        r#"---
 type: {okf_type}
 title: {title}
 source_app: CReader
 source_refs: [{book_ref}]
+chapter_refs: [{chapter_ref}]
 source_book: {source_book}
 source_author: {source_author}
 source_chapter: {source_chapter}
@@ -873,23 +1072,27 @@ status: inbox
 timestamp: {timestamp}
 confidence: {confidence:.2}
 ingestion_reason: {reason}
-```
+---
 
-### Source
+# {title_plain}
+
+## Source
 {source}
 
-### Question
+## Question
 {question}
 
-### Note
+## Note
 {body}
 
-### Links
+## Links
 {links}
 "#,
         okf_type = okf_type_for(note_type),
         title = escape_json_string(title),
+        title_plain = title,
         book_ref = escape_json_string(&safe_wiki_title(&request.book_title)),
+        chapter_ref = escape_json_string(request.source_chapter.as_deref().unwrap_or("")),
         source_book = escape_json_string(&request.book_title),
         source_author = escape_json_string(request.book_author.as_deref().unwrap_or("")),
         source_chapter = escape_json_string(request.source_chapter.as_deref().unwrap_or("")),
@@ -1047,21 +1250,15 @@ fn ensure_book_subpackage(
     Ok(pkg)
 }
 
-#[tauri::command]
-async fn ingest_reading_memory_direct(
+async fn review_reading_memory_decision(
     app: tauri::AppHandle,
-    request: ReadingMemoryDirectIngestRequest,
-) -> Result<ReadingMemoryDirectIngestResult, String> {
-    let root = ensure_directory(Path::new(&request.root_path))?;
-    let meta_dir = root.join(".reading-memory");
-    std::fs::create_dir_all(&meta_dir)
-        .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
-
+    request: &ReadingMemoryDirectIngestRequest,
+) -> Result<ReadingMemoryDirectReviewResult, String> {
     // Resolve the active provider early so a missing config/key short-circuits
     // with a clear message instead of writing a skipped log entry.
     let (config, api_key) = active_provider(&app)?;
 
-    let prompt = build_reading_memory_direct_prompt(&request);
+    let prompt = build_reading_memory_direct_prompt(request);
     let raw = chat_completion_oneshot(&prompt, &config, &api_key)
         .await
         .map_err(|e| format!("Reading Memory review failed: {}", e))?;
@@ -1070,6 +1267,34 @@ async fn ingest_reading_memory_direct(
         .ok_or_else(|| "Reading Memory ingestion review did not return JSON".to_string())?;
     let decision: ReadingMemoryDirectDecision = serde_json::from_str(json_text)
         .map_err(|e| format!("Failed to parse Reading Memory ingestion JSON: {}", e))?;
+    let confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0);
+    if !decision.should_ingest || confidence < 0.7 {
+        return Ok(ReadingMemoryDirectReviewResult {
+            skipped: true,
+            reason: decision
+                .reason
+                .unwrap_or_else(|| "AI decided not to ingest this turn".to_string()),
+            decision: None,
+        });
+    }
+
+    Ok(ReadingMemoryDirectReviewResult {
+        skipped: false,
+        reason: "ready".to_string(),
+        decision: Some(decision),
+    })
+}
+
+fn write_reading_memory_note_inner(
+    request: ReadingMemoryDirectIngestRequest,
+    decision: ReadingMemoryDirectDecision,
+    rendered_markdown: String,
+) -> Result<ReadingMemoryDirectIngestResult, String> {
+    let root = ensure_directory(Path::new(&request.root_path))?;
+    let meta_dir = root.join(".reading-memory");
+    std::fs::create_dir_all(&meta_dir)
+        .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
+
     let confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0);
     if !decision.should_ingest || confidence < 0.7 {
         return Ok(ReadingMemoryDirectIngestResult {
@@ -1108,6 +1333,9 @@ async fn ingest_reading_memory_direct(
             reason: "AI chose ingestion but produced an empty note body".to_string(),
         });
     }
+    if !rendered_markdown.trim_start().starts_with("---") {
+        return Err("Rendered Reading Memory note is missing OKF frontmatter".to_string());
+    }
 
     let book_pkg =
         ensure_book_subpackage(&root, &request.book_title, request.book_author.as_deref())?;
@@ -1120,19 +1348,18 @@ async fn ingest_reading_memory_direct(
         .map_err(|e| format!("Failed to create {}: {}", book_subdir, e))?;
     let note_path = dir.join(format!("{}.md", title));
     let new_file = !note_path.exists();
-    let block = build_direct_reading_memory_markdown(&request, &decision, note_type, target_dir);
-    let block_hash = content_hash(&block);
+    let block_hash = content_hash(&rendered_markdown);
 
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&note_path)
         .map_err(|e| format!("Failed to open Reading Memory note: {}", e))?;
-    if new_file {
-        writeln!(file, "# {}\n", title)
-            .map_err(|e| format!("Failed to write Reading Memory title: {}", e))?;
+    if !new_file {
+        writeln!(file)
+            .map_err(|e| format!("Failed to separate Reading Memory note append: {}", e))?;
     }
-    writeln!(file, "\n{}", block)
+    write!(file, "{}", rendered_markdown)
         .map_err(|e| format!("Failed to append Reading Memory note: {}", e))?;
 
     let millis = timestamp_millis()?;
@@ -1169,6 +1396,137 @@ async fn ingest_reading_memory_direct(
         skipped: false,
         reason: "ingested".to_string(),
     })
+}
+
+fn safe_relative_markdown_path(relative_path: &str) -> Result<PathBuf, String> {
+    let path = Path::new(relative_path);
+    if path.is_absolute() {
+        return Err("Reading Memory page path must be relative".to_string());
+    }
+    if path.extension().and_then(|e| e.to_str()) != Some("md") {
+        return Err("Reading Memory page path must be a Markdown file".to_string());
+    }
+
+    let mut safe = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(part) => safe.push(part),
+            _ => return Err("Reading Memory page path contains unsafe components".to_string()),
+        }
+    }
+
+    Ok(safe)
+}
+
+fn allowed_reading_memory_page_path(relative_path: &Path) -> bool {
+    let parts = relative_path
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(part) => part.to_str(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    match parts.as_slice() {
+        ["index.md"] | ["log.md"] | ["AGENTS.md"] => true,
+        ["books", _, ..] => parts.len() >= 3,
+        ["shared", ..] => parts.len() >= 2,
+        _ => false,
+    }
+}
+
+#[tauri::command]
+fn rewrite_reading_memory_page(
+    root_path: String,
+    relative_path: String,
+    markdown: String,
+) -> Result<ReadingMemoryPageRewriteResult, String> {
+    if markdown.trim().is_empty() {
+        return Ok(ReadingMemoryPageRewriteResult {
+            page_path: String::new(),
+            skipped: true,
+            reason: "Rendered Markdown is empty".to_string(),
+        });
+    }
+
+    let root = ensure_directory(Path::new(&root_path))?;
+    let relative = safe_relative_markdown_path(&relative_path)?;
+    if !allowed_reading_memory_page_path(&relative) {
+        return Err("Reading Memory page path is outside allowed package areas".to_string());
+    }
+
+    let page_path = root.join(&relative);
+    let parent = page_path
+        .parent()
+        .ok_or_else(|| "Invalid Reading Memory page path".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create Reading Memory page directory: {}", e))?;
+
+    let canonical_parent = std::fs::canonicalize(parent)
+        .map_err(|e| format!("Failed to resolve Reading Memory page directory: {}", e))?;
+    if !canonical_parent.starts_with(&root) {
+        return Err("Refusing to rewrite page outside Reading Memory root".to_string());
+    }
+
+    let temp_path = page_path.with_extension("md.tmp");
+    std::fs::write(&temp_path, markdown)
+        .map_err(|e| format!("Failed to write temporary Reading Memory page: {}", e))?;
+    std::fs::rename(&temp_path, &page_path)
+        .map_err(|e| format!("Failed to replace Reading Memory page: {}", e))?;
+
+    Ok(ReadingMemoryPageRewriteResult {
+        page_path: page_path.to_string_lossy().to_string(),
+        skipped: false,
+        reason: "rewritten".to_string(),
+    })
+}
+
+#[tauri::command]
+async fn review_reading_memory_direct(
+    app: tauri::AppHandle,
+    request: ReadingMemoryDirectIngestRequest,
+) -> Result<ReadingMemoryDirectReviewResult, String> {
+    let root = ensure_directory(Path::new(&request.root_path))?;
+    std::fs::create_dir_all(root.join(".reading-memory"))
+        .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
+    review_reading_memory_decision(app, &request).await
+}
+
+#[tauri::command]
+fn write_reading_memory_note(
+    request: ReadingMemoryDirectIngestRequest,
+    decision: ReadingMemoryDirectDecision,
+    rendered_markdown: String,
+) -> Result<ReadingMemoryDirectIngestResult, String> {
+    write_reading_memory_note_inner(request, decision, rendered_markdown)
+}
+
+#[tauri::command]
+async fn ingest_reading_memory_direct(
+    app: tauri::AppHandle,
+    request: ReadingMemoryDirectIngestRequest,
+) -> Result<ReadingMemoryDirectIngestResult, String> {
+    let review = review_reading_memory_decision(app, &request).await?;
+    let Some(decision) = review.decision else {
+        let root = ensure_directory(Path::new(&request.root_path))?;
+        let meta_dir = root.join(".reading-memory");
+        std::fs::create_dir_all(&meta_dir)
+            .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
+        return Ok(ReadingMemoryDirectIngestResult {
+            note_path: String::new(),
+            log_path: meta_dir.join("ingestion-log.jsonl").to_string_lossy().to_string(),
+            skipped: true,
+            reason: review.reason,
+        });
+    };
+    let target_dir = decision
+        .target_dir
+        .as_deref()
+        .and_then(allowed_reading_memory_dir)
+        .ok_or_else(|| "AI selected an invalid Reading Memory directory".to_string())?;
+    let note_type = normalize_note_type(decision.note_type.as_deref(), target_dir);
+    let rendered_markdown =
+        build_direct_reading_memory_markdown(&request, &decision, note_type, target_dir);
+    write_reading_memory_note_inner(request, decision, rendered_markdown)
 }
 
 // ============================================================
@@ -1592,6 +1950,9 @@ pub fn run() {
             rebuild_search_index,
             search_book,
             ensure_reading_memory_repository,
+            review_reading_memory_direct,
+            write_reading_memory_note,
+            rewrite_reading_memory_page,
             ingest_reading_memory_direct
         ])
         .run(tauri::generate_context!())
@@ -1601,6 +1962,12 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
+
+    static AI_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     fn unique_temp_dir(name: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -1613,6 +1980,59 @@ mod tests {
             std::process::id(),
             nanos
         ))
+    }
+
+    fn spawn_chat_completion_server(
+        response_body: &'static str,
+    ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let (tx, rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = Vec::new();
+            let mut temp = [0_u8; 1024];
+            let mut header_end = None;
+            let mut content_length = 0_usize;
+
+            loop {
+                let read = stream.read(&mut temp).unwrap();
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&temp[..read]);
+                if header_end.is_none() {
+                    if let Some(pos) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+                        header_end = Some(pos + 4);
+                        let headers = String::from_utf8_lossy(&buffer[..pos]);
+                        content_length = headers
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().ok())
+                                    .flatten()
+                            })
+                            .unwrap_or(0);
+                    }
+                }
+                if let Some(end) = header_end {
+                    if buffer.len() >= end + content_length {
+                        break;
+                    }
+                }
+            }
+
+            tx.send(String::from_utf8_lossy(&buffer).to_string())
+                .unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                response_body.as_bytes().len(),
+                response_body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        (base_url, rx, handle)
     }
 
     #[test]
@@ -1813,14 +2233,86 @@ mod tests {
         };
 
         let markdown = build_direct_reading_memory_markdown(&request, &decision, "concept", "concepts");
+        assert!(markdown.trim_start().starts_with("---"));
         assert!(markdown.contains("type: Concept"));
         assert!(markdown.contains("source_refs: [\"Book\"]"));
+        assert!(markdown.contains("chapter_refs: [\"Chapter 1\"]"));
         assert!(markdown.contains("source_chapter: \"Chapter 1\""));
         assert!(markdown.contains("source_cfi: \"epubcfi(/6/8,/1:0,/1:10)\""));
         assert!(markdown.contains("tags: [creader, concept]"));
+        assert!(markdown.contains("# 机会成本"));
         assert!(markdown.contains("> source excerpt"));
         assert!(markdown.contains("这是一个可复用概念。"));
         assert!(markdown.contains("- [[Related]]"));
+    }
+
+    #[test]
+    fn reading_memory_write_uses_rendered_markdown_inside_book_package() {
+        let root = unique_temp_dir("reading_memory_write");
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: root.to_string_lossy().to_string(),
+            book_title: "Book".to_string(),
+            book_author: Some("Author".to_string()),
+            source_chapter: Some("Chapter 1".to_string()),
+            source_cfi: Some("epubcfi(/6/8)".to_string()),
+            source_progress: Some(12.5),
+            user_question: "解释这个概念".to_string(),
+            selected_excerpt: Some("source excerpt".to_string()),
+            assistant_answer: "assistant answer".to_string(),
+        };
+        let decision = ReadingMemoryDirectDecision {
+            should_ingest: true,
+            target_dir: Some("concepts".to_string()),
+            title: Some("机会成本".to_string()),
+            note_type: Some("concept".to_string()),
+            summary: None,
+            body: Some("这是一个可复用概念。".to_string()),
+            links: Some(vec!["Related".to_string()]),
+            confidence: Some(0.82),
+            reason: Some("形成可复用概念".to_string()),
+        };
+        let rendered = "---\ntype: Concept\nsource_refs:\n  - Book\nchapter_refs:\n  - Chapter 1\ntags:\n  - creader\nstatus: inbox\n---\n# 机会成本\n\n## Note\n\n这是 AST 渲染内容。\n".to_string();
+
+        let result = write_reading_memory_note_inner(request, decision, rendered).unwrap();
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        let note_path = PathBuf::from(result.note_path);
+        assert!(note_path.starts_with(canonical_root.join("books").join(book_slug("Book")).join("concepts")));
+        assert!(std::fs::read_to_string(note_path).unwrap().contains("这是 AST 渲染内容。"));
+        assert!(std::fs::read_to_string(result.log_path).unwrap().contains("\"block_hash\""));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reading_memory_rewrite_page_restricts_relative_paths() {
+        assert!(safe_relative_markdown_path("books/book/concepts/page.md").is_ok());
+        assert!(safe_relative_markdown_path("../outside.md").is_err());
+        assert!(safe_relative_markdown_path("/tmp/outside.md").is_err());
+        assert!(safe_relative_markdown_path("books/book/page.txt").is_err());
+
+        assert!(allowed_reading_memory_page_path(Path::new("books/book/concepts/page.md")));
+        assert!(allowed_reading_memory_page_path(Path::new("shared/concepts/page.md")));
+        assert!(allowed_reading_memory_page_path(Path::new("index.md")));
+        assert!(!allowed_reading_memory_page_path(Path::new("concepts/page.md")));
+    }
+
+    #[test]
+    fn reading_memory_rewrite_page_writes_inside_root() {
+        let root = unique_temp_dir("reading_memory_rewrite");
+        let result = rewrite_reading_memory_page(
+            root.to_string_lossy().to_string(),
+            "books/book/concepts/page.md".to_string(),
+            "---\ntype: Concept\n---\n# Page\n".to_string(),
+        )
+        .unwrap();
+
+        assert!(!result.skipped);
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        let page_path = PathBuf::from(result.page_path);
+        assert!(page_path.starts_with(&canonical_root));
+        assert!(std::fs::read_to_string(page_path).unwrap().contains("# Page"));
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1858,6 +2350,109 @@ mod tests {
             chat_completions_url("https://x.com/v1/chat/completions"),
             "https://x.com/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn openai_api_base_normalizes_for_typed_client() {
+        assert_eq!(
+            openai_api_base("https://api.openai.com/v1"),
+            "https://api.openai.com/v1"
+        );
+        assert_eq!(
+            openai_api_base("https://x.com/v1/chat/completions"),
+            "https://x.com/v1"
+        );
+    }
+
+    #[test]
+    fn typed_chat_request_keeps_provider_fields_backend_only() {
+        let request =
+            build_openai_chat_request("hello", "reader-model", Some("system prompt"), true, 0.7)
+                .unwrap();
+        let json = serde_json::to_value(request).unwrap();
+
+        assert_eq!(json["model"], "reader-model");
+        assert_eq!(json["stream"], true);
+        assert!((json["temperature"].as_f64().unwrap() - 0.7).abs() < 0.0001);
+        assert_eq!(json["messages"][0]["role"], "system");
+        assert_eq!(json["messages"][0]["content"], "system prompt");
+        assert_eq!(json["messages"][1]["role"], "user");
+        assert_eq!(json["messages"][1]["content"], "hello");
+        assert!(json.get("provider").is_none());
+        assert!(json.get("baseUrl").is_none());
+        assert!(json.get("apiKey").is_none());
+    }
+
+    #[tokio::test]
+    async fn async_openai_streams_chunks_from_compatible_provider() {
+        let _guard = AI_TEST_LOCK.lock().await;
+        AI_CANCEL_FLAG.store(false, Ordering::Relaxed);
+        let response_body = concat!(
+            "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"reader-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"reader-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"},\"finish_reason\":null}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let (base_url, request_rx, server) = spawn_chat_completion_server(response_body);
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+        let mut chunks = Vec::new();
+
+        let full_text =
+            chat_completion_stream_typed("prompt text", &config, "secret-key", |piece| {
+                chunks.push(piece)
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(full_text, "Hello");
+        assert_eq!(chunks, vec!["Hel".to_string(), "lo".to_string()]);
+        let request = request_rx.recv().unwrap();
+        assert!(request.starts_with("POST /v1/chat/completions HTTP/1.1"));
+        assert!(request.contains("authorization: Bearer secret-key"));
+        let body = request.split("\r\n\r\n").nth(1).unwrap();
+        let json: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(json["model"], "reader-model");
+        assert_eq!(json["stream"], true);
+        assert!(json["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["content"] == "prompt text"));
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn compatibility_stream_honors_cancellation_before_chunks() {
+        let _guard = AI_TEST_LOCK.lock().await;
+        AI_CANCEL_FLAG.store(true, Ordering::Relaxed);
+        let response_body = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ignored\"}}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let (base_url, _request_rx, server) = spawn_chat_completion_server(response_body);
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+        let mut chunks = Vec::new();
+
+        let full_text =
+            chat_completion_stream_compat("prompt text", &config, "secret-key", |piece| {
+                chunks.push(piece)
+            })
+            .await
+            .unwrap();
+
+        assert!(full_text.is_empty());
+        assert!(chunks.is_empty());
+        AI_CANCEL_FLAG.store(false, Ordering::Relaxed);
+        server.join().unwrap();
     }
 
     #[test]

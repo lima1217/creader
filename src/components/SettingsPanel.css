@@ -1036,3 +1036,110 @@
     width: 13px;
     height: 13px;
 }
+
+/* ============================================
+   Astryx settings shell integration (slice 3)
+   The Dialog/Layout/TabList/DialogHeader come from Astryx; these rules only
+   bridge the shell to the existing settings-section bodies and keep the
+   migrated AI-tab controls laid out. They use tokens, not raw values.
+   ============================================ */
+.settings-dialog {
+    --settings-pad: 20px;
+}
+
+.settings-tabs-row {
+    padding: 0 var(--settings-pad);
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+/* The Dialog body now scrolls via Astryx's LayoutContent; the per-section
+   bodies keep their existing padding/spacing below. */
+.settings-dialog .settings-section {
+    padding: 0 var(--settings-pad) var(--settings-pad);
+}
+
+.settings-provider-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.settings-provider-templates {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-provider-templates small {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-right: 4px;
+}
+
+.settings-provider-edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.settings-provider-add {
+    margin-top: 12px;
+}
+
+.settings-stepper-value {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    padding: 0 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   Astryx settings shell integration (slice 4)
+   Layout bridges for the reading-memory picker and quick-prompt editor now
+   that those tabs render through Astryx controls. Tokens only.
+   ============================================ */
+.settings-memory-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.settings-inline-path {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.settings-inline-path code {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-control);
+    padding: 4px 8px;
+    border-radius: 4px;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-quick-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.settings-quick-actions-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}

@@ -218,47 +218,6 @@ textarea:focus-visible {
   pointer-events: none;
 }
 
-.app-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-6);
-  background: color-mix(in srgb, var(--bg-reader) 74%, rgba(0, 0, 0, 0.22));
-}
-
-.app-dialog {
-  width: min(360px, 100%);
-  padding: var(--space-5);
-  background: color-mix(in srgb, var(--bg-elevated) 90%, var(--bg-reader));
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-surface);
-  box-shadow: var(--shadow-popover);
-}
-
-.app-dialog h2 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.app-dialog p {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  line-height: 1.55;
-}
-
-.app-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-top: var(--space-5);
-}
-
 @keyframes importBookPulse {
   0%,
   100% {

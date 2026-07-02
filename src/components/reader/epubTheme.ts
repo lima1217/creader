@@ -10,10 +10,6 @@ const themeStyles: Record<Theme, { body: { color: string; background: string }; 
     body: { color: '#e6edf3', background: '#0d1117' },
     link: '#58a6ff',
   },
-  sepia: {
-    body: { color: '#3d3531', background: '#f4ecd8' },
-    link: '#8b5a2b',
-  },
 };
 
 export function applyEpubTheme(

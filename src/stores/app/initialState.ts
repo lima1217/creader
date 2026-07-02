@@ -46,6 +46,8 @@ export function getInitialSettings(defaultSettings: Settings): Settings {
   return {
     ...defaultSettings,
     ...stored,
+    // Sepia was retired in Astryx Phase 1; coerce any stale persisted value to light.
+    theme: stored.theme === 'dark' ? 'dark' : 'light',
     allowEpubScripts: true,
     aiTextSize: typeof stored.aiTextSize === 'number'
       ? Math.min(20, Math.max(13, stored.aiTextSize))
