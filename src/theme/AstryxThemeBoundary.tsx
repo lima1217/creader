@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { Theme } from '@astryxdesign/core/theme';
 import { useSettings } from '../stores/AppContext';
 import { paperTheme } from './paperTheme';
-import { AstryxSmokeTest } from './AstryxSmokeTest';
 
 /**
  * Applies the Astryx paper theme at the app root.
@@ -17,7 +16,6 @@ export function AstryxThemeBoundary({ children }: { children: ReactNode }) {
   const { settings } = useSettings();
   return (
     <Theme theme={paperTheme} mode={settings.theme}>
-      <AstryxSmokeTest />
       {children}
     </Theme>
   );
