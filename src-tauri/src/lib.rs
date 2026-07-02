@@ -62,7 +62,7 @@ pub struct ReadingMemoryDirectIngestResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct ReadingMemoryDirectDecision {
+pub struct ReadingMemoryDirectDecision {
     should_ingest: bool,
     target_dir: Option<String>,
     title: Option<String>,
@@ -72,6 +72,20 @@ struct ReadingMemoryDirectDecision {
     links: Option<Vec<String>>,
     confidence: Option<f64>,
     reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadingMemoryDirectReviewResult {
+    pub skipped: bool,
+    pub reason: String,
+    pub decision: Option<ReadingMemoryDirectDecision>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadingMemoryPageRewriteResult {
+    pub page_path: String,
+    pub skipped: bool,
+    pub reason: String,
 }
 
 // Stream events for AI responses
@@ -854,14 +868,12 @@ fn build_direct_reading_memory_markdown(
         .unwrap_or(&request.book_title);
 
     format!(
-        r#"
-## CReader Ingestion
-
-```yaml
+        r#"---
 type: {okf_type}
 title: {title}
 source_app: CReader
 source_refs: [{book_ref}]
+chapter_refs: [{chapter_ref}]
 source_book: {source_book}
 source_author: {source_author}
 source_chapter: {source_chapter}
@@ -873,23 +885,27 @@ status: inbox
 timestamp: {timestamp}
 confidence: {confidence:.2}
 ingestion_reason: {reason}
-```
+---
 
-### Source
+# {title_plain}
+
+## Source
 {source}
 
-### Question
+## Question
 {question}
 
-### Note
+## Note
 {body}
 
-### Links
+## Links
 {links}
 "#,
         okf_type = okf_type_for(note_type),
         title = escape_json_string(title),
+        title_plain = title,
         book_ref = escape_json_string(&safe_wiki_title(&request.book_title)),
+        chapter_ref = escape_json_string(request.source_chapter.as_deref().unwrap_or("")),
         source_book = escape_json_string(&request.book_title),
         source_author = escape_json_string(request.book_author.as_deref().unwrap_or("")),
         source_chapter = escape_json_string(request.source_chapter.as_deref().unwrap_or("")),
@@ -1047,21 +1063,15 @@ fn ensure_book_subpackage(
     Ok(pkg)
 }
 
-#[tauri::command]
-async fn ingest_reading_memory_direct(
+async fn review_reading_memory_decision(
     app: tauri::AppHandle,
-    request: ReadingMemoryDirectIngestRequest,
-) -> Result<ReadingMemoryDirectIngestResult, String> {
-    let root = ensure_directory(Path::new(&request.root_path))?;
-    let meta_dir = root.join(".reading-memory");
-    std::fs::create_dir_all(&meta_dir)
-        .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
-
+    request: &ReadingMemoryDirectIngestRequest,
+) -> Result<ReadingMemoryDirectReviewResult, String> {
     // Resolve the active provider early so a missing config/key short-circuits
     // with a clear message instead of writing a skipped log entry.
     let (config, api_key) = active_provider(&app)?;
 
-    let prompt = build_reading_memory_direct_prompt(&request);
+    let prompt = build_reading_memory_direct_prompt(request);
     let raw = chat_completion_oneshot(&prompt, &config, &api_key)
         .await
         .map_err(|e| format!("Reading Memory review failed: {}", e))?;
@@ -1070,6 +1080,34 @@ async fn ingest_reading_memory_direct(
         .ok_or_else(|| "Reading Memory ingestion review did not return JSON".to_string())?;
     let decision: ReadingMemoryDirectDecision = serde_json::from_str(json_text)
         .map_err(|e| format!("Failed to parse Reading Memory ingestion JSON: {}", e))?;
+    let confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0);
+    if !decision.should_ingest || confidence < 0.7 {
+        return Ok(ReadingMemoryDirectReviewResult {
+            skipped: true,
+            reason: decision
+                .reason
+                .unwrap_or_else(|| "AI decided not to ingest this turn".to_string()),
+            decision: None,
+        });
+    }
+
+    Ok(ReadingMemoryDirectReviewResult {
+        skipped: false,
+        reason: "ready".to_string(),
+        decision: Some(decision),
+    })
+}
+
+fn write_reading_memory_note_inner(
+    request: ReadingMemoryDirectIngestRequest,
+    decision: ReadingMemoryDirectDecision,
+    rendered_markdown: String,
+) -> Result<ReadingMemoryDirectIngestResult, String> {
+    let root = ensure_directory(Path::new(&request.root_path))?;
+    let meta_dir = root.join(".reading-memory");
+    std::fs::create_dir_all(&meta_dir)
+        .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
+
     let confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0);
     if !decision.should_ingest || confidence < 0.7 {
         return Ok(ReadingMemoryDirectIngestResult {
@@ -1108,6 +1146,9 @@ async fn ingest_reading_memory_direct(
             reason: "AI chose ingestion but produced an empty note body".to_string(),
         });
     }
+    if !rendered_markdown.trim_start().starts_with("---") {
+        return Err("Rendered Reading Memory note is missing OKF frontmatter".to_string());
+    }
 
     let book_pkg =
         ensure_book_subpackage(&root, &request.book_title, request.book_author.as_deref())?;
@@ -1120,19 +1161,18 @@ async fn ingest_reading_memory_direct(
         .map_err(|e| format!("Failed to create {}: {}", book_subdir, e))?;
     let note_path = dir.join(format!("{}.md", title));
     let new_file = !note_path.exists();
-    let block = build_direct_reading_memory_markdown(&request, &decision, note_type, target_dir);
-    let block_hash = content_hash(&block);
+    let block_hash = content_hash(&rendered_markdown);
 
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&note_path)
         .map_err(|e| format!("Failed to open Reading Memory note: {}", e))?;
-    if new_file {
-        writeln!(file, "# {}\n", title)
-            .map_err(|e| format!("Failed to write Reading Memory title: {}", e))?;
+    if !new_file {
+        writeln!(file)
+            .map_err(|e| format!("Failed to separate Reading Memory note append: {}", e))?;
     }
-    writeln!(file, "\n{}", block)
+    write!(file, "{}", rendered_markdown)
         .map_err(|e| format!("Failed to append Reading Memory note: {}", e))?;
 
     let millis = timestamp_millis()?;
@@ -1169,6 +1209,137 @@ async fn ingest_reading_memory_direct(
         skipped: false,
         reason: "ingested".to_string(),
     })
+}
+
+fn safe_relative_markdown_path(relative_path: &str) -> Result<PathBuf, String> {
+    let path = Path::new(relative_path);
+    if path.is_absolute() {
+        return Err("Reading Memory page path must be relative".to_string());
+    }
+    if path.extension().and_then(|e| e.to_str()) != Some("md") {
+        return Err("Reading Memory page path must be a Markdown file".to_string());
+    }
+
+    let mut safe = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(part) => safe.push(part),
+            _ => return Err("Reading Memory page path contains unsafe components".to_string()),
+        }
+    }
+
+    Ok(safe)
+}
+
+fn allowed_reading_memory_page_path(relative_path: &Path) -> bool {
+    let parts = relative_path
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(part) => part.to_str(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    match parts.as_slice() {
+        ["index.md"] | ["log.md"] | ["AGENTS.md"] => true,
+        ["books", _, ..] => parts.len() >= 3,
+        ["shared", ..] => parts.len() >= 2,
+        _ => false,
+    }
+}
+
+#[tauri::command]
+fn rewrite_reading_memory_page(
+    root_path: String,
+    relative_path: String,
+    markdown: String,
+) -> Result<ReadingMemoryPageRewriteResult, String> {
+    if markdown.trim().is_empty() {
+        return Ok(ReadingMemoryPageRewriteResult {
+            page_path: String::new(),
+            skipped: true,
+            reason: "Rendered Markdown is empty".to_string(),
+        });
+    }
+
+    let root = ensure_directory(Path::new(&root_path))?;
+    let relative = safe_relative_markdown_path(&relative_path)?;
+    if !allowed_reading_memory_page_path(&relative) {
+        return Err("Reading Memory page path is outside allowed package areas".to_string());
+    }
+
+    let page_path = root.join(&relative);
+    let parent = page_path
+        .parent()
+        .ok_or_else(|| "Invalid Reading Memory page path".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create Reading Memory page directory: {}", e))?;
+
+    let canonical_parent = std::fs::canonicalize(parent)
+        .map_err(|e| format!("Failed to resolve Reading Memory page directory: {}", e))?;
+    if !canonical_parent.starts_with(&root) {
+        return Err("Refusing to rewrite page outside Reading Memory root".to_string());
+    }
+
+    let temp_path = page_path.with_extension("md.tmp");
+    std::fs::write(&temp_path, markdown)
+        .map_err(|e| format!("Failed to write temporary Reading Memory page: {}", e))?;
+    std::fs::rename(&temp_path, &page_path)
+        .map_err(|e| format!("Failed to replace Reading Memory page: {}", e))?;
+
+    Ok(ReadingMemoryPageRewriteResult {
+        page_path: page_path.to_string_lossy().to_string(),
+        skipped: false,
+        reason: "rewritten".to_string(),
+    })
+}
+
+#[tauri::command]
+async fn review_reading_memory_direct(
+    app: tauri::AppHandle,
+    request: ReadingMemoryDirectIngestRequest,
+) -> Result<ReadingMemoryDirectReviewResult, String> {
+    let root = ensure_directory(Path::new(&request.root_path))?;
+    std::fs::create_dir_all(root.join(".reading-memory"))
+        .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
+    review_reading_memory_decision(app, &request).await
+}
+
+#[tauri::command]
+fn write_reading_memory_note(
+    request: ReadingMemoryDirectIngestRequest,
+    decision: ReadingMemoryDirectDecision,
+    rendered_markdown: String,
+) -> Result<ReadingMemoryDirectIngestResult, String> {
+    write_reading_memory_note_inner(request, decision, rendered_markdown)
+}
+
+#[tauri::command]
+async fn ingest_reading_memory_direct(
+    app: tauri::AppHandle,
+    request: ReadingMemoryDirectIngestRequest,
+) -> Result<ReadingMemoryDirectIngestResult, String> {
+    let review = review_reading_memory_decision(app, &request).await?;
+    let Some(decision) = review.decision else {
+        let root = ensure_directory(Path::new(&request.root_path))?;
+        let meta_dir = root.join(".reading-memory");
+        std::fs::create_dir_all(&meta_dir)
+            .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
+        return Ok(ReadingMemoryDirectIngestResult {
+            note_path: String::new(),
+            log_path: meta_dir.join("ingestion-log.jsonl").to_string_lossy().to_string(),
+            skipped: true,
+            reason: review.reason,
+        });
+    };
+    let target_dir = decision
+        .target_dir
+        .as_deref()
+        .and_then(allowed_reading_memory_dir)
+        .ok_or_else(|| "AI selected an invalid Reading Memory directory".to_string())?;
+    let note_type = normalize_note_type(decision.note_type.as_deref(), target_dir);
+    let rendered_markdown =
+        build_direct_reading_memory_markdown(&request, &decision, note_type, target_dir);
+    write_reading_memory_note_inner(request, decision, rendered_markdown)
 }
 
 // ============================================================
@@ -1592,6 +1763,9 @@ pub fn run() {
             rebuild_search_index,
             search_book,
             ensure_reading_memory_repository,
+            review_reading_memory_direct,
+            write_reading_memory_note,
+            rewrite_reading_memory_page,
             ingest_reading_memory_direct
         ])
         .run(tauri::generate_context!())
@@ -1813,14 +1987,86 @@ mod tests {
         };
 
         let markdown = build_direct_reading_memory_markdown(&request, &decision, "concept", "concepts");
+        assert!(markdown.trim_start().starts_with("---"));
         assert!(markdown.contains("type: Concept"));
         assert!(markdown.contains("source_refs: [\"Book\"]"));
+        assert!(markdown.contains("chapter_refs: [\"Chapter 1\"]"));
         assert!(markdown.contains("source_chapter: \"Chapter 1\""));
         assert!(markdown.contains("source_cfi: \"epubcfi(/6/8,/1:0,/1:10)\""));
         assert!(markdown.contains("tags: [creader, concept]"));
+        assert!(markdown.contains("# 机会成本"));
         assert!(markdown.contains("> source excerpt"));
         assert!(markdown.contains("这是一个可复用概念。"));
         assert!(markdown.contains("- [[Related]]"));
+    }
+
+    #[test]
+    fn reading_memory_write_uses_rendered_markdown_inside_book_package() {
+        let root = unique_temp_dir("reading_memory_write");
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: root.to_string_lossy().to_string(),
+            book_title: "Book".to_string(),
+            book_author: Some("Author".to_string()),
+            source_chapter: Some("Chapter 1".to_string()),
+            source_cfi: Some("epubcfi(/6/8)".to_string()),
+            source_progress: Some(12.5),
+            user_question: "解释这个概念".to_string(),
+            selected_excerpt: Some("source excerpt".to_string()),
+            assistant_answer: "assistant answer".to_string(),
+        };
+        let decision = ReadingMemoryDirectDecision {
+            should_ingest: true,
+            target_dir: Some("concepts".to_string()),
+            title: Some("机会成本".to_string()),
+            note_type: Some("concept".to_string()),
+            summary: None,
+            body: Some("这是一个可复用概念。".to_string()),
+            links: Some(vec!["Related".to_string()]),
+            confidence: Some(0.82),
+            reason: Some("形成可复用概念".to_string()),
+        };
+        let rendered = "---\ntype: Concept\nsource_refs:\n  - Book\nchapter_refs:\n  - Chapter 1\ntags:\n  - creader\nstatus: inbox\n---\n# 机会成本\n\n## Note\n\n这是 AST 渲染内容。\n".to_string();
+
+        let result = write_reading_memory_note_inner(request, decision, rendered).unwrap();
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        let note_path = PathBuf::from(result.note_path);
+        assert!(note_path.starts_with(canonical_root.join("books").join(book_slug("Book")).join("concepts")));
+        assert!(std::fs::read_to_string(note_path).unwrap().contains("这是 AST 渲染内容。"));
+        assert!(std::fs::read_to_string(result.log_path).unwrap().contains("\"block_hash\""));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reading_memory_rewrite_page_restricts_relative_paths() {
+        assert!(safe_relative_markdown_path("books/book/concepts/page.md").is_ok());
+        assert!(safe_relative_markdown_path("../outside.md").is_err());
+        assert!(safe_relative_markdown_path("/tmp/outside.md").is_err());
+        assert!(safe_relative_markdown_path("books/book/page.txt").is_err());
+
+        assert!(allowed_reading_memory_page_path(Path::new("books/book/concepts/page.md")));
+        assert!(allowed_reading_memory_page_path(Path::new("shared/concepts/page.md")));
+        assert!(allowed_reading_memory_page_path(Path::new("index.md")));
+        assert!(!allowed_reading_memory_page_path(Path::new("concepts/page.md")));
+    }
+
+    #[test]
+    fn reading_memory_rewrite_page_writes_inside_root() {
+        let root = unique_temp_dir("reading_memory_rewrite");
+        let result = rewrite_reading_memory_page(
+            root.to_string_lossy().to_string(),
+            "books/book/concepts/page.md".to_string(),
+            "---\ntype: Concept\n---\n# Page\n".to_string(),
+        )
+        .unwrap();
+
+        assert!(!result.skipped);
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        let page_path = PathBuf::from(result.page_path);
+        assert!(page_path.starts_with(&canonical_root));
+        assert!(std::fs::read_to_string(page_path).unwrap().contains("# Page"));
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
