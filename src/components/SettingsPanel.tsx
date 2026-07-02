@@ -9,13 +9,23 @@ import { useAIProviders } from './ai/hooks/useAIProviders';
 import type { AIProviderConfig } from '../types';
 import { CheckIcon, CloseIcon, PlusIcon } from './ai/icons';
 import {
-    defaultQuickActions,
     getMissingDefaultQuickActions,
     loadQuickActionConfigs,
     renderQuickActionIcon,
     saveQuickActionConfigs,
 } from './ai/quickActions';
 import type { QuickActionConfig } from './ai/quickActions';
+import {
+    addQuickAction,
+    applyProviderTemplate,
+    clampAITextSize,
+    commitQuickActionDraft,
+    createCustomQuickAction,
+    hideQuickAction,
+    resetQuickActions,
+    restoreQuickAction,
+    validateProviderDraft,
+} from './settingsPanelLogic';
 import './SettingsPanel.css';
 
 const logger = createLogger('SettingsPanel');
@@ -118,18 +128,14 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     }, []);
 
     const applyTemplate = useCallback((template: { name: string; baseUrl: string; model: string }) => {
-        setEditingProvider(prev => prev ? {
-            ...prev,
-            name: prev.name.trim() || template.name,
-            baseUrl: template.baseUrl,
-            model: template.model,
-        } : prev);
+        setEditingProvider(prev => applyProviderTemplate(prev, template));
     }, []);
 
     const saveEditingProvider = useCallback(async (activate: boolean) => {
         if (!editingProvider) return;
-        if (!editingProvider.name.trim() || !editingProvider.baseUrl.trim() || !editingProvider.model.trim()) {
-            setProviderError('名称、地址和模型都需要填写。');
+        const error = validateProviderDraft(editingProvider);
+        if (error) {
+            setProviderError(error);
             return;
         }
         try {
@@ -140,13 +146,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             setEditingProvider(null);
             setDraftKey('');
             setProviderError('');
-        } catch (error) {
-            setProviderError(String(error instanceof Error ? error.message : error));
+        } catch (saveError) {
+            setProviderError(String(saveError instanceof Error ? saveError.message : saveError));
         }
     }, [aiProviders, editingProvider, draftKey]);
 
     const adjustAITextSize = (delta: number) => {
-        const nextSize = Math.min(20, Math.max(13, settings.aiTextSize + delta));
+        const nextSize = clampAITextSize(settings.aiTextSize + delta);
         setSettings({ ...settings, aiTextSize: nextSize });
     };
 
@@ -188,44 +194,33 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     };
 
     const saveQuickActionDraft = () => {
-        if (!editingActionId) return;
-        const label = quickActionDraft.label.trim();
-        const prompt = quickActionDraft.prompt.trim();
-        if (!label || !prompt) return;
-        persistQuickActions(quickActionConfigs.map(action =>
-            action.id === editingActionId ? { ...action, label, prompt } : action
-        ));
+        const nextActions = commitQuickActionDraft(quickActionConfigs, editingActionId, quickActionDraft);
+        if (nextActions) persistQuickActions(nextActions);
     };
 
-    const hideQuickAction = (actionId: string) => {
-        const nextActions = quickActionConfigs.filter(action => action.id !== actionId);
-        persistQuickActions(nextActions);
-        if (editingActionId === actionId) {
-            setEditingActionId(nextActions[0]?.id || null);
-        }
+    const hideQuickActionHandler = (actionId: string) => {
+        const { actions, nextEditingId } = hideQuickAction(quickActionConfigs, actionId, editingActionId);
+        persistQuickActions(actions);
+        setEditingActionId(nextEditingId);
     };
 
-    const addQuickAction = () => {
-        const action: QuickActionConfig = {
-            id: `custom-${Date.now()}`,
-            label: '新提示词',
-            prompt: '请根据当前上下文回答：',
-            icon: 'explain',
-        };
-        const nextActions = [...quickActionConfigs, action];
-        persistQuickActions(nextActions);
-        setEditingActionId(action.id);
+    const addQuickActionHandler = () => {
+        const action = createCustomQuickAction();
+        const { actions, editingId } = addQuickAction(quickActionConfigs, action);
+        persistQuickActions(actions);
+        setEditingActionId(editingId);
     };
 
-    const restoreQuickAction = (action: QuickActionConfig) => {
-        const nextActions = [...quickActionConfigs, action];
-        persistQuickActions(nextActions);
-        setEditingActionId(action.id);
+    const restoreQuickActionHandler = (action: QuickActionConfig) => {
+        const { actions, editingId } = restoreQuickAction(quickActionConfigs, action);
+        persistQuickActions(actions);
+        setEditingActionId(editingId);
     };
 
-    const resetQuickActions = () => {
-        persistQuickActions(defaultQuickActions);
-        setEditingActionId(defaultQuickActions[0]?.id || null);
+    const resetQuickActionsHandler = () => {
+        const { actions, editingId } = resetQuickActions();
+        persistQuickActions(actions);
+        setEditingActionId(editingId);
     };
 
     const missingDefaultQuickActions = getMissingDefaultQuickActions(quickActionConfigs);
@@ -511,7 +506,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         <div className="settings-section-title">快捷提示词</div>
                     <div className="settings-quick-actions">
                         <div className="settings-quick-list">
-                            <button className="settings-quick-add-main settings-restore-action" onClick={addQuickAction}>
+                            <button className="settings-quick-add-main settings-restore-action" onClick={addQuickActionHandler}>
                                 <PlusIcon />
                                 <span>新增提示词</span>
                             </button>
@@ -530,7 +525,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                         </button>
                                         <button
                                             className="settings-quick-hide settings-danger-action"
-                                            onClick={() => hideQuickAction(action.id)}
+                                            onClick={() => hideQuickActionHandler(action.id)}
                                             aria-label={`隐藏 ${action.label}`}
                                         >
                                             <CloseIcon />
@@ -548,7 +543,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                         <button
                                             key={action.id}
                                             className="settings-quick-restore-btn settings-restore-action"
-                                            onClick={() => restoreQuickAction(action)}
+                                            onClick={() => restoreQuickActionHandler(action)}
                                         >
                                             <PlusIcon />
                                             <span>{action.label}</span>
@@ -578,7 +573,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                     />
                                 </label>
                                 <div className="settings-quick-actions-row">
-                                    <button className="settings-secondary-action settings-restore-action" onClick={resetQuickActions}>
+                                    <button className="settings-secondary-action settings-restore-action" onClick={resetQuickActionsHandler}>
                                         恢复默认
                                     </button>
                                     <button
@@ -593,7 +588,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         ) : (
                             <div className="settings-quick-empty">
                                 <span>选择一个提示词按钮来编辑。</span>
-                                <button className="settings-secondary-action settings-restore-action" onClick={resetQuickActions}>
+                                <button className="settings-secondary-action settings-restore-action" onClick={resetQuickActionsHandler}>
                                     恢复默认
                                 </button>
                             </div>
