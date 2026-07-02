@@ -1325,11 +1325,21 @@ pub struct FindBookResult {
     pub path: Option<String>,
 }
 
+fn validated_book_file_path(app: &tauri::AppHandle, file_path: &str) -> Result<PathBuf, String> {
+    if !validate_book_path_inner(app, file_path) {
+        return Err("Refusing to read book file outside allowed directories".to_string());
+    }
+    std::fs::canonicalize(Path::new(file_path))
+        .map_err(|e| format!("Failed to resolve book file path: {}", e))
+}
+
 #[tauri::command]
 fn extract_epub_search_preview(
+    app: tauri::AppHandle,
     file_path: String,
 ) -> Result<search_index::EpubExtraction, String> {
-    search_index::extract_epub_for_search(Path::new(&file_path))
+    let file_path = validated_book_file_path(&app, &file_path)?;
+    search_index::extract_epub_for_search(&file_path)
 }
 
 #[tauri::command]
@@ -1342,10 +1352,11 @@ fn get_search_index_status(
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    let file_path = validated_book_file_path(&app, &file_path)?;
     Ok(search_index::get_index_status(
         &app_data_dir,
         &book_id,
-        Path::new(&file_path),
+        &file_path,
     ))
 }
 
@@ -1359,7 +1370,8 @@ fn rebuild_search_index(
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-    search_index::rebuild_index(&app_data_dir, &book_id, Path::new(&file_path))
+    let file_path = validated_book_file_path(&app, &file_path)?;
+    search_index::rebuild_index(&app_data_dir, &book_id, &file_path)
 }
 
 #[tauri::command]
@@ -1373,7 +1385,8 @@ fn search_book(
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-    search_index::search_index(&app_data_dir, &book_id, Path::new(&file_path), &query)
+    let file_path = validated_book_file_path(&app, &file_path)?;
+    search_index::search_index(&app_data_dir, &book_id, &file_path, &query)
 }
 
 #[tauri::command]

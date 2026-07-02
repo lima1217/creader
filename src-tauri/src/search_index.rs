@@ -231,9 +231,11 @@ pub fn search_index(
         .map_err(|e| format!("Failed to open Search Index reader: {}", e))?;
     let searcher = reader.searcher();
     let parser = QueryParser::for_index(&index, vec![fields.text, fields.section_title]);
-    let parsed = parser
-        .parse_query(query)
-        .map_err(|e| format!("Failed to parse search query: {}", e))?;
+    let query_text = plain_search_query(query);
+    if query_text.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (parsed, _syntax_errors) = parser.parse_query_lenient(&query_text);
     let top_docs = searcher
         .search(&parsed, &TopDocs::with_limit(MAX_RESULTS).order_by_score())
         .map_err(|e| format!("Failed to search index: {}", e))?;
@@ -256,7 +258,7 @@ pub fn search_index(
                 cfi: if cfi.is_empty() { None } else { Some(cfi) },
             },
             section_title: title,
-            excerpt: excerpt_for_query(&text, query),
+            excerpt: excerpt_for_query(&text, &query_text),
             score,
         });
     }
@@ -438,6 +440,21 @@ fn html_unescape(input: &str) -> String {
 
 fn normalize_ws(input: &str) -> String {
     input.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn plain_search_query(input: &str) -> String {
+    normalize_ws(
+        &input
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c.is_whitespace() {
+                    c
+                } else {
+                    ' '
+                }
+            })
+            .collect::<String>(),
+    )
 }
 
 fn file_fingerprint(path: &Path) -> Result<FileFingerprint, String> {
@@ -688,6 +705,18 @@ mod tests {
         let chinese = search_index(dir.path(), "book-1", &epub, "机器学习").unwrap();
         assert_eq!(chinese[0].section_title, "Mandarin");
         assert!(chinese[0].excerpt.contains("机器学习"));
+    }
+
+    #[test]
+    fn search_treats_query_syntax_errors_leniently() {
+        let dir = tempdir().unwrap();
+        let epub = dir.path().join("book.epub");
+        make_epub(&epub, "A field-like needle: appears here.", "中文 搜索");
+        rebuild_index(dir.path(), "book-1", &epub).unwrap();
+
+        let results = search_index(dir.path(), "book-1", &epub, "needle:").unwrap();
+        assert!(!results.is_empty());
+        assert_eq!(results[0].section_title, "Opening");
     }
 
     #[test]
