@@ -1,8 +1,6 @@
-import { STORES } from './Db';
 import { createLogger } from '../utils/logger';
-import { idbDelete, idbGet, idbPut } from './idb';
+import { db } from './DexieDb';
 
-const STORE_NAME = STORES.covers;
 const urlCache = new Map<string, string>();
 const logger = createLogger('CoverStore');
 const MAX_URL_CACHE_ENTRIES = 200;
@@ -10,20 +8,20 @@ const MAX_URL_CACHE_ENTRIES = 200;
 export async function saveCover(bookId: string, blob: Blob): Promise<void> {
   logger.debug('Saving cover for book:', bookId, ', blob size:', blob.size, 'bytes');
   revokeCoverUrl(bookId);
-  await idbPut(STORE_NAME, bookId, blob);
+  await db.covers.put(blob, bookId);
   logger.debug('Cover saved successfully for:', bookId);
 }
 
 export async function loadCover(bookId: string): Promise<Blob | null> {
   logger.debug('Loading cover for book:', bookId);
-  const result = await idbGet<Blob>(STORE_NAME, bookId);
+  const result = await db.covers.get(bookId) ?? null;
   logger.debug('Cover loaded for:', bookId, ', found:', !!result, result ? `, size: ${result.size} bytes` : '');
   return result;
 }
 
 export async function deleteCover(bookId: string): Promise<void> {
   revokeCoverUrl(bookId);
-  await idbDelete(STORE_NAME, bookId);
+  await db.covers.delete(bookId);
 }
 
 export async function getCoverUrl(bookId: string): Promise<string | null> {

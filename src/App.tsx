@@ -7,6 +7,7 @@ import { Toolbar } from './components/Toolbar';
 import { preloadEpubReader, Reader } from './components/Reader';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppDialogProvider, useAppDialog } from './components/AppDialog';
+import { AstryxThemeBoundary } from './theme/AstryxThemeBoundary';
 import { importBookFromPath } from './services/BookImportService';
 import { rebuildSearchIndexQuietly, toSearchIndexSummary } from './services/reader/searchIndex';
 import { isTauriRuntime } from './utils/tauri';
@@ -209,9 +210,11 @@ function AppContent() {
 function App() {
   return (
     <AppProvider>
-      <AppDialogProvider>
-        <AppContent />
-      </AppDialogProvider>
+      <AstryxThemeBoundary>
+        <AppDialogProvider>
+          <AppContent />
+        </AppDialogProvider>
+      </AstryxThemeBoundary>
     </AppProvider>
   );
 }

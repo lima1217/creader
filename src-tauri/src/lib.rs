@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tauri::ipc::Channel;
 use tauri::Manager;
 
@@ -558,19 +559,121 @@ fn chat_completions_url(base_url: &str) -> String {
     format!("{}/chat/completions", trimmed)
 }
 
-/// Streaming chat completion over an OpenAI-compatible endpoint. Emits
-/// `StreamEvent`s through the Tauri Channel, honoring the global cancel flag.
-async fn chat_completion_stream(
+/// Normalize a configured base URL for async-openai, which appends
+/// `/chat/completions` itself.
+fn openai_api_base(base_url: &str) -> String {
+    chat_completions_url(base_url)
+        .trim_end_matches("/chat/completions")
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn build_openai_chat_request(
+    prompt: &str,
+    model: &str,
+    system_prompt: Option<&str>,
+    stream: bool,
+    temperature: f32,
+) -> Result<async_openai::types::chat::CreateChatCompletionRequest, String> {
+    use async_openai::types::chat::{
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
+        ChatCompletionRequestUserMessage, CreateChatCompletionRequestArgs,
+    };
+
+    let mut messages: Vec<ChatCompletionRequestMessage> = Vec::new();
+    if let Some(system_prompt) = system_prompt {
+        messages.push(ChatCompletionRequestSystemMessage::from(system_prompt).into());
+    }
+    messages.push(ChatCompletionRequestUserMessage::from(prompt).into());
+
+    CreateChatCompletionRequestArgs::default()
+        .model(model)
+        .messages(messages)
+        .stream(stream)
+        .temperature(temperature)
+        .build()
+        .map_err(|e| format!("Failed to build chat request: {}", e))
+}
+
+fn openai_client(
+    config: &AIProviderConfig,
+    api_key: &str,
+) -> async_openai::Client<async_openai::config::OpenAIConfig> {
+    let openai_config = async_openai::config::OpenAIConfig::new()
+        .with_api_base(openai_api_base(&config.base_url))
+        .with_api_key(api_key);
+    async_openai::Client::with_config(openai_config)
+}
+
+async fn chat_completion_stream_typed<F>(
     prompt: &str,
     config: &AIProviderConfig,
     api_key: &str,
-    on_event: &Channel<StreamEvent>,
-) -> Result<String, String> {
+    mut on_chunk: F,
+) -> Result<String, String>
+where
+    F: FnMut(String),
+{
+    use futures_util::StreamExt;
+
+    let client = openai_client(config, api_key);
+    let request = build_openai_chat_request(
+        prompt,
+        &config.model,
+        Some(READING_AI_SYSTEM_PROMPT),
+        true,
+        0.7,
+    )?;
+
+    let chat = client.chat();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(AI_TIMEOUT_SECS);
+    let stream_future = chat.create_stream(request);
+    let mut stream = tokio::time::timeout_at(deadline, stream_future)
+        .await
+        .map_err(|_| format!("AI request timed out after {} seconds", AI_TIMEOUT_SECS))?
+        .map_err(|e| format!("OpenAI client stream request failed: {}", e))?;
+
+    let mut full_text = String::new();
+    loop {
+        if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
+            break;
+        }
+        let next = tokio::time::timeout_at(deadline, stream.next())
+            .await
+            .map_err(|_| format!("AI stream timed out after {} seconds", AI_TIMEOUT_SECS))?;
+        let Some(chunk_result) = next else {
+            break;
+        };
+        let chunk = chunk_result.map_err(|e| format!("OpenAI client stream read failed: {}", e))?;
+        for choice in chunk.choices {
+            if let Some(piece) = choice.delta.content {
+                if !piece.is_empty() {
+                    full_text.push_str(&piece);
+                    on_chunk(piece);
+                }
+            }
+        }
+    }
+
+    Ok(full_text)
+}
+
+/// Compatibility streaming path over an OpenAI-compatible endpoint. This keeps
+/// endpoints that do not quite match async-openai's typed stream parser working.
+async fn chat_completion_stream_compat<F>(
+    prompt: &str,
+    config: &AIProviderConfig,
+    api_key: &str,
+    mut on_chunk: F,
+) -> Result<String, String>
+where
+    F: FnMut(String),
+{
     use futures_util::StreamExt;
 
     let url = chat_completions_url(&config.base_url);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(AI_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(AI_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -597,10 +700,6 @@ async fn chat_completion_stream(
         let text = response.text().await.unwrap_or_default();
         return Err(format!("API error {}: {}", status, truncate_for_prompt(&text, 500)));
     }
-
-    let _ = on_event.send(StreamEvent::Started {
-        provider: config.name.clone(),
-    });
 
     let mut stream = response.bytes_stream();
     let mut full_text = String::new();
@@ -645,7 +744,7 @@ async fn chat_completion_stream(
             if let Some(piece) = delta {
                 if !piece.is_empty() {
                     full_text.push_str(&piece);
-                    let _ = on_event.send(StreamEvent::Chunk { text: piece });
+                    on_chunk(piece);
                 }
             }
         }
@@ -654,15 +753,103 @@ async fn chat_completion_stream(
     Ok(full_text)
 }
 
+/// Streaming chat completion over an OpenAI-compatible endpoint. Emits
+/// `StreamEvent`s through the Tauri Channel, honoring the global cancel flag.
+async fn chat_completion_stream(
+    prompt: &str,
+    config: &AIProviderConfig,
+    api_key: &str,
+    on_event: &Channel<StreamEvent>,
+) -> Result<String, String> {
+    let _ = on_event.send(StreamEvent::Started {
+        provider: config.name.clone(),
+    });
+
+    let mut emitted_any_chunk = false;
+    let typed_result = chat_completion_stream_typed(prompt, config, api_key, |piece| {
+        emitted_any_chunk = true;
+        let _ = on_event.send(StreamEvent::Chunk { text: piece });
+    })
+    .await;
+
+    match typed_result {
+        Ok(full_text) => Ok(full_text),
+        Err(typed_error) if !emitted_any_chunk => {
+            eprintln!(
+                "[creader] async-openai stream failed for provider '{}'; falling back to compatibility parser: {}",
+                config.name, typed_error
+            );
+            chat_completion_stream_compat(prompt, config, api_key, |piece| {
+                let _ = on_event.send(StreamEvent::Chunk { text: piece });
+            })
+            .await
+            .map_err(|compat_error| {
+                format!(
+                    "{}; compatibility fallback also failed: {}",
+                    typed_error, compat_error
+                )
+            })
+        }
+        Err(typed_error) => Err(typed_error),
+    }
+}
+
 /// One-shot (non-streaming) chat completion. Returns the full assistant text.
 async fn chat_completion_oneshot(
     prompt: &str,
     config: &AIProviderConfig,
     api_key: &str,
 ) -> Result<String, String> {
+    let typed_result = chat_completion_oneshot_typed(prompt, config, api_key).await;
+    match typed_result {
+        Ok(text) => Ok(text),
+        Err(typed_error) => {
+            eprintln!(
+                "[creader] async-openai one-shot failed for provider '{}'; falling back to compatibility request: {}",
+                config.name, typed_error
+            );
+            chat_completion_oneshot_compat(prompt, config, api_key)
+                .await
+                .map_err(|compat_error| {
+                    format!(
+                        "{}; compatibility fallback also failed: {}",
+                        typed_error, compat_error
+                    )
+                })
+        }
+    }
+}
+
+async fn chat_completion_oneshot_typed(
+    prompt: &str,
+    config: &AIProviderConfig,
+    api_key: &str,
+) -> Result<String, String> {
+    let client = openai_client(config, api_key);
+    let request = build_openai_chat_request(prompt, &config.model, None, false, 0.3)?;
+
+    let chat = client.chat();
+    let response = tokio::time::timeout(Duration::from_secs(AI_TIMEOUT_SECS), chat.create(request))
+        .await
+        .map_err(|_| format!("AI request timed out after {} seconds", AI_TIMEOUT_SECS))?
+        .map_err(|e| format!("OpenAI client request failed: {}", e))?;
+
+    response
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|choice| choice.message.content)
+        .ok_or_else(|| "API response missing choices[0].message.content".to_string())
+}
+
+async fn chat_completion_oneshot_compat(
+    prompt: &str,
+    config: &AIProviderConfig,
+    api_key: &str,
+) -> Result<String, String> {
     let url = chat_completions_url(&config.base_url);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(AI_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(AI_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -1775,6 +1962,12 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
+
+    static AI_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     fn unique_temp_dir(name: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -1787,6 +1980,59 @@ mod tests {
             std::process::id(),
             nanos
         ))
+    }
+
+    fn spawn_chat_completion_server(
+        response_body: &'static str,
+    ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let (tx, rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = Vec::new();
+            let mut temp = [0_u8; 1024];
+            let mut header_end = None;
+            let mut content_length = 0_usize;
+
+            loop {
+                let read = stream.read(&mut temp).unwrap();
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&temp[..read]);
+                if header_end.is_none() {
+                    if let Some(pos) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+                        header_end = Some(pos + 4);
+                        let headers = String::from_utf8_lossy(&buffer[..pos]);
+                        content_length = headers
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().ok())
+                                    .flatten()
+                            })
+                            .unwrap_or(0);
+                    }
+                }
+                if let Some(end) = header_end {
+                    if buffer.len() >= end + content_length {
+                        break;
+                    }
+                }
+            }
+
+            tx.send(String::from_utf8_lossy(&buffer).to_string())
+                .unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                response_body.as_bytes().len(),
+                response_body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        (base_url, rx, handle)
     }
 
     #[test]
@@ -2104,6 +2350,109 @@ mod tests {
             chat_completions_url("https://x.com/v1/chat/completions"),
             "https://x.com/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn openai_api_base_normalizes_for_typed_client() {
+        assert_eq!(
+            openai_api_base("https://api.openai.com/v1"),
+            "https://api.openai.com/v1"
+        );
+        assert_eq!(
+            openai_api_base("https://x.com/v1/chat/completions"),
+            "https://x.com/v1"
+        );
+    }
+
+    #[test]
+    fn typed_chat_request_keeps_provider_fields_backend_only() {
+        let request =
+            build_openai_chat_request("hello", "reader-model", Some("system prompt"), true, 0.7)
+                .unwrap();
+        let json = serde_json::to_value(request).unwrap();
+
+        assert_eq!(json["model"], "reader-model");
+        assert_eq!(json["stream"], true);
+        assert!((json["temperature"].as_f64().unwrap() - 0.7).abs() < 0.0001);
+        assert_eq!(json["messages"][0]["role"], "system");
+        assert_eq!(json["messages"][0]["content"], "system prompt");
+        assert_eq!(json["messages"][1]["role"], "user");
+        assert_eq!(json["messages"][1]["content"], "hello");
+        assert!(json.get("provider").is_none());
+        assert!(json.get("baseUrl").is_none());
+        assert!(json.get("apiKey").is_none());
+    }
+
+    #[tokio::test]
+    async fn async_openai_streams_chunks_from_compatible_provider() {
+        let _guard = AI_TEST_LOCK.lock().await;
+        AI_CANCEL_FLAG.store(false, Ordering::Relaxed);
+        let response_body = concat!(
+            "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"reader-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"reader-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"},\"finish_reason\":null}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let (base_url, request_rx, server) = spawn_chat_completion_server(response_body);
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+        let mut chunks = Vec::new();
+
+        let full_text =
+            chat_completion_stream_typed("prompt text", &config, "secret-key", |piece| {
+                chunks.push(piece)
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(full_text, "Hello");
+        assert_eq!(chunks, vec!["Hel".to_string(), "lo".to_string()]);
+        let request = request_rx.recv().unwrap();
+        assert!(request.starts_with("POST /v1/chat/completions HTTP/1.1"));
+        assert!(request.contains("authorization: Bearer secret-key"));
+        let body = request.split("\r\n\r\n").nth(1).unwrap();
+        let json: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(json["model"], "reader-model");
+        assert_eq!(json["stream"], true);
+        assert!(json["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["content"] == "prompt text"));
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn compatibility_stream_honors_cancellation_before_chunks() {
+        let _guard = AI_TEST_LOCK.lock().await;
+        AI_CANCEL_FLAG.store(true, Ordering::Relaxed);
+        let response_body = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ignored\"}}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let (base_url, _request_rx, server) = spawn_chat_completion_server(response_body);
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+        let mut chunks = Vec::new();
+
+        let full_text =
+            chat_completion_stream_compat("prompt text", &config, "secret-key", |piece| {
+                chunks.push(piece)
+            })
+            .await
+            .unwrap();
+
+        assert!(full_text.is_empty());
+        assert!(chunks.is_empty());
+        AI_CANCEL_FLAG.store(false, Ordering::Relaxed);
+        server.join().unwrap();
     }
 
     #[test]

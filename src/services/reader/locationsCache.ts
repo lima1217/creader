@@ -1,6 +1,5 @@
 import type { EpubBookLike } from './epubAdapter';
-import { STORES } from '../Db';
-import { idbGet, idbPut } from '../idb';
+import { db } from '../DexieDb';
 
 export async function loadLocationsIfAvailable(book: EpubBookLike, bookId: string): Promise<boolean> {
   if (!book?.locations) return false;
@@ -8,7 +7,7 @@ export async function loadLocationsIfAvailable(book: EpubBookLike, bookId: strin
   const key = `locations:${bookId}`;
   const legacyKey = `creader-locations:${bookId}`;
 
-  const saved = await idbGet<string>(STORES.locations, key);
+  const saved = await db.locations.get(key) ?? null;
 
   const legacy = !saved ? localStorage.getItem(legacyKey) : null;
   const toLoad = saved ?? legacy;
@@ -42,7 +41,7 @@ export async function generateAndPersistLocations(book: EpubBookLike, bookId: st
   if (typeof book.locations.save !== 'function') return false;
   const serialized = book.locations.save();
   if (typeof serialized === 'string' && serialized.length > 0) {
-    await idbPut(STORES.locations, key, serialized);
+    await db.locations.put(serialized, key);
     localStorage.removeItem(legacyKey);
     return true;
   }
