@@ -5,6 +5,7 @@ import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { TabList, Tab } from '@astryxdesign/core/TabList';
 import { TextInput } from '@astryxdesign/core/TextInput';
+import { TextArea } from '@astryxdesign/core/TextArea';
 import { Field } from '@astryxdesign/core/Field';
 import { FieldStatus } from '@astryxdesign/core/FieldStatus';
 import { Switch } from '@astryxdesign/core/Switch';
@@ -463,37 +464,37 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 {activeSection === 'memory' && (
                     <div className="settings-section">
                         <div className="settings-section-title">阅读记忆</div>
-                    <div className="settings-field">
-                        <div className="settings-field-copy">
-                            <div className="settings-field-label">Markdown 仓库</div>
-                            <div className="settings-field-hint">
-                                AI 只在值得保留时写入知识页，后续可交给外部整理。
-                            </div>
-                        </div>
-                        <button className="settings-primary-action" onClick={chooseReadingMemory} disabled={!isTauri || isMemoryBusy}>
-                            {settings.readingMemoryPath ? '更换' : '选择'}
-                        </button>
-                    </div>
-                    {settings.readingMemoryPath && (
-                        <div className="settings-inline-path">
-                            <code>{settings.readingMemoryPath}</code>
-                            <button onClick={openReadingMemory}>打开</button>
-                        </div>
-                    )}
-                    <label className="settings-toggle-row">
-                        <span>
-                            <strong>自动沉淀</strong>
-                            <small>AI 判断有长期价值时，自动写入本地仓库。</small>
-                        </span>
-                        <span className="settings-switch">
-                            <input
-                                type="checkbox"
-                                checked={settings.readingMemoryAutoIngest}
-                                onChange={event => setSettings({ ...settings, readingMemoryAutoIngest: event.target.checked })}
+                    <Field
+                        inputID="settings-memory-path"
+                        label="Markdown 仓库"
+                        description="AI 只在值得保留时写入知识页，后续可交给外部整理。"
+                    >
+                        <div className="settings-memory-picker" id="settings-memory-path">
+                            <Button
+                                variant="primary"
+                                label={settings.readingMemoryPath ? '更换' : '选择'}
+                                onClick={chooseReadingMemory}
+                                isDisabled={!isTauri || isMemoryBusy}
                             />
-                            <span className="settings-switch-track" aria-hidden="true" />
-                        </span>
-                    </label>
+                            {settings.readingMemoryPath && (
+                                <span className="settings-inline-path">
+                                    <code>{settings.readingMemoryPath}</code>
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        label="打开"
+                                        onClick={openReadingMemory}
+                                    />
+                                </span>
+                            )}
+                        </div>
+                    </Field>
+                    <Switch
+                        label="自动沉淀"
+                        description="AI 判断有长期价值时，自动写入本地仓库。"
+                        value={settings.readingMemoryAutoIngest}
+                        onChange={checked => setSettings({ ...settings, readingMemoryAutoIngest: checked })}
+                    />
                     </div>
                 )}
 
@@ -502,10 +503,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         <div className="settings-section-title">快捷提示词</div>
                     <div className="settings-quick-actions">
                         <div className="settings-quick-list">
-                            <button className="settings-quick-add-main settings-restore-action" onClick={addQuickActionHandler}>
-                                <PlusIcon />
-                                <span>新增提示词</span>
-                            </button>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                label="新增提示词"
+                                icon={<PlusIcon />}
+                                onClick={addQuickActionHandler}
+                            />
                             {quickActionConfigs.length > 0 ? (
                                 quickActionConfigs.map(action => (
                                     <div
@@ -519,13 +523,14 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                             {renderQuickActionIcon(action.icon)}
                                             <span>{action.label}</span>
                                         </button>
-                                        <button
-                                            className="settings-quick-hide settings-danger-action"
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            isIconOnly
+                                            label={`隐藏 ${action.label}`}
+                                            icon={<CloseIcon />}
                                             onClick={() => hideQuickActionHandler(action.id)}
-                                            aria-label={`隐藏 ${action.label}`}
-                                        >
-                                            <CloseIcon />
-                                        </button>
+                                        />
                                     </div>
                                 ))
                             ) : (
@@ -536,14 +541,14 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                 <div className="settings-quick-restore">
                                     <div className="settings-section-title">恢复隐藏项</div>
                                     {missingDefaultQuickActions.map(action => (
-                                        <button
+                                        <Button
                                             key={action.id}
-                                            className="settings-quick-restore-btn settings-restore-action"
+                                            variant="secondary"
+                                            size="sm"
+                                            label={action.label}
+                                            icon={<PlusIcon />}
                                             onClick={() => restoreQuickActionHandler(action)}
-                                        >
-                                            <PlusIcon />
-                                            <span>{action.label}</span>
-                                        </button>
+                                        />
                                     ))}
                                 </div>
                             )}
@@ -551,42 +556,52 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
                         {editingActionId ? (
                             <div className="settings-quick-form">
-                                <label>
-                                    <span>按钮名称</span>
-                                    <input
+                                <Field inputID="settings-quick-label" label="按钮名称">
+                                    <TextInput
+                                        label="按钮名称"
+                                        isLabelHidden
                                         value={quickActionDraft.label}
-                                        onChange={(event) => setQuickActionDraft(draft => ({ ...draft, label: event.target.value }))}
+                                        onChange={value => setQuickActionDraft(draft => ({ ...draft, label: value }))}
                                         placeholder="按钮名称"
+                                        htmlName="settings-quick-label"
                                     />
-                                </label>
-                                <label>
-                                    <span>提示词</span>
-                                    <textarea
+                                </Field>
+                                <Field inputID="settings-quick-prompt" label="提示词">
+                                    <TextArea
+                                        label="提示词"
+                                        isLabelHidden
                                         value={quickActionDraft.prompt}
-                                        onChange={(event) => setQuickActionDraft(draft => ({ ...draft, prompt: event.target.value }))}
+                                        onChange={value => setQuickActionDraft(draft => ({ ...draft, prompt: value }))}
                                         placeholder="提示词"
                                         rows={7}
+                                        htmlName="settings-quick-prompt"
                                     />
-                                </label>
+                                </Field>
                                 <div className="settings-quick-actions-row">
-                                    <button className="settings-secondary-action settings-restore-action" onClick={resetQuickActionsHandler}>
-                                        恢复默认
-                                    </button>
-                                    <button
-                                        className="settings-primary-action"
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        label="恢复默认"
+                                        onClick={resetQuickActionsHandler}
+                                    />
+                                    <Button
+                                        variant="primary"
+                                        size="sm"
+                                        label="保存"
                                         onClick={saveQuickActionDraft}
-                                        disabled={!quickActionDraft.label.trim() || !quickActionDraft.prompt.trim()}
-                                    >
-                                        保存
-                                    </button>
+                                        isDisabled={!quickActionDraft.label.trim() || !quickActionDraft.prompt.trim()}
+                                    />
                                 </div>
                             </div>
                         ) : (
                             <div className="settings-quick-empty">
                                 <span>选择一个提示词按钮来编辑。</span>
-                                <button className="settings-secondary-action settings-restore-action" onClick={resetQuickActionsHandler}>
-                                    恢复默认
-                                </button>
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    label="恢复默认"
+                                    onClick={resetQuickActionsHandler}
+                                />
                             </div>
                         )}
                     </div>
