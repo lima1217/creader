@@ -1,4 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { AlertDialog } from '@astryxdesign/core/AlertDialog';
+import { ToastViewport, useToast } from '@astryxdesign/core/Toast';
 
 type ConfirmOptions = {
     title: string;
@@ -24,9 +26,23 @@ type DialogContextValue = {
 
 const AppDialogContext = createContext<DialogContextValue | null>(null);
 
+/**
+ * Global dialog + toast provider.
+ *
+ * `confirm()` shows a blocking Astryx AlertDialog (focus trap, Escape cancels,
+ * initial focus on the cancel button) and resolves with the user's choice —
+ * the Promise API is unchanged from the bespoke-overlay era so call sites need
+ * no edits.
+ *
+ * `notice()` shows a non-blocking Astryx toast (auto-dismiss for info, sticky
+ * for error) via `useToast`. It does not steal focus, matching the
+ * "non-blocking notices as toasts" intent. The Promise/void contract is
+ * preserved; no call-site edits required.
+ */
 export function AppDialogProvider({ children }: { children: React.ReactNode }) {
     const [dialog, setDialog] = useState<DialogState | null>(null);
     const resolverRef = useRef<((value: boolean) => void) | null>(null);
+    const toast = useToast();
 
     const close = useCallback((value: boolean) => {
         const resolve = resolverRef.current;
@@ -44,44 +60,40 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const notice = useCallback((options: NoticeOptions) => {
-        resolverRef.current?.(false);
-        resolverRef.current = null;
-        setDialog({ kind: 'notice', ...options });
-    }, []);
+        const body = options.title ? `${options.title}：${options.message}` : options.message;
+        toast({
+            body,
+            type: 'error',
+            // Error toasts stay until dismissed (Astryx default for error), so
+            // import failures are not missed while never blocking the reader.
+        });
+    }, [toast]);
 
     const value = useMemo(() => ({ confirm, notice }), [confirm, notice]);
+
+    const isOpen = dialog !== null;
+    const isConfirm = dialog?.kind === 'confirm';
+    const onAction = useCallback(() => {
+        close(isConfirm);
+    }, [close, isConfirm]);
 
     return (
         <AppDialogContext.Provider value={value}>
             {children}
-            {dialog && (
-                <div className="app-dialog-overlay" role="presentation" onMouseDown={() => close(false)}>
-                    <div
-                        className="app-dialog"
-                        role={dialog.kind === 'confirm' ? 'alertdialog' : 'dialog'}
-                        aria-modal="true"
-                        aria-labelledby="app-dialog-title"
-                        aria-describedby="app-dialog-message"
-                        onMouseDown={(event) => event.stopPropagation()}
-                    >
-                        <h2 id="app-dialog-title">{dialog.title}</h2>
-                        <p id="app-dialog-message">{dialog.message}</p>
-                        <div className="app-dialog-actions">
-                            {dialog.kind === 'confirm' && (
-                                <button className="btn btn-ghost" onClick={() => close(false)}>
-                                    {dialog.cancelLabel ?? '取消'}
-                                </button>
-                            )}
-                            <button
-                                className={`btn ${dialog.kind === 'confirm' && dialog.tone === 'danger' ? 'btn-danger' : 'btn-primary'}`}
-                                onClick={() => close(dialog.kind === 'confirm')}
-                            >
-                                {dialog.kind === 'confirm' ? (dialog.confirmLabel ?? '确认') : '知道了'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            {isConfirm && dialog && (
+                <AlertDialog
+                    isOpen={isOpen}
+                    onOpenChange={(open) => { if (!open) close(false); }}
+                    title={dialog.title}
+                    description={dialog.message}
+                    cancelLabel={dialog.cancelLabel ?? '取消'}
+                    actionLabel={dialog.confirmLabel ?? '确认'}
+                    actionVariant={dialog.tone === 'danger' ? 'destructive' : 'primary'}
+                    onAction={onAction}
+                    width={440}
+                />
             )}
+            <ToastViewport position="bottomEnd" maxVisible={3} />
         </AppDialogContext.Provider>
     );
 }

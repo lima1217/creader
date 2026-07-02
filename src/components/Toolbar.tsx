@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
 import { useLibrary, useSettings, useUI, useBookProgress } from '../stores/AppContext';
 import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
 import {
     MinusIcon,
     MoonIcon,
@@ -18,13 +18,11 @@ export function Toolbar() {
     const { currentBook } = useLibrary();
     const { bookProgressById } = useBookProgress();
     const { isSidebarOpen, setSidebarOpen, isAIPanelOpen, setAIPanelOpen, isSearchOpen, setSearchOpen } = useUI();
-    const [isThemeMenuOpen, setThemeMenuOpen] = useState(false);
-    const themeMenuRef = useRef<HTMLDivElement>(null);
 
     const displayProgress = currentBook ? (bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage ?? 0) : 0;
 
     const themes: Theme[] = ['light', 'dark'];
-    const themeIcons = {
+    const themeIcons: Record<Theme, React.ReactNode> = {
         light: <SunIcon />,
         dark: <MoonIcon />,
     };
@@ -36,29 +34,7 @@ export function Toolbar() {
 
     const selectTheme = (theme: Theme) => {
         setSettings({ ...settings, theme });
-        setThemeMenuOpen(false);
     };
-
-    useEffect(() => {
-        if (!isThemeMenuOpen) return;
-
-        const handlePointerDown = (event: PointerEvent) => {
-            if (themeMenuRef.current && !themeMenuRef.current.contains(event.target as Node)) {
-                setThemeMenuOpen(false);
-            }
-        };
-
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setThemeMenuOpen(false);
-        };
-
-        document.addEventListener('pointerdown', handlePointerDown);
-        document.addEventListener('keydown', handleKeyDown);
-        return () => {
-            document.removeEventListener('pointerdown', handlePointerDown);
-            document.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [isThemeMenuOpen]);
 
     const adjustFontSize = (delta: number) => {
         const newSize = Math.min(24, Math.max(12, settings.fontSize + delta));
@@ -117,35 +93,23 @@ export function Toolbar() {
                         <PlusIcon />
                     </button>
                     <span className="toolbar-group-divider" aria-hidden="true" />
-                    <div className="toolbar-theme-menu" ref={themeMenuRef}>
-                        <button
-                            className={`btn btn-secondary toolbar-action toolbar-theme-button ${isThemeMenuOpen ? 'active' : ''}`}
-                            onClick={() => setThemeMenuOpen(open => !open)}
-                            title={`主题：${themeLabels[settings.theme]}`}
-                            aria-label={`主题：${themeLabels[settings.theme]}`}
-                            aria-haspopup="menu"
-                            aria-expanded={isThemeMenuOpen}
-                        >
-                            {themeIcons[settings.theme]}
-                        </button>
-                        {isThemeMenuOpen && (
-                            <div className="toolbar-theme-dropdown" role="menu">
-                                {themes.map(theme => (
-                                    <button
-                                        key={theme}
-                                        type="button"
-                                        role="menuitemradio"
-                                        aria-checked={settings.theme === theme}
-                                        className={`toolbar-theme-option ${settings.theme === theme ? 'selected' : ''}`}
-                                        onClick={() => selectTheme(theme)}
-                                    >
-                                        {themeIcons[theme]}
-                                        <span>{themeLabels[theme]}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    <DropdownMenu
+                        button={{
+                            label: `主题：${themeLabels[settings.theme]}`,
+                            isIconOnly: true,
+                            icon: themeIcons[settings.theme],
+                            variant: 'secondary',
+                            className: 'toolbar-action toolbar-theme-button',
+                        }}
+                        hasChevron={false}
+                        placement="below"
+                        aria-label="主题"
+                        items={themes.map(theme => ({
+                            label: themeLabels[theme],
+                            icon: themeIcons[theme],
+                            onClick: () => selectTheme(theme),
+                        }))}
+                    />
                 </div>
             </div>
 
