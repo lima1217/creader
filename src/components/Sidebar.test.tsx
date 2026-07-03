@@ -1,10 +1,16 @@
-import { flushSync } from 'react-dom';
-import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Book, BookCategory, Library } from '../types';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useProgressStore } from '../stores/progressStore';
 import { useUIStore } from '../stores/uiStore';
+
+import {
+  click,
+  installIntersectionObserverStub,
+  mount,
+  setInputValue,
+  settle,
+} from './testUtils';
 
 /**
  * Sidebar contract tests — issue #24 (Astryx Phase 2 Sidebar prefactor).
@@ -15,10 +21,9 @@ import { useUIStore } from '../stores/uiStore';
  * they assert owned behavior (store interactions, modal open/close, category
  * filtering, click handlers, confirm gating), never Astryx internals.
  *
- * Test style follows the Phase 1 contract-mock precedent (`AppDialog.test.tsx`):
- * - mock the dialog/async deps so the surface is deterministic,
- * - drive stores via direct `setState` (the `uiStore.test.ts` pattern),
- * - assert on Sidebar-owned DOM text + the resulting store mutations.
+ * Test style follows the Phase 1 contract-mock precedent (`AppDialog.test.tsx`)
+ * via the shared harness in `./testUtils.tsx` (extracted in the #24 hardening
+ * so SelectionToolbar #25 and AIPanel #26 reuse it).
  *
  * We do NOT adopt @testing-library/react. DOM assertions are limited to the
  * selectors/text Sidebar itself owns; when Astryx swaps in the selectors will
@@ -27,50 +32,54 @@ import { useUIStore } from '../stores/uiStore';
  */
 
 // --- Mocks --------------------------------------------------------------
+//
+// vi.mock factories are hoisted ABOVE imports, so they cannot reference any
+// imported binding (TDZ at hoist time). We use vi.hoisted() to create the
+// confirm-state holder at hoist time and inline the mock bodies. The shared
+// helpers in ./testUtils (mount/settle/input) are read at runtime, not hoisted.
 
-// Confirm/notice calls captured here so tests can assert the dialog flow
-// without depending on Astryx's AlertDialog/Toast portal internals.
-const confirmCalls: Array<{ title: string; message: string }> = [];
-// What the next confirm() resolves to. Tests set this before triggering an
-// action that calls confirm() (delete book / delete category).
-let nextConfirmResult = true;
+const { getNextResult, setNextConfirmResult, resetConfirmState, getConfirmCalls, recordCall: hoistedRecordCall } = vi.hoisted(() => {
+  let nextResult = true;
+  const calls: Array<{ title: string; message: string }> = [];
+  return {
+    getNextResult: () => nextResult,
+    setNextConfirmResult: (v: boolean) => {
+      nextResult = v;
+    },
+    resetConfirmState: () => {
+      nextResult = true;
+      calls.length = 0;
+    },
+    getConfirmCalls: () => calls,
+    recordCall: (c: { title: string; message: string }) => {
+      calls.push(c);
+    },
+  };
+});
 
-// Mock the AppDialog module: provider is a passthrough, useAppDialog returns
-// controllable confirm/notice. This keeps the real Sidebar → useAppDialog()
-// wiring intact while removing the Astryx portal dependency.
 vi.mock('./AppDialog', () => ({
   AppDialogProvider: ({ children }: { children: React.ReactNode }) => children,
   useAppDialog: () => ({
     confirm: (opts: { title: string; message: string }) => {
-      confirmCalls.push(opts);
-      return Promise.resolve(nextConfirmResult);
+      // recordCall is exported from the same hoisted block; reference it via
+      // the closure (vi.hoisted returns are safe to use inside vi.mock bodies).
+      hoistedRecordCall(opts);
+      return Promise.resolve(getNextResult());
     },
     notice: () => {},
   }),
 }));
-
-// CoverStore touches IndexedDB and is invoked by the library store's
-// removeBook (deleteCover/revokeCoverUrl) and by LazyBookCover (getCoverUrl).
-// Keep the real module shape but neuter the async side effects so the chrome
-// contracts stay deterministic.
-vi.mock('../services/CoverStore', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../services/CoverStore')>();
-  return {
-    ...actual,
-    getCoverUrl: vi.fn().mockResolvedValue(null),
-    deleteCover: vi.fn().mockResolvedValue(undefined),
-    revokeCoverUrl: vi.fn(),
-  };
-});
-
-// The library store logs a warning when the (non-Tauri) book-file delete
-// fails — that's an environment artifact in jsdom, not a Sidebar contract.
-// Silence the logger so test output stays clean without hiding real failures.
+vi.mock('../services/CoverStore', () => ({
+  getCoverUrl: () => Promise.resolve(null),
+  deleteCover: () => Promise.resolve(undefined),
+  revokeCoverUrl: () => {},
+  setCoverUrl: () => {},
+  setCoverData: () => {},
+}));
 vi.mock('../utils/logger', () => ({
   createLogger: () => ({ debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }),
 }));
 
-// Imported AFTER mock declarations so they pick up the mocks.
 import { Sidebar } from './Sidebar';
 
 // --- Fixtures ------------------------------------------------------------
@@ -92,72 +101,54 @@ function makeCategory(overrides: Partial<BookCategory> = {}): BookCategory {
   return { id: 'cat1', name: 'Reading', color: '#ff0000', createdAt: 1, ...overrides };
 }
 
+/**
+ * Seed the library via the store's own setLibrary path (not raw setState): the
+ * library store keeps a module-level `latestLibrary` mirror (updated via
+ * syncLibrary) that mutators like updateBook/setBookCategory read through
+ * getLatestLibrary(). setLibrary keeps both in sync; a raw setState would leave
+ * latestLibrary stale and silently drop mutations.
+ */
 function seedLibrary(library: Library, currentBook: Book | null = null) {
-  // Use the store's own setLibrary path rather than setState: the library
-  // store keeps a module-level `latestLibrary` mirror (updated via syncLibrary)
-  // that mutators like updateBook/setBookCategory read through
-  // getLatestLibrary(). setLibrary keeps both in sync; a raw setState would
-  // leave latestLibrary stale and silently drop mutations.
   useLibraryStore.getState().setLibrary(library);
   useLibraryStore.getState().setCurrentBook(currentBook);
 }
 
-// --- Harness -------------------------------------------------------------
-
-function mountSidebar(handlers: {
+interface Handlers {
   onImportBook?: () => void;
   onOpenSettings?: () => void;
   onPreloadReader?: () => Promise<unknown>;
-} = {}): { container: HTMLElement; root: Root } {
-  const container = document.createElement('div');
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  roots.push(root);
-  flushSync(() => {
-    root.render(
-      <Sidebar
-        onImportBook={handlers.onImportBook ?? (() => {})}
-        onOpenSettings={handlers.onOpenSettings ?? (() => {})}
-        onPreloadReader={handlers.onPreloadReader ?? (() => Promise.resolve())}
-      />,
-    );
-  });
-  return { container, root };
 }
 
-async function settle() {
-  await new Promise((r) => setTimeout(r, 0));
-  flushSync(() => {});
+function mountSidebar(handlers: Handlers = {}) {
+  return mount(
+    <Sidebar
+      onImportBook={handlers.onImportBook ?? (() => {})}
+      onOpenSettings={handlers.onOpenSettings ?? (() => {})}
+      onPreloadReader={handlers.onPreloadReader ?? (() => Promise.resolve())}
+    />,
+  );
 }
 
-// Set a value on a React-controlled input so onChange fires (React 18 reads
-// from the native value setter, not the property, for controlled inputs).
-function setInputValue(element: Element, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-  setter?.call(element, value);
-  element.dispatchEvent(new Event('input', { bubbles: true }));
+// Expand the tags section so category children render, then return the child
+// node matching the given name. The click is async (React re-render), so the
+// caller awaits this and searches after the settle.
+async function expandTagsAndFindChild(container: HTMLElement, name: string): Promise<HTMLElement> {
+  const tagsToggle = Array.from(container.querySelectorAll('[role="button"]')).find(
+    (el) => el.querySelector('.category-filter-name')?.textContent === '标签',
+  ) as HTMLElement;
+  click(tagsToggle);
+  await settle();
+  const child = Array.from(container.querySelectorAll('.category-child-item .category-filter-name')).find(
+    (el) => el.textContent === name,
+  ) as HTMLElement | undefined;
+  return child!.closest('.category-child-item') as HTMLElement;
 }
 
-// --- Setup / cleanup -----------------------------------------------------
-
-const roots: Root[] = [];
+// --- Setup ---------------------------------------------------------------
 
 beforeEach(() => {
-  // jsdom does not provide IntersectionObserver; LazyBookCover uses it only
-  // to lazy-load covers (an IndexedDB concern, mocked above). The stub makes
-  // elements immediately "visible" so the cover path resolves; it does not
-  // affect any Sidebar chrome contract under test.
-  class IO {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-    takeRecords() {
-      return [];
-    }
-  }
-  (window as unknown as { IntersectionObserver: unknown }).IntersectionObserver = IO;
-  confirmCalls.length = 0;
-  nextConfirmResult = true;
+  installIntersectionObserverStub();
+  resetConfirmState();
   useLibraryStore.setState({
     library: { books: [], categories: [], lastUpdated: 1 },
     currentBook: null,
@@ -166,21 +157,9 @@ beforeEach(() => {
   useUIStore.setState({ isSidebarOpen: true, isAIPanelOpen: false, isSearchOpen: false });
 });
 
-afterEach(() => {
-  while (roots.length) {
-    const r = roots.pop()!;
-    try {
-      flushSync(() => r.unmount());
-    } catch {
-      /* ignore */
-    }
-  }
-  document.body.innerHTML = '';
-});
-
 // --- Tests ---------------------------------------------------------------
 
-describe('Sidebar contract', () => {
+describe('Sidebar contract — rendering', () => {
   it('renders nothing when the sidebar is closed', () => {
     useUIStore.setState({ isSidebarOpen: false, isAIPanelOpen: false, isSearchOpen: false });
     const { container } = mountSidebar();
@@ -210,84 +189,112 @@ describe('Sidebar contract', () => {
     const other = makeBook({ id: 'b2', title: 'Other' });
     seedLibrary({ books: [book, other], categories: [], lastUpdated: 1 }, book);
     const { container } = mountSidebar();
-
     const activeItem = container.querySelector('.book-item.active') as HTMLElement | null;
     expect(activeItem).not.toBeNull();
     expect(activeItem!.textContent).toContain('Active');
   });
+});
 
+describe('Sidebar contract — book interactions', () => {
   it('calls setCurrentBook when a book item is clicked', async () => {
     const book = makeBook({ id: 'b1', title: 'Click Me' });
     seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-
     expect(useLibraryStore.getState().currentBook).toBeNull();
-
-    const bookItem = container.querySelector('.book-item') as HTMLElement;
-    bookItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    click(container.querySelector('.book-item')!);
     await settle();
-
     expect(useLibraryStore.getState().currentBook?.id).toBe('b1');
   });
 
+  it('removes a book when the delete confirm is accepted', async () => {
+    setNextConfirmResult(true);
+    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Delete Me' })], categories: [], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    click(container.querySelector('.book-delete')!);
+    await settle();
+    expect(useLibraryStore.getState().library.books).toHaveLength(0);
+    expect(getConfirmCalls()).toHaveLength(1);
+  });
+
+  it('keeps the book when the delete confirm is cancelled', async () => {
+    setNextConfirmResult(false);
+    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Keep Me' })], categories: [], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    click(container.querySelector('.book-delete')!);
+    await settle();
+    expect(useLibraryStore.getState().library.books).toHaveLength(1);
+  });
+
+  it('invokes onImportBook when the empty-state import button is clicked', () => {
+    const onImportBook = vi.fn();
+    seedLibrary({ books: [], categories: [], lastUpdated: 1 });
+    const { container } = mountSidebar({ onImportBook });
+    const importBtn = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent?.includes('导入书籍'),
+    ) as HTMLButtonElement;
+    click(importBtn);
+    expect(onImportBook).toHaveBeenCalledTimes(1);
+  });
+
+  it('invokes onImportBook when the header import button is clicked', () => {
+    const onImportBook = vi.fn();
+    seedLibrary({ books: [makeBook()], categories: [], lastUpdated: 1 });
+    const { container } = mountSidebar({ onImportBook });
+    const importBtn = container.querySelector('[title="导入 EPUB"]') as HTMLButtonElement;
+    click(importBtn);
+    expect(onImportBook).toHaveBeenCalledTimes(1);
+  });
+
+  it('invokes onOpenSettings when the settings footer button is clicked', () => {
+    const onOpenSettings = vi.fn();
+    seedLibrary({ books: [makeBook()], categories: [], lastUpdated: 1 });
+    const { container } = mountSidebar({ onOpenSettings });
+    const settingsBtn = container.querySelector('.sidebar-settings-btn') as HTMLButtonElement;
+    click(settingsBtn);
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Sidebar contract — category nav', () => {
   it('filters the book list when a category is selected', async () => {
     const cat = makeCategory({ id: 'cat1', name: 'Reading' });
     const inCat = makeBook({ id: 'b1', title: 'In Category', categoryId: 'cat1' });
     const outCat = makeBook({ id: 'b2', title: 'Outside' });
     seedLibrary({ books: [inCat, outCat], categories: [cat], lastUpdated: 1 });
     const { container } = mountSidebar();
-
-    // Both render with no filter selected.
     expect(container.textContent).toContain('In Category');
     expect(container.textContent).toContain('Outside');
 
-    // The category nav is collapsed under the "标签" toggle; expand it first,
-    // then click the category child item whose name matches.
-    const tagsToggle = Array.from(container.querySelectorAll('[role="button"]')).find(
-      (el) => el.querySelector('.category-filter-name')?.textContent === '标签',
-    ) as HTMLElement;
-    tagsToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await settle();
-
-    // Category child items render inside .category-children. The child's name
-    // span disambiguates from the nested edit/delete action labels.
-    const readingChild = Array.from(
-      container.querySelectorAll('.category-child-item .category-filter-name'),
-    ).find((el) => el.textContent === 'Reading') as HTMLElement | undefined;
-    expect(readingChild, 'category child should render after expanding tags').toBeDefined();
-    readingChild!.closest('.category-child-item')!.dispatchEvent(
-      new MouseEvent('click', { bubbles: true }),
-    );
+    const readingChild = await expandTagsAndFindChild(container, 'Reading');
+    click(readingChild);
     await settle();
 
     expect(container.textContent).toContain('In Category');
     expect(container.textContent).not.toContain('Outside');
   });
+});
 
-  it('opens the edit-book modal and commits the edited title/author on save', async () => {
+describe('Sidebar contract — edit-book modal', () => {
+  it('opens from the edit action and commits the edited title/author on save', async () => {
     const book = makeBook({ id: 'b1', title: 'Old Title', author: 'Old Author' });
     seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-
     expect(container.querySelector('.modal-edit')).toBeNull();
 
-    const editBtn = container.querySelector('.book-edit') as HTMLButtonElement;
-    editBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    click(container.querySelector('.book-edit')!);
     await settle();
 
     const modal = container.querySelector('.modal-edit') as HTMLElement;
-    expect(modal).not.toBeNull();
     const inputs = modal.querySelectorAll('input');
     expect((inputs[0] as HTMLInputElement).value).toBe('Old Title');
     expect((inputs[1] as HTMLInputElement).value).toBe('Old Author');
 
     setInputValue(inputs[0], 'New Title');
     setInputValue(inputs[1], 'New Author');
-
     const saveBtn = Array.from(modal.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === '保存',
-    ) as HTMLButtonElement;
-    saveBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    )!;
+    click(saveBtn);
     await settle();
 
     const updated = useLibraryStore.getState().library.books[0];
@@ -296,108 +303,190 @@ describe('Sidebar contract', () => {
     expect(container.querySelector('.modal-edit')).toBeNull();
   });
 
-  it('cancels the edit-book modal without mutating the store', async () => {
+  it('closes without mutating the store when the cancel button is clicked', async () => {
     const book = makeBook({ id: 'b1', title: 'Keep' });
     seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-
-    (container.querySelector('.book-edit') as HTMLButtonElement).dispatchEvent(
-      new MouseEvent('click', { bubbles: true }),
-    );
+    click(container.querySelector('.book-edit')!);
     await settle();
 
     const modal = container.querySelector('.modal-edit') as HTMLElement;
     setInputValue(modal.querySelectorAll('input')[0], 'Changed');
-    const cancelBtn = Array.from(modal.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === '取消',
-    ) as HTMLButtonElement;
-    cancelBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    click(Array.from(modal.querySelectorAll('button')).find((b) => b.textContent?.trim() === '取消')!);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].title).toBe('Keep');
     expect(container.querySelector('.modal-edit')).toBeNull();
   });
 
-  it('disables the category create button when the name is empty and creates when filled', async () => {
+  it('closes without mutating the store when the overlay is clicked', async () => {
+    const book = makeBook({ id: 'b1', title: 'Keep' });
+    seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    click(container.querySelector('.book-edit')!);
+    await settle();
+
+    const overlay = container.querySelector('.modal-overlay') as HTMLElement;
+    click(overlay);
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0].title).toBe('Keep');
+    expect(container.querySelector('.modal-edit')).toBeNull();
+  });
+
+  it('submits on Enter and cancels on Escape while focused in an input', async () => {
+    const book = makeBook({ id: 'b1', title: 'Old' });
+    seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    click(container.querySelector('.book-edit')!);
+    await settle();
+
+    const modal = container.querySelector('.modal-edit') as HTMLElement;
+    const titleInput = modal.querySelectorAll('input')[0];
+    setInputValue(titleInput, 'Via Enter');
+    titleInput.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0].title).toBe('Via Enter');
+    expect(container.querySelector('.modal-edit')).toBeNull();
+  });
+});
+
+describe('Sidebar contract — category modal (add + edit)', () => {
+  it('disables the create button when the name is empty and creates (name + color) when filled', async () => {
     seedLibrary({ books: [], categories: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-
     expect(container.querySelector('.modal-category')).toBeNull();
 
-    const addCatBtn = Array.from(container.querySelectorAll('button')).find(
-      (b) => b.getAttribute('title') === '新增标签',
-    ) as HTMLButtonElement;
-    addCatBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    click(container.querySelector('[title="新增标签"]')!);
     await settle();
 
     const modal = container.querySelector('.modal-category') as HTMLElement;
-    expect(modal).not.toBeNull();
     const nameInput = modal.querySelector('#category-name') as HTMLInputElement;
     const createBtn = Array.from(modal.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === '创建',
-    ) as HTMLButtonElement;
-
+    )!;
     expect(createBtn.disabled).toBe(true);
 
     setInputValue(nameInput, 'Favorites');
     expect(createBtn.disabled).toBe(false);
-    createBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    // Pick a specific color option so we can assert it landed in the store.
+    const colorOptions = modal.querySelectorAll('.color-option');
+    const chosen = colorOptions[1] as HTMLElement;
+    click(chosen);
+    const chosenColor = (chosen as HTMLElement).style.backgroundColor;
+    click(createBtn);
     await settle();
 
-    const cats = useLibraryStore.getState().library.categories;
-    expect(cats).toHaveLength(1);
-    expect(cats[0].name).toBe('Favorites');
+    const cat = useLibraryStore.getState().library.categories[0];
+    expect(cat.name).toBe('Favorites');
+    expect(cat.color).toBeDefined();
+    // The color-option buttons carry the chosen color as inline background.
+    expect(chosenColor).not.toBe('');
     expect(container.querySelector('.modal-category')).toBeNull();
   });
 
-  it('assigns a category to a book via the assign-category modal', async () => {
+  it('opens the edit-category modal pre-filled and commits the rename', async () => {
+    const cat = makeCategory({ id: 'cat1', name: 'Old Name', color: '#00ff00' });
+    seedLibrary({ books: [], categories: [cat], lastUpdated: 1 });
+    const { container } = mountSidebar();
+
+    // Expand tags, then click the category's edit action.
+    const editBtn = (await expandTagsAndFindChild(container, 'Old Name')).querySelector(
+      '[title="编辑分类"]',
+    )!;
+    click(editBtn);
+    await settle();
+
+    const modal = container.querySelector('.modal-category') as HTMLElement;
+    const nameInput = modal.querySelector('#category-name') as HTMLInputElement;
+    expect(nameInput.value).toBe('Old Name');
+    // The confirm button reads 保存 (not 创建) in edit mode.
+    const saveBtn = Array.from(modal.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === '保存',
+    )!;
+
+    setInputValue(nameInput, 'New Name');
+    click(saveBtn);
+    await settle();
+
+    const updated = useLibraryStore.getState().library.categories[0];
+    expect(updated.name).toBe('New Name');
+    // Color is preserved when only the name changed.
+    expect(updated.color).toBe('#00ff00');
+    expect(container.querySelector('.modal-category')).toBeNull();
+  });
+
+  it('closes when the overlay is clicked without creating a category', async () => {
+    seedLibrary({ books: [], categories: [], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    click(container.querySelector('[title="新增标签"]')!);
+    await settle();
+
+    click(container.querySelector('.modal-overlay')!);
+    await settle();
+
+    expect(container.querySelector('.modal-category')).toBeNull();
+    expect(useLibraryStore.getState().library.categories).toHaveLength(0);
+  });
+});
+
+describe('Sidebar contract — assign-category modal', () => {
+  it('assigns a category to a book and closes', async () => {
     const cat = makeCategory({ id: 'cat1', name: 'Reading' });
     const book = makeBook({ id: 'b1', title: 'Uncategorized' });
     seedLibrary({ books: [book], categories: [cat], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    (container.querySelector('.book-action-btn') as HTMLButtonElement).dispatchEvent(
-      new MouseEvent('click', { bubbles: true }),
-    );
+    click(container.querySelector('.book-action-btn')!);
     await settle();
 
     const modal = container.querySelector('.modal-assign-category') as HTMLElement;
-    expect(modal).not.toBeNull();
-
     const catOption = Array.from(modal.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === 'Reading',
-    ) as HTMLButtonElement;
-    catOption.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    )!;
+    click(catOption);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].categoryId).toBe('cat1');
     expect(container.querySelector('.modal-assign-category')).toBeNull();
   });
 
-  it('removes a book when the delete confirm is accepted', async () => {
-    nextConfirmResult = true;
-    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Delete Me' })], categories: [], lastUpdated: 1 });
+  it('clears the book category when "不分类" is selected', async () => {
+    const cat = makeCategory({ id: 'cat1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Categorized', categoryId: 'cat1' });
+    seedLibrary({ books: [book], categories: [cat], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    (container.querySelector('.book-delete') as HTMLButtonElement).dispatchEvent(
-      new MouseEvent('click', { bubbles: true }),
-    );
+    click(container.querySelector('.book-action-btn')!);
     await settle();
 
-    expect(useLibraryStore.getState().library.books).toHaveLength(0);
-    expect(confirmCalls).toHaveLength(1);
+    const modal = container.querySelector('.modal-assign-category') as HTMLElement;
+    const uncatOption = Array.from(modal.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === '不分类',
+    )!;
+    click(uncatOption);
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0].categoryId).toBeUndefined();
+    expect(container.querySelector('.modal-assign-category')).toBeNull();
   });
 
-  it('keeps the book when the delete confirm is cancelled', async () => {
-    nextConfirmResult = false;
-    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Keep Me' })], categories: [], lastUpdated: 1 });
+  it('closes without changing the book when the overlay is clicked', async () => {
+    const cat = makeCategory({ id: 'cat1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Original', categoryId: 'cat1' });
+    seedLibrary({ books: [book], categories: [cat], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    (container.querySelector('.book-delete') as HTMLButtonElement).dispatchEvent(
-      new MouseEvent('click', { bubbles: true }),
-    );
+    click(container.querySelector('.book-action-btn')!);
     await settle();
 
-    expect(useLibraryStore.getState().library.books).toHaveLength(1);
+    click(container.querySelector('.modal-overlay')!);
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0].categoryId).toBe('cat1');
+    expect(container.querySelector('.modal-assign-category')).toBeNull();
   });
 });
