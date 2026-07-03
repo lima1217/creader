@@ -1,19 +1,46 @@
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
 import type { Book as EpubBook, Rendition } from 'epubjs';
-import ePub from 'epubjs';
 import { readFile } from '@tauri-apps/plugin-fs';
 import type { Settings, Book, NavItem } from '../../types';
 import type { EpubBookLike } from '../../services/reader/epubAdapter';
 import { generateAndPersistLocations, loadLocationsIfAvailable } from '../../services/reader/locationsCache';
 import { setupEpubFontSanitizer } from './epubFontSanitizer';
 import { applyEpubTheme } from './epubTheme';
+import { epubjsEngineAdapter } from '../../services/reader/epubjsEngine';
+import { foliateEngineAdapter } from '../../services/reader/foliateEngine';
+import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
 import { createLogger } from '../../utils/logger';
 import { isNotFoundErrorMessage, toUserMessage } from '../../utils/errors';
 import { perfSpan } from '../../utils/perf';
 import { uint8ArrayToArrayBuffer } from '../../utils/arrayBuffer';
 
 const logger = createLogger('useEpubBookLifecycle');
+
+/**
+ * Open the book through the reader-engine adapter layer.
+ *
+ * Per the design doc (`docs/reading-engine-adapter.md`) foliate-js is the
+ * preferred engine; if it fails to open the book we fall back to the epubjs
+ * adapter so reading still works and scripted-EPUB "safe mode" remains
+ * meaningful as a fallback path.
+ */
+async function openReader(
+  appBook: Book,
+  arrayBuffer: ArrayBuffer,
+  container: HTMLElement,
+  scriptsEnabled: boolean,
+): Promise<ReadingEngineInstance> {
+  try {
+    return await foliateEngineAdapter.open({ appBook, arrayBuffer, container, scriptsEnabled });
+  } catch (err) {
+    logger.warn('foliate failed to open the book, falling back to epubjs:', err);
+    // foliate may have inserted a <foliate-view> before failing — clear it so
+    // the epubjs adapter renders into a clean container.
+    container.replaceChildren();
+    return epubjsEngineAdapter.open({ appBook, arrayBuffer, container, scriptsEnabled });
+  }
+}
 
 export function useEpubBookLifecycle(params: {
   currentBook: Book | null;
@@ -53,6 +80,7 @@ export function useEpubBookLifecycle(params: {
 
     let cancelled = false;
     let fontSanitizerCleanup: (() => void) | null = null;
+    let engineInstance: ReadingEngineInstance | null = null;
 
     const loadBook = async () => {
       setIsLoading(true);
@@ -63,14 +91,13 @@ export function useEpubBookLifecycle(params: {
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       if (cancelled) return;
 
-      if (bookRef.current) {
-        bookRef.current.destroy();
-        bookRef.current = null;
+      if (engineInstance) {
+        engineInstance.destroy();
+        engineInstance = null;
       }
-      if (renditionRef.current) {
-        renditionRef.current = null;
-      }
+      renditionRef.current = null;
       bookLikeRef.current = null;
+      bookRef.current = null;
 
       try {
         epubScriptsAllowedRef.current = scriptsEnabled;
@@ -80,47 +107,34 @@ export function useEpubBookLifecycle(params: {
 
         const arrayBuffer = uint8ArrayToArrayBuffer(fileData);
 
-        const book = await perfSpan('epub:parse', async () => {
-          const parsed = ePub(arrayBuffer) as unknown as EpubBook;
-          await (parsed as any).ready;
-          return parsed;
-        });
+        const container = containerRef.current;
+        if (!container || cancelled) return;
 
-        bookRef.current = book;
-
-        const bookAny = book as unknown as EpubBookLike;
-        bookLikeRef.current = bookAny;
-
-        const navigation = bookAny.navigation;
-        if (navigation && navigation.toc) {
-          const navItems: NavItem[] = navigation.toc.map((item: { id: string; href: string; label: string; subitems?: { id: string; href: string; label: string }[] }) => ({
-            id: item.id,
-            href: item.href,
-            label: item.label,
-            subitems: item.subitems?.map((sub: { id: string; href: string; label: string }) => ({
-              id: sub.id,
-              href: sub.href,
-              label: sub.label,
-            })),
-          }));
-          setToc(navItems);
+        engineInstance = await perfSpan('epub:open', async () =>
+          openReader(currentBook, arrayBuffer, container, scriptsEnabled),
+        );
+        if (cancelled) {
+          engineInstance.destroy();
+          engineInstance = null;
+          return;
         }
 
-        const container = containerRef.current;
-        if (!container) return;
-
-        const rendition = (book as any).renderTo(container, {
-          width: '100%',
-          height: '100%',
-          spread: 'none',
-          flow: 'paginated',
-          allowScriptedContent: scriptsEnabled,
-          sandbox: scriptsEnabled ? ['allow-same-origin', 'allow-scripts'] : ['allow-same-origin'],
-        }) as Rendition;
-
+        const { rendition, bookLike, toc } = engineInstance;
         renditionRef.current = rendition;
+        bookLikeRef.current = bookLike;
+        // The epubjs `Book` isn't surfaced by every adapter; keep a destroyable
+        // handle on `bookRef` so existing teardown paths still work for both
+        // engines. The only consumer of this ref is the lifecycle itself.
+        bookRef.current = { destroy: () => engineInstance?.destroy() } as unknown as EpubBook;
+
+        setToc(toc);
         if (onRenditionCreated) onRenditionCreated(rendition);
-        fontSanitizerCleanup = setupEpubFontSanitizer(rendition, bookAny);
+
+        // The font sanitizer hooks epubjs spine/content lifecycle; foliate uses
+        // a different loader model with no epubjs hooks, so it stays epubjs-only.
+        if (engineInstance.name === 'epubjs') {
+          fontSanitizerCleanup = setupEpubFontSanitizer(rendition, bookLike);
+        }
 
         applyEpubTheme(rendition, {
           theme: settings.theme,
@@ -129,34 +143,41 @@ export function useEpubBookLifecycle(params: {
           lineHeight: settings.lineHeight,
         });
 
-        if (currentBook.progress.currentCfi) {
-          await perfSpan('epub:firstDisplay', async () => rendition.display(currentBook.progress.currentCfi));
-        } else {
-          await perfSpan('epub:firstDisplay', async () => rendition.display());
-        }
+        const startTarget = currentBook.progress.currentCfi || undefined;
+        await perfSpan('epub:firstDisplay', async () => rendition.display(startTarget));
 
         setIsLoading(false);
 
         // Locations improve percentage accuracy but are not needed to show the
-        // requested chapter. Restore/generate them only after the first page is visible.
-        const restoreLocations = async () => {
-          try {
-            const loaded = await perfSpan('epub:locations:load', async () => loadLocationsIfAvailable(bookAny, currentBook.id));
-            if (cancelled) return;
-            if (loaded) {
-              onLocationsResolved?.(true);
-              return;
+        // requested chapter. Restore/generate them only after the first page is
+        // visible — and only for epubjs, which reports `locationsAvailable:
+        // false`. foliate reports progress from its own section fraction and
+        // already declares `locationsAvailable: true`, so there is nothing to
+        // generate.
+        if (engineInstance.name === 'epubjs' && !engineInstance.locationsAvailable) {
+          const restoreLocations = async () => {
+            try {
+              const loaded = await perfSpan('epub:locations:load', async () => loadLocationsIfAvailable(bookLike, currentBook.id));
+              if (cancelled) return;
+              if (loaded) {
+                onLocationsResolved?.(true);
+                return;
+              }
+              await new Promise<void>((resolve) => setTimeout(resolve, 400));
+              if (cancelled) return;
+              const generated = await perfSpan('epub:locations:generate', async () => generateAndPersistLocations(bookLike, currentBook.id));
+              if (!cancelled) onLocationsResolved?.(generated);
+            } catch (locErr) {
+              logger.warn('Failed to restore locations, progress may be inaccurate:', locErr);
+              if (!cancelled) onLocationsResolved?.(false);
             }
-            await new Promise<void>((resolve) => setTimeout(resolve, 400));
-            if (cancelled) return;
-            const generated = await perfSpan('epub:locations:generate', async () => generateAndPersistLocations(bookAny, currentBook.id));
-            if (!cancelled) onLocationsResolved?.(generated);
-          } catch (locErr) {
-            logger.warn('Failed to restore locations, progress may be inaccurate:', locErr);
-            if (!cancelled) onLocationsResolved?.(false);
-          }
-        };
-        void restoreLocations();
+          };
+          void restoreLocations();
+        } else {
+          // foliate (or any engine that supplies its own progress) is ready
+          // immediately.
+          onLocationsResolved?.(true);
+        }
       } catch (err) {
         logger.error('Failed to load book:', err);
         if (!cancelled) {
@@ -177,12 +198,13 @@ export function useEpubBookLifecycle(params: {
         fontSanitizerCleanup();
         fontSanitizerCleanup = null;
       }
-      if (bookRef.current) {
-        bookRef.current.destroy();
-        bookRef.current = null;
+      if (engineInstance) {
+        engineInstance.destroy();
+        engineInstance = null;
       }
       renditionRef.current = null;
       bookLikeRef.current = null;
+      bookRef.current = null;
     };
   }, [currentBook?.id, currentBook?.filePath, scriptsEnabled]);
 }

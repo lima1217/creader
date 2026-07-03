@@ -16,6 +16,12 @@ export default defineConfig(async () => ({
 
   build: {
     rollupOptions: {
+      // foliate-js is written for native ES-module consumption (it uses
+      // `import.meta.url` + relative glob imports in pdf.js) and does not
+      // survive rollup's commonjs/glob transform. It is loaded at runtime
+      // via the dynamic `import('foliate-js/view.js')` in foliateEngine.ts,
+      // so externalize it here rather than bundling it.
+      external: ['foliate-js/view.js'],
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return;

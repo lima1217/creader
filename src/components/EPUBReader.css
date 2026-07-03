@@ -25,6 +25,21 @@
     background: var(--bg-reader) !important;
 }
 
+/* foliate-js engine: the `<foliate-view>` custom element fills the reader
+   container and hosts its own iframes. It must not collapse, inherit the
+   reader surface color, and stay clipped to the padded reader-content box. */
+.foliate-reader-view {
+    display: block;
+    width: 100%;
+    height: 100%;
+    color: var(--text-primary);
+    background: var(--bg-reader);
+}
+
+.foliate-reader-view::part(container) {
+    background: var(--bg-reader);
+}
+
 /* Empty and error states */
 .reader-empty {
     flex: 1;

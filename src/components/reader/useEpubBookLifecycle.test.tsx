@@ -3,8 +3,9 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Book as EpubBook, Rendition } from 'epubjs';
-import type { Book } from '../../types';
+import type { Book, NavItem } from '../../types';
 import type { EpubBookLike } from '../../services/reader/epubAdapter';
+import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
 import { useEpubBookLifecycle } from './useEpubBookLifecycle';
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +16,14 @@ const mocks = vi.hoisted(() => ({
   destroy: vi.fn(),
 }));
 
+// The lifecycle now drives everything through the engine adapters. Mock both
+// adapters so the test exercises the lifecycle orchestration (preferred →
+// fallback, gating of font sanitizer + locations) without a real reader.
+const adapterMocks = vi.hoisted(() => ({
+  foliateOpen: vi.fn(),
+  epubjsOpen: vi.fn(),
+}));
+
 vi.mock('@tauri-apps/plugin-fs', () => ({ readFile: mocks.readFile }));
 vi.mock('../../services/reader/locationsCache', () => ({
   loadLocationsIfAvailable: mocks.loadLocations,
@@ -23,14 +32,11 @@ vi.mock('../../services/reader/locationsCache', () => ({
 vi.mock('./epubFontSanitizer', () => ({ setupEpubFontSanitizer: () => () => {} }));
 vi.mock('./epubTheme', () => ({ applyEpubTheme: vi.fn() }));
 vi.mock('../../utils/perf', () => ({ perfSpan: (_name: string, fn: () => Promise<unknown>) => fn() }));
-vi.mock('epubjs', () => ({
-  default: () => ({
-    ready: Promise.resolve(),
-    navigation: { toc: [] },
-    locations: {},
-    renderTo: () => ({ display: mocks.display }),
-    destroy: mocks.destroy,
-  }),
+vi.mock('../../services/reader/foliateEngine', () => ({
+  foliateEngineAdapter: { open: adapterMocks.foliateOpen },
+}));
+vi.mock('../../services/reader/epubjsEngine', () => ({
+  epubjsEngineAdapter: { open: adapterMocks.epubjsOpen },
 }));
 
 const book: Book = {
@@ -41,6 +47,18 @@ const book: Book = {
   addedAt: 1,
   progress: { currentCfi: '', percentage: 0 },
 };
+
+function epubjsInstance(): ReadingEngineInstance {
+  const rendition = { display: mocks.display } as unknown as ReadingEngineInstance['rendition'];
+  return {
+    name: 'epubjs',
+    rendition,
+    bookLike: {} as EpubBookLike,
+    toc: [] as NavItem[],
+    locationsAvailable: false,
+    destroy: mocks.destroy,
+  };
+}
 
 function Harness({
   onLoadingChange,
@@ -98,9 +116,49 @@ describe('useEpubBookLifecycle opening critical path', () => {
     vi.clearAllMocks();
     mocks.readFile.mockResolvedValue(new Uint8Array([1, 2, 3]));
     mocks.loadLocations.mockResolvedValue(true);
+    // By default foliate opens successfully and is the preferred engine.
+    adapterMocks.foliateOpen.mockResolvedValue({
+      name: 'foliate',
+      rendition: { display: mocks.display },
+      bookLike: {},
+      toc: [],
+      locationsAvailable: true,
+      destroy: mocks.destroy,
+    });
+    adapterMocks.epubjsOpen.mockResolvedValue(epubjsInstance());
   });
 
-  it('shows the first page before restoring cached locations', async () => {
+  it('falls back to epubjs when foliate fails to open the book', async () => {
+    adapterMocks.foliateOpen.mockRejectedValue(new Error('foliate boom'));
+
+    mocks.display.mockResolvedValue(undefined);
+    const onLocationsResolved = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    flushSync(() => root.render(
+      <Harness
+        onLoadingChange={() => {}}
+        onLocationsResolved={onLocationsResolved}
+      />,
+    ));
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+
+    expect(adapterMocks.foliateOpen).toHaveBeenCalledOnce();
+    expect(adapterMocks.epubjsOpen).toHaveBeenCalledOnce();
+    // epubjs path defers locations; foliate would have resolved immediately.
+    expect(mocks.display).toHaveBeenCalledOnce();
+
+    flushSync(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  it('shows the first page before restoring cached locations (epubjs fallback)', async () => {
+    adapterMocks.foliateOpen.mockRejectedValue(new Error('foliate boom'));
+
     let finishDisplay!: () => void;
     mocks.display.mockImplementation(() => new Promise<void>((resolve) => {
       finishDisplay = resolve;
@@ -130,6 +188,36 @@ describe('useEpubBookLifecycle opening critical path', () => {
     expect(loadingStates[loadingStates.length - 1]).toBe(false);
     expect(mocks.loadLocations).toHaveBeenCalledOnce();
     expect(onLocationsResolved).toHaveBeenCalledWith(true);
+
+    flushSync(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  it('resolves locations immediately for the foliate engine without generating them', async () => {
+    mocks.display.mockResolvedValue(undefined);
+    const onLocationsResolved = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    flushSync(() => root.render(
+      <Harness
+        onLoadingChange={() => {}}
+        onLocationsResolved={onLocationsResolved}
+      />,
+    ));
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+
+    // foliate was preferred and succeeded, so epubjs is never tried.
+    expect(adapterMocks.foliateOpen).toHaveBeenCalledOnce();
+    expect(adapterMocks.epubjsOpen).not.toHaveBeenCalled();
+    // foliate reports locationsAvailable: true → resolve immediately, no
+    // generate path.
+    expect(onLocationsResolved).toHaveBeenCalledWith(true);
+    expect(mocks.loadLocations).not.toHaveBeenCalled();
+    expect(mocks.generateLocations).not.toHaveBeenCalled();
 
     flushSync(() => root.unmount());
     container.remove();
