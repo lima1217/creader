@@ -93,6 +93,29 @@
     font-weight: 560 !important;
 }
 
+.settings-dialog .astryx-tab > span[aria-hidden="true"]:first-child {
+    top: 50% !important;
+    bottom: auto !important;
+    transform: translateY(-50%);
+}
+
+.settings-dialog .astryx-tab > span:not([aria-hidden]) {
+    display: inline-grid;
+    place-items: center;
+    height: 32px;
+    min-height: 32px;
+    position: relative;
+    z-index: 1;
+}
+
+.settings-dialog .astryx-tab > span:not([aria-hidden]) > span {
+    line-height: 1;
+}
+
+.settings-dialog .astryx-tab > span:not([aria-hidden]) > span:not([aria-hidden]) {
+    transform: translateY(-1px);
+}
+
 .settings-dialog .astryx-button {
     border-radius: var(--settings-control-radius) !important;
 }

@@ -493,6 +493,7 @@
     flex: 1;
     min-height: 40px;
     max-height: 128px;
+    box-sizing: border-box;
     color: var(--text-primary);
     background: var(--bg-control);
     border: 1px solid var(--border-soft);
@@ -506,8 +507,16 @@
     border-color: var(--border-accent);
 }
 
+.ai-composer-input [aria-hidden="true"],
 .ai-composer-input [role="textbox"] {
-    max-height: calc(128px - 2 * var(--space-1));
+    box-sizing: border-box;
+    min-height: 38px;
+    padding: 8px 10px;
+    line-height: 22px;
+}
+
+.ai-composer-input [role="textbox"] {
+    max-height: calc(128px - 2px);
     overflow-y: auto;
     /* Suppress the global :focus-visible outline — focus feedback is
        carried by the outer .ai-composer-input border-color change, so an
