@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import type { Rendition } from 'epubjs';
-import type { EpubBookLike } from '../../services/reader/epubAdapter';
+import type { EpubBookLike, ReaderRendition } from '../../services/reader/epubAdapter';
 import { getRenditionContents } from '../../services/reader/epubAdapter';
 import { computeEpubPercentage } from './epubProgress';
 import { CHAPTER_EXTRACT_INTERVAL_MS, MAX_CHAPTER_CONTENT_LENGTH, PROGRESS_UPDATE_INTERVAL_MS, PROGRESS_UPDATE_THRESHOLD_PERCENT } from '../../constants';
@@ -10,15 +9,14 @@ import { createLogger } from '../../utils/logger';
 const logger = createLogger('useEpubProgressTracking');
 
 export function useEpubProgressTracking(params: {
-  renditionRef: RefObject<Rendition | null>;
+  renditionRef: RefObject<ReaderRendition | null>;
   bookLikeRef: RefObject<EpubBookLike | null>;
   renditionKey: number;
   bookId: string | null;
-  locationsStatus: 'pending' | 'ready' | 'unavailable';
   updateBookProgress: (bookId: string, update: { kind: 'epub'; currentCfi: string; percentage: number }) => void;
   setCurrentChapterContent: (content: string) => void;
 }) {
-  const { renditionRef, bookLikeRef, renditionKey, bookId, locationsStatus, updateBookProgress, setCurrentChapterContent } = params;
+  const { renditionRef, bookLikeRef, renditionKey, bookId, updateBookProgress, setCurrentChapterContent } = params;
   const progressStateRef = useRef({ lastTs: 0, lastCfi: '', lastPercentage: 0 });
   const chapterStateRef = useRef({ lastTs: 0, lastCfi: '' });
 
@@ -46,9 +44,7 @@ export function useEpubProgressTracking(params: {
 
       percentage = computeEpubPercentage({ location, cfi, bookAny });
 
-      // The first relocation happens before cached locations are restored. Do
-      // not replace a saved exact percentage with the coarse spine fallback.
-      if (cfi && locationsStatus !== 'pending') {
+      if (cfi) {
         const now = Date.now();
         const last = progressStateRef.current;
         const percentageDelta = Math.abs(percentage - last.lastPercentage);
@@ -89,23 +85,19 @@ export function useEpubProgressTracking(params: {
     rendition.on('locationChanged', handleLocationChange);
     rendition.on('relocated', handleLocationChange);
 
-    // Restoring locations does not emit another relocation. Re-evaluate the
-    // visible page once exact percentages become available (or fallback is final).
-    if (locationsStatus !== 'pending') {
-      try {
-        const current = (rendition as any).currentLocation?.();
-        if (current?.then) {
-          void current.then(handleLocationChange);
-        } else if (current) {
-          handleLocationChange(current);
-        }
-      } catch {
+    try {
+      const current = rendition.currentLocation?.();
+      if (current && typeof (current as Promise<unknown>).then === 'function') {
+        void (current as Promise<unknown>).then(handleLocationChange);
+      } else if (current) {
+        handleLocationChange(current);
       }
+    } catch {
     }
 
     return () => {
       rendition.off('locationChanged', handleLocationChange);
       rendition.off('relocated', handleLocationChange);
     };
-  }, [renditionKey, bookId, locationsStatus, updateBookProgress, setCurrentChapterContent]);
+  }, [renditionKey, bookId, updateBookProgress, setCurrentChapterContent]);
 }

@@ -2,8 +2,7 @@ import { useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
-import type { Rendition } from 'epubjs';
-import type { EpubBookLike } from '../../services/reader/epubAdapter';
+import type { EpubBookLike, ReaderRendition } from '../../services/reader/epubAdapter';
 import { useEpubProgressTracking } from './useEpubProgressTracking';
 
 const location = {
@@ -28,19 +27,13 @@ function createRendition() {
 
 function Harness({
   rendition,
-  locationsStatus,
   updateBookProgress,
 }: {
   rendition: ReturnType<typeof createRendition>;
-  locationsStatus: 'pending' | 'ready' | 'unavailable';
   updateBookProgress: ReturnType<typeof vi.fn>;
 }) {
-  const renditionRef = useRef(rendition as unknown as Rendition);
+  const renditionRef = useRef(rendition as unknown as ReaderRendition);
   const bookLikeRef = useRef({
-    locations: {
-      length: () => locationsStatus === 'ready' ? 100 : 0,
-      percentageFromCfi: () => 0.62,
-    },
     spine: { length: 10 },
   } as unknown as EpubBookLike);
 
@@ -49,7 +42,6 @@ function Harness({
     bookLikeRef,
     renditionKey: 1,
     bookId: 'book-1',
-    locationsStatus,
     updateBookProgress,
     setCurrentChapterContent: () => {},
   });
@@ -58,7 +50,7 @@ function Harness({
 }
 
 describe('useEpubProgressTracking', () => {
-  it('does not overwrite saved progress before locations resolve, then refreshes it', async () => {
+  it('records foliate reported progress immediately', async () => {
     const rendition = createRendition();
     const updateBookProgress = vi.fn();
     const container = document.createElement('div');
@@ -68,20 +60,6 @@ describe('useEpubProgressTracking', () => {
       root.render(
         <Harness
           rendition={rendition}
-          locationsStatus="pending"
-          updateBookProgress={updateBookProgress}
-        />,
-      );
-    });
-
-    rendition.emit('relocated', { ...location, start: { ...location.start, percentage: undefined } });
-    expect(updateBookProgress).not.toHaveBeenCalled();
-
-    flushSync(() => {
-      root.render(
-        <Harness
-          rendition={rendition}
-          locationsStatus="ready"
           updateBookProgress={updateBookProgress}
         />,
       );

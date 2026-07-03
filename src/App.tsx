@@ -52,7 +52,7 @@ function AppBootstrap() {
   const library = useLibraryStore((s) => s.library);
   const bookProgressById = useProgressStore((s) => s.bookProgressById);
 
-  // Apply theme to the root element so native chrome and epubjs stay in sync
+  // Apply theme to the root element so native chrome stays in sync
   // with the Astryx `data-astryx-theme`/`data-theme` driven by the boundary.
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', settings.theme);

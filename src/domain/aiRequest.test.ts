@@ -20,7 +20,6 @@ const settings: Settings = {
   fontSize: 16,
   fontFamily: 'Georgia',
   lineHeight: 1.6,
-  allowEpubScripts: true,
   readingMemoryAutoIngest: true,
   aiTextSize: 14,
   aiContextWindow: 5,

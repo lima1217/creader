@@ -1,13 +1,3 @@
-import type { Book, Rendition } from 'epubjs';
-
-export type EpubLocations = {
-  load?: (serialized: string) => Promise<void>;
-  generate?: (charsPerPage: number) => Promise<void>;
-  save?: () => string;
-  length?: () => number;
-  percentageFromCfi?: (cfi: string) => number;
-};
-
 export type EpubArchive = {
   getText?: (href: string) => Promise<string>;
   request?: (href: string, type: 'text') => Promise<string>;
@@ -28,19 +18,13 @@ export type EpubSpine = {
   spineItems?: EpubSpineItem[];
   items?: EpubSpineItem[];
   length?: number;
-  hooks?: {
-    content?: {
-      register?: (callback: (doc: Document, section?: EpubSpineItem) => void | Promise<void>) => void;
-      deregister?: (callback: (doc: Document, section?: EpubSpineItem) => void | Promise<void>) => void;
-    };
-  };
 };
 
-export type EpubBookLike = Book & {
-  locations?: EpubLocations;
+export type EpubBookLike = {
   spine?: EpubSpine;
   archive?: EpubArchive;
   load?: (href: string) => Promise<unknown>;
+  destroy?: () => void;
 };
 
 export type RenditionContent = {
@@ -48,7 +32,19 @@ export type RenditionContent = {
   document?: Document;
 };
 
-type RenditionWithExtras = Rendition & {
+export type ReaderRendition = {
+  themes: {
+    default: (styles: Record<string, Record<string, string>>) => void;
+    register?: (name: string, styles: Record<string, Record<string, string>>) => void;
+    select?: (name?: string) => void;
+  };
+  display: (target?: string) => Promise<unknown> | void;
+  prev: () => Promise<void> | void;
+  next: () => Promise<void> | void;
+  on: (event: string, callback: (...args: unknown[]) => void) => void;
+  off: (event: string, callback: (...args: unknown[]) => void) => void;
+  currentLocation?: () => unknown;
+  destroy?: () => void;
   getContents?: () => RenditionContent[];
   hooks?: {
     content?: {
@@ -58,18 +54,18 @@ type RenditionWithExtras = Rendition & {
   _selectionPollingInterval?: number | null;
 };
 
-export function getRenditionContents(rendition: Rendition): RenditionContent[] {
-  return (rendition as RenditionWithExtras).getContents?.() ?? [];
+export function getRenditionContents(rendition: ReaderRendition): RenditionContent[] {
+  return rendition.getContents?.() ?? [];
 }
 
-export function registerRenditionContentHook(rendition: Rendition, callback: (contents: RenditionContent) => void): void {
-  (rendition as RenditionWithExtras).hooks?.content?.register?.(callback);
+export function registerRenditionContentHook(rendition: ReaderRendition, callback: (contents: RenditionContent) => void): void {
+  rendition.hooks?.content?.register?.(callback);
 }
 
-export function setSelectionPollingInterval(rendition: Rendition, interval: number | null): void {
-  (rendition as RenditionWithExtras)._selectionPollingInterval = interval;
+export function setSelectionPollingInterval(rendition: ReaderRendition, interval: number | null): void {
+  rendition._selectionPollingInterval = interval;
 }
 
-export function getSelectionPollingInterval(rendition: Rendition): number | null | undefined {
-  return (rendition as RenditionWithExtras)._selectionPollingInterval;
+export function getSelectionPollingInterval(rendition: ReaderRendition): number | null | undefined {
+  return rendition._selectionPollingInterval;
 }

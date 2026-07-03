@@ -8,7 +8,7 @@ import { paperTheme } from './paperTheme';
  *
  * Reads only the settings-backed theme (`settings.theme`). The provider drives
  * Astryx's `data-astryx-theme`/`data-theme` (via `mode`); the `data-theme`
- * effect in `App.tsx` (`AppBootstrap`) keeps driving native chrome + epubjs in
+ * effect in `App.tsx` (`AppBootstrap`) keeps driving native chrome in
  * sync.
  */
 export function AstryxThemeBoundary({ children }: { children: ReactNode }) {

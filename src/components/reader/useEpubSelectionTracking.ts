@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import type { Rendition } from 'epubjs';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { getRenditionContents, setSelectionPollingInterval } from '../../services/reader/epubAdapter';
 import { getSelectionFromEpubContent, setupEpubSelectionListeners } from './epubSelectionListeners';
 import { createLogger } from '../../utils/logger';
@@ -8,7 +8,7 @@ import { createLogger } from '../../utils/logger';
 const logger = createLogger('useEpubSelectionTracking');
 
 export function useEpubSelectionTracking(params: {
-  renditionRef: RefObject<Rendition | null>;
+  renditionRef: RefObject<ReaderRendition | null>;
   renditionKey: number;
   containerRef: RefObject<HTMLDivElement | null>;
   lastMousePosRef: RefObject<{ x: number; y: number }>;

@@ -1,168 +1,118 @@
-import ePub from 'epubjs';
+import { strFromU8, unzipSync } from 'fflate';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { createLogger } from './logger';
 
 const logger = createLogger('EPUB');
 
 export interface EpubMetadata {
-    title: string;
-    author: string;
-    coverBlob?: Blob;
+  title: string;
+  author: string;
+  coverBlob?: Blob;
 }
 
-/**
- * Extract metadata from an EPUB file
- * @param filePath - The absolute path to the EPUB file
- * @returns Promise<EpubMetadata>
- */
+function fallbackMetadata(filePath: string): EpubMetadata {
+  const fileName = filePath.split('/').pop() || 'Unknown';
+  return {
+    title: fileName.replace(/\.epub$/i, ''),
+    author: 'Unknown',
+  };
+}
+
+function readZipEntry(entries: Record<string, Uint8Array>, name: string): Uint8Array {
+  const entry = entries[name];
+  if (!entry) throw new Error(`EPUB entry not found: ${name}`);
+  return entry;
+}
+
+function readZipText(entries: Record<string, Uint8Array>, name: string): string {
+  return strFromU8(readZipEntry(entries, name));
+}
+
+function parseXml(raw: string, label: string): XMLDocument {
+  const doc = new DOMParser().parseFromString(raw, 'application/xml');
+  const parserError = doc.querySelector('parsererror');
+  if (parserError) throw new Error(`Failed to parse ${label}`);
+  return doc;
+}
+
+function textForTag(doc: XMLDocument, tagName: string): string | undefined {
+  const node = Array.from(doc.getElementsByTagName('*')).find(element => element.localName === tagName);
+  return node?.textContent?.trim() || undefined;
+}
+
+function joinEpubPath(base: string, href: string): string {
+  const parts = `${base}/${href}`.split('/');
+  const out: string[] = [];
+  for (const part of parts) {
+    if (!part || part === '.') continue;
+    if (part === '..') out.pop();
+    else out.push(part);
+  }
+  return out.join('/');
+}
+
+function mediaTypeForPath(path: string, fallback?: string | null): string {
+  if (fallback) return fallback;
+  const ext = path.split('.').pop()?.toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'gif') return 'image/gif';
+  if (ext === 'webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+function findCoverItem(opf: XMLDocument): Element | null {
+  const metaCoverId = Array.from(opf.getElementsByTagName('*'))
+    .find(element => element.localName === 'meta' && element.getAttribute('name') === 'cover')
+    ?.getAttribute('content');
+  const items = Array.from(opf.getElementsByTagName('*')).filter(element => element.localName === 'item');
+  if (metaCoverId) {
+    const item = items.find(element => element.getAttribute('id') === metaCoverId);
+    if (item) return item;
+  }
+  return items.find(element => {
+    const properties = element.getAttribute('properties') ?? '';
+    const mediaType = element.getAttribute('media-type') ?? '';
+    const id = element.getAttribute('id') ?? '';
+    return properties.split(/\s+/).includes('cover-image') ||
+      id.toLowerCase().includes('cover') && mediaType.startsWith('image/');
+  }) ?? null;
+}
+
 export async function extractEpubMetadata(filePath: string): Promise<EpubMetadata> {
-    logger.debug('Starting metadata extraction for:', filePath);
-    
-    try {
-        logger.debug('Reading file...');
-        const fileData = await readFile(filePath);
-        logger.debug('File read successfully, size:', fileData.length, 'bytes');
+  logger.debug('Starting metadata extraction for:', filePath);
 
-        // Create ArrayBuffer from the file data
-        const arrayBuffer = fileData.buffer.slice(
-            fileData.byteOffset,
-            fileData.byteOffset + fileData.byteLength
-        );
-        logger.debug('ArrayBuffer created, size:', arrayBuffer.byteLength, 'bytes');
+  try {
+    const fileData = await readFile(filePath);
+    const entries = unzipSync(fileData);
+    const container = parseXml(readZipText(entries, 'META-INF/container.xml'), 'container.xml');
+    const opfPath = Array.from(container.getElementsByTagName('*'))
+      .find(element => element.localName === 'rootfile')
+      ?.getAttribute('full-path');
+    if (!opfPath) throw new Error('EPUB container did not declare an OPF package path');
 
-        const book = ePub(arrayBuffer);
-        logger.debug('Book instance created, waiting for ready...');
-        
-        await book.ready;
-        logger.debug('Book is ready');
+    const opf = parseXml(readZipText(entries, opfPath), opfPath);
+    const opfBase = opfPath.split('/').slice(0, -1).join('/');
+    const title = textForTag(opf, 'title') ?? fallbackMetadata(filePath).title;
+    const author = textForTag(opf, 'creator') ?? 'Unknown';
 
-        // Get metadata - epub.js stores metadata in the book object
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const bookAny = book as any;
-        
-        // Try multiple metadata sources
-        let metadata = bookAny.packaging?.metadata || {};
-        
-        logger.debug('Raw metadata:', metadata);
-        logger.debug('Packaging:', bookAny.packaging);
-        
-        // Extract title - try multiple sources
-        let title = metadata.title || 
-                   bookAny.package?.metadata?.title ||
-                   metadata.dc?.title ||
-                   filePath.split('/').pop()?.replace('.epub', '') || 
-                   'Unknown';
-        
-        // Extract author - try multiple sources
-        let author = metadata.creator || 
-                    metadata.author ||
-                    bookAny.package?.metadata?.creator ||
-                    metadata.dc?.creator ||
-                    'Unknown';
-        
-        logger.debug('Extracted metadata - Title:', title, ', Author:', author);
-
-        let coverBlob: Blob | undefined;
-        
-        // Try multiple methods to extract cover
-        try {
-            logger.debug('Attempting to extract cover...');
-            
-            // Method 1: Use coverUrl method
-            if (typeof bookAny.coverUrl === 'function') {
-                logger.debug('Trying coverUrl method...');
-                const coverUrl = await bookAny.coverUrl();
-                logger.debug('Cover URL:', coverUrl);
-                
-                if (coverUrl) {
-                    const response = await fetch(coverUrl);
-                    if (response.ok) {
-                        coverBlob = await response.blob();
-                        logger.debug('Cover extracted successfully via coverUrl, size:', coverBlob.size, 'bytes');
-                    }
-                }
-            }
-            
-            // Method 2: Try to get cover from archive
-            if (!coverBlob && bookAny.archive) {
-                logger.debug('Trying archive method...');
-                const coverPath = bookAny.cover || 
-                                 metadata.cover || 
-                                 bookAny.packaging?.manifest?.cover;
-                
-                logger.debug('Cover path:', coverPath);
-                
-                if (coverPath) {
-                    try {
-                        const coverData = await bookAny.archive.request(coverPath);
-                        if (coverData) {
-                            // Determine MIME type
-                            const ext = coverPath.split('.').pop()?.toLowerCase();
-                            const mimeType = ext === 'png' ? 'image/png' : 
-                                           ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
-                                           ext === 'gif' ? 'image/gif' : 
-                                           'image/jpeg';
-                            
-                            coverBlob = new Blob([coverData], { type: mimeType });
-                            logger.debug('Cover extracted via archive, size:', coverBlob.size, 'bytes');
-                        }
-                    } catch (archiveError) {
-                        logger.warn('Archive cover extraction failed:', archiveError);
-                    }
-                }
-            }
-            
-            // Method 3: Search through resources
-            if (!coverBlob && bookAny.resources) {
-                logger.debug('Trying resources method...');
-                const coverResource = bookAny.resources.get('cover') || 
-                                     bookAny.resources.get('cover-image');
-                
-                if (coverResource && coverResource.url) {
-                    logger.debug('Found cover resource:', coverResource.url);
-                    const response = await fetch(coverResource.url);
-                    if (response.ok) {
-                        coverBlob = await response.blob();
-                        logger.debug('Cover extracted via resources, size:', coverBlob.size, 'bytes');
-                    }
-                }
-            }
-            
-            if (!coverBlob) {
-                logger.warn('No cover found after trying all methods');
-            }
-        } catch (coverError) {
-            logger.warn('Could not extract cover:', coverError);
-            if (coverError instanceof Error) {
-                logger.debug('Cover error details:', coverError.message, coverError.stack);
-            }
-        }
-
-        // Cleanup
-        book.destroy();
-        logger.debug('Book instance destroyed');
-        
-        const result = { title, author, coverBlob };
-        logger.debug('Final result:', { 
-            title, 
-            author, 
-            hasCover: !!coverBlob,
-            coverSize: coverBlob?.size 
+    let coverBlob: Blob | undefined;
+    const coverItem = findCoverItem(opf);
+    const coverHref = coverItem?.getAttribute('href');
+    if (coverHref) {
+      try {
+        const coverPath = joinEpubPath(opfBase, coverHref);
+        const coverBytes = readZipEntry(entries, coverPath);
+        coverBlob = new Blob([coverBytes], {
+          type: mediaTypeForPath(coverPath, coverItem?.getAttribute('media-type')),
         });
-
-        return result;
-    } catch (error) {
-        logger.error('Failed to extract EPUB metadata:', error);
-        if (error instanceof Error) logger.debug('Error details:', error.message, error.stack);
-        
-        // Return fallback values
-        const fileName = filePath.split('/').pop() || 'Unknown';
-        const fallback = {
-            title: fileName.replace('.epub', ''),
-            author: 'Unknown',
-        };
-        
-        logger.debug('Returning fallback metadata:', fallback);
-        return fallback;
+      } catch (coverError) {
+        logger.warn('Could not extract EPUB cover:', coverError);
+      }
     }
+
+    return { title, author, coverBlob };
+  } catch (error) {
+    logger.error('Failed to extract EPUB metadata:', error);
+    return fallbackMetadata(filePath);
+  }
 }

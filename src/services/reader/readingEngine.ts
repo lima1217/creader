@@ -1,10 +1,9 @@
-import type { Rendition } from 'epubjs';
 import type { Book as AppBook, NavItem } from '../../types';
-import type { EpubBookLike, RenditionContent } from './epubAdapter';
+import type { EpubBookLike, ReaderRendition, RenditionContent } from './epubAdapter';
 
-export type ReadingEngineName = 'foliate' | 'epubjs';
+export type ReadingEngineName = 'foliate';
 
-export interface ReadingEngineRendition extends Rendition {
+export interface ReadingEngineRendition extends ReaderRendition {
   engineName?: ReadingEngineName;
   currentLocation?: () => unknown;
   getContents?: () => RenditionContent[];
@@ -24,7 +23,6 @@ export interface ReadingEngineOptions {
   appBook: AppBook;
   arrayBuffer: ArrayBuffer;
   container: HTMLElement;
-  scriptsEnabled: boolean;
 }
 
 export interface ReadingEngineAdapter {

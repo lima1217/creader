@@ -6,7 +6,7 @@ CReader's Phase 1 introduced Astryx for settings, dialogs, and toasts. The core 
 
 ### 1. Scope: chrome-only. The reading body is out of scope as Astryx components.
 
-The book content is rendered by a reading engine inside the host DOM via a custom element (foliate-js, preferred) or an iframe (epubjs, fallback), both hidden behind `ReadingEngineAdapter` (`docs/reading-engine-adapter.md`). Astryx components live in the React tree; they cannot own the engine's rendered content. Therefore "migrating the reader" means the **reader chrome** (toolbar, TOC drawer, search overlay, progress, selection toolbar), never the rendered book body.
+The book content is rendered by foliate-js inside the host DOM via a custom element hidden behind `ReadingEngineAdapter` (`docs/reading-engine-adapter.md`). Astryx components live in the React tree; they cannot own the engine's rendered content. Therefore "migrating the reader" means the **reader chrome** (toolbar, TOC drawer, search overlay, progress, selection toolbar), never the rendered book body.
 
 Note: the original framing of this decision ("the iframe is the wall") was wrong — foliate-js renders a custom element, not an iframe. The *real* constraint is that the engine renders its own content tree outside Astryx's component ownership, regardless of whether that tree is an iframe or a custom element. The conclusion (chrome-only) is unchanged.
 
@@ -34,7 +34,7 @@ Phase 1's `AppDialog.test.tsx` mocks Astryx components as no-op stubs and assert
 
 ### 7. SelectionToolbar: keep the positioning shell custom; migrate only the buttons.
 
-The toolbar is rendered at arbitrary `{x, y}` screen coordinates produced by `epubSelectionListeners.ts` from the reading engine's selection, with manual viewport-flip logic. There is **no React anchor element** — the `ReadingEngineAdapter` emits coordinates, never a DOM node, on both the foliate-js and epubjs paths. Astryx's `Popover`/`Tooltip` require a trigger element or `anchorRef`, so they cannot natively own this toolbar. Decision: keep the positioning shell + flip logic + iframe/engine boundary as custom JSX (it is genuinely structural, not decoration), and migrate only the inner buttons (`加入选文`, `问 AI`, close) to Astryx `Button`/`IconButton`, plus token-style the hint line. A synthetic invisible anchor + `Popover` (the alternative) was rejected as fragile at engine/viewport edges.
+The toolbar is rendered at arbitrary `{x, y}` screen coordinates produced by `epubSelectionListeners.ts` from the reading engine's selection, with manual viewport-flip logic. There is **no React anchor element** — the `ReadingEngineAdapter` emits coordinates, never a DOM node. Astryx's `Popover`/`Tooltip` require a trigger element or `anchorRef`, so they cannot natively own this toolbar. Decision: keep the positioning shell + flip logic + engine boundary as custom JSX (it is genuinely structural, not decoration), and migrate only the inner buttons (`加入选文`, `问 AI`, close) to Astryx `Button`/`IconButton`, plus token-style the hint line. A synthetic invisible anchor + `Popover` (the alternative) was rejected as fragile at engine/viewport edges.
 
 ### 8. AIPanel: selective Chat-kit adoption (leaves, not layout).
 

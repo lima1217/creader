@@ -1,11 +1,11 @@
-import type { Rendition } from 'epubjs';
 import type { Theme } from '../../types';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { paperBodyPalette } from '../../theme/paperTheme';
 
 /**
  * Injects the reading-engine body theme into the rendered EPUB.
  *
- * The book body lives in its own DOM document (foliate section doc / epubjs
+ * The book body lives in its own DOM document (foliate section doc)
  * iframe) and cannot see the host app's `:root` Astryx tokens, so colors are
  * taken as literal values from `paperBodyPalette` — the same source the Astryx
  * `--color-background-body` / `--color-text-primary` / `--color-accent` tokens
@@ -23,7 +23,7 @@ import { paperBodyPalette } from '../../theme/paperTheme';
  * and is intentionally not bridged to Astryx typography tokens.
  */
 export function applyEpubTheme(
-  rendition: Rendition,
+  rendition: ReaderRendition,
   options: { theme: Theme; fontFamily: string; fontSize: number; lineHeight: number }
 ) {
   const palette = paperBodyPalette[options.theme];

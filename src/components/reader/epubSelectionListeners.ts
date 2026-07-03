@@ -1,4 +1,4 @@
-import type { Rendition } from 'epubjs';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { getRenditionContents, registerRenditionContentHook } from '../../services/reader/epubAdapter';
 
 type SelectionPoint = { x: number; y: number };
@@ -46,7 +46,7 @@ export function getSelectionFromEpubContent(params: {
 }
 
 export function setupEpubSelectionListeners(params: {
-  rendition: Rendition;
+  rendition: ReaderRendition;
   containerRef: React.RefObject<HTMLElement | null>;
   lastMousePosRef: React.RefObject<{ x: number; y: number }>;
   startSelectionPolling: (durationMs: number) => void;

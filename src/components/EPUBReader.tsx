@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Book as EpubBook, Rendition } from 'epubjs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -8,7 +7,7 @@ import { useProgressStore } from '../stores/progressStore';
 import { useAIStore } from '../stores/aiStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import type { Book, NavItem } from '../types';
-import type { EpubBookLike } from '../services/reader/epubAdapter';
+import type { EpubBookLike, ReaderRendition } from '../services/reader/epubAdapter';
 import { tryCopyBookToLibrary } from '../services/BookImportService';
 import { rebuildSearchIndexQuietly, toSearchIndexSummary } from '../services/reader/searchIndex';
 import { createLogger } from '../utils/logger';
@@ -58,20 +57,11 @@ export function EPUBReader() {
     const addToAccumulatedTexts = useSelectionStore((s) => s.addToAccumulatedTexts);
     const accumulatedTexts = useSelectionStore((s) => s.accumulatedTexts);
     const containerRef = useRef<HTMLDivElement>(null);
-    const bookRef = useRef<EpubBook | null>(null);
-    const renditionRef = useRef<Rendition | null>(null);
+    const bookRef = useRef<EpubBookLike | null>(null);
+    const renditionRef = useRef<ReaderRendition | null>(null);
     const bookLikeRef = useRef<EpubBookLike | null>(null);
-    const epubScriptsAllowedRef = useRef(false);
     const lastMousePosRef = useRef({ x: 0, y: 0 });
     const [renditionKey, setRenditionKey] = useState(0);
-    const [locationsState, setLocationsState] = useState<{
-        bookId: string | null;
-        status: 'ready' | 'unavailable';
-    }>({ bookId: null, status: 'unavailable' });
-    const locationsStatus = currentBook && locationsState.bookId === currentBook.id
-        ? locationsState.status
-        : 'pending';
-
     const [toc, setToc] = useState<NavItem[]>([]);
     const [showToc, setShowToc] = useState(false);
     // Active TOC href for "you are here" highlighting. Updated whenever the
@@ -102,7 +92,7 @@ export function EPUBReader() {
         const viaHref = href ? chapterLabelByHref.get(href) : undefined;
         if (viaHref) return viaHref;
         const section = result.section || '';
-        // Heuristic: epubjs `section` is the spine idref (e.g. "id123") or a
+        // Heuristic: `section` can be a spine idref (e.g. "id123") or a
         // filename ("x.xhtml") when no label exists. Only show it when it looks
         // like a real title rather than a raw id/filename.
         if (section && !/^(id\d+|.*\.(x?html|htm|xhtml))$/i.test(section)) return section;
@@ -113,8 +103,6 @@ export function EPUBReader() {
     const [error, setError] = useState<string | null>(null);
     const [isFileNotFound, setIsFileNotFound] = useState(false);
     const [isRelocating, setIsRelocating] = useState(false);
-    const [safeModeBookId, setSafeModeBookId] = useState<string | null>(null);
-    const scriptsEnabled = settings.allowEpubScripts === true && safeModeBookId !== currentBook?.id;
 
     // Search state
     const searchInputRef = useRef<HTMLInputElement>(null);
@@ -132,16 +120,6 @@ export function EPUBReader() {
     const [accumulatedPreviewOpen, setAccumulatedPreviewOpen] = useState(false);
 
     useEffect(() => {
-        if (!scriptsEnabled) {
-            epubScriptsAllowedRef.current = false;
-        }
-    }, [scriptsEnabled]);
-
-    useEffect(() => {
-        setSafeModeBookId(null);
-    }, [currentBook?.id]);
-
-    useEffect(() => {
         setChapterCopied(false);
     }, [currentChapterContent]);
 
@@ -149,8 +127,6 @@ export function EPUBReader() {
         currentBook,
         containerRef,
         settings,
-        scriptsEnabled,
-        epubScriptsAllowedRef,
         bookRef,
         renditionRef,
         bookLikeRef,
@@ -159,12 +135,6 @@ export function EPUBReader() {
         setError,
         setIsFileNotFound,
         onRenditionCreated: () => setRenditionKey(k => k + 1),
-        onLocationsResolved: (available) => {
-            setLocationsState({
-                bookId: currentBook?.id ?? null,
-                status: available ? 'ready' : 'unavailable',
-            });
-        },
     });
 
     useEpubProgressTracking({
@@ -172,7 +142,6 @@ export function EPUBReader() {
         bookLikeRef,
         renditionKey,
         bookId: currentBook?.id ?? null,
-        locationsStatus,
         updateBookProgress,
         setCurrentChapterContent,
     });
@@ -341,20 +310,12 @@ export function EPUBReader() {
                 // Clear error state to trigger reload
                 setError(null);
                 setIsFileNotFound(false);
-                setSafeModeBookId(null);
             }
         } catch (err) {
             logger.error('Failed to relocate file:', err);
         } finally {
             setIsRelocating(false);
         }
-    };
-
-    const handleRetryWithoutScripts = () => {
-        if (!currentBook) return;
-        setSafeModeBookId(currentBook.id);
-        setError(null);
-        setIsFileNotFound(false);
     };
 
     if (!currentBook) {
@@ -398,15 +359,8 @@ export function EPUBReader() {
                         <>
                             <h2>无法打开书籍</h2>
                             <p>{error}</p>
-                            {scriptsEnabled && (
-                                <div className="reader-error-actions">
-                                    <button className="btn btn-secondary" onClick={handleRetryWithoutScripts}>
-                                        用安全模式打开
-                                    </button>
-                                </div>
-                            )}
                             <p className="reader-error-hint">
-                                某些 EPUB 的脚本会影响渲染。安全模式会跳过这些脚本。
+                                CReader 目前只支持可由 foliate-js 打开的标准 EPUB，不会执行 EPUB 内嵌脚本。
                             </p>
                         </>
                     )}

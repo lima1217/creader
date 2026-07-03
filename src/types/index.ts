@@ -59,7 +59,6 @@ export interface Settings {
   fontSize: number; // 12-24
   fontFamily: string;
   lineHeight: number; // 1.4-2.0
-  allowEpubScripts: boolean;
   readingMemoryPath?: string;
   readingMemoryAutoIngest: boolean;
   aiTextSize: number; // 13-20

@@ -1,11 +1,11 @@
-# Reading Engine Adapter Spike
+# Reading Engine Adapter
 
-Issue: #14
+Issues: #14, #35
 
 ## Adapter Shape
 
 CReader reads EPUBs through a small adapter contract in `src/services/reader/readingEngine.ts`.
-Both engines expose the same reader-facing surface:
+The single supported engine is `foliate-js`, hidden behind the CReader-facing adapter surface:
 
 - navigation: `display`, `prev`, `next`, TOC href navigation
 - progress: relocated/locationChanged events with CFI and percentage
@@ -13,7 +13,7 @@ Both engines expose the same reader-facing surface:
 - Search Locator navigation: search result CFI or href can be passed to `display`
 - theme: reader font, line height, foreground, background, and link styles
 
-`foliate-js` is the preferred engine. `epubjs` remains available as the fallback adapter and is used automatically if foliate fails to open a book.
+Unsupported books fail explicitly through the existing reader error surface. CReader does not silently switch engines and does not execute scripted EPUB content.
 
 ## foliate-js Validation
 
@@ -28,12 +28,12 @@ Validated by implementation:
 - Search Locator navigation: existing search result CFI/href is routed through the shared `display` contract
 - Theme: existing reader theme styles are injected into loaded foliate section documents
 
-## Parity Gaps
+## Unsupported Behavior
 
-- `foliate-js` does not support scripted EPUB content. CReader keeps epubjs fallback, and the existing "safe mode" affordance remains meaningful for the fallback path.
-- Existing cached epubjs generated locations are not reused by foliate. Foliate reports progress from its own section fraction instead.
-- The font sanitizer remains epubjs-only because foliate's loader/rendering model differs and does not expose the same epubjs spine hooks.
+- Scripted EPUB execution is not supported.
+- There is no safe-mode or compatibility fallback prompt.
+- Reading progress uses foliate's reported location fraction rather than cached generated locations.
 
-## Default Migration Outcome
+## Migration Outcome
 
-foliate-js is ready to be the preferred default engine with epubjs fallback kept in place. A later cleanup can remove epubjs only after manual validation across a broader EPUB fixture set proves that scripted-content behavior, font edge cases, and progress restore parity are acceptable without fallback.
+foliate-js is now the only Reading Engine. Names that refer to the EPUB format remain in place, but adapter contracts should not model an alternate runtime engine.

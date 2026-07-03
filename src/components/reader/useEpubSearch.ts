@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import type { Rendition } from 'epubjs';
 import type { Book, SearchIndexSummary } from '../../types';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import type { ReaderSearchResult } from '../../services/reader/types';
 import { getSearchIndexStatus, rebuildSearchIndex, searchBookIndex, toSearchIndexSummary } from '../../services/reader/searchIndex';
 import { createLogger } from '../../utils/logger';
@@ -9,7 +9,7 @@ import { createLogger } from '../../utils/logger';
 const logger = createLogger('useEpubSearch');
 
 export function useEpubSearch(params: {
-  renditionRef: RefObject<Rendition | null>;
+  renditionRef: RefObject<ReaderRendition | null>;
   currentBook: Book | null;
   onSearchIndexStatus: (status: SearchIndexSummary) => void;
   onCloseSearch: () => void;

@@ -12,7 +12,6 @@ const defaultSettings: Settings = {
   fontSize: 16,
   fontFamily: 'Georgia',
   lineHeight: 1.6,
-  allowEpubScripts: true,
   readingMemoryPath: undefined,
   readingMemoryAutoIngest: true,
   aiTextSize: 14,

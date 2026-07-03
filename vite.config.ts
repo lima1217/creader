@@ -22,12 +22,6 @@ export default defineConfig(async () => ({
       // via the dynamic `import('foliate-js/view.js')` in foliateEngine.ts,
       // so externalize it here rather than bundling it.
       external: ['foliate-js/view.js'],
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return;
-          if (id.includes('/epubjs/')) return 'reader-epub';
-        },
-      },
     },
   },
 
