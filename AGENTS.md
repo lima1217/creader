@@ -1,71 +1,70 @@
 # Agent Guide
 
+## Start Here
+
+- Read `CONTEXT.md` for project vocabulary before naming concepts, tests, issues, or ADRs.
+- For issue work, fetch the live GitHub issue first. Use `docs/agents/issue-tracker.md` and `docs/agents/triage-labels.md`; do not infer tracker state from stale local notes.
+- Preserve unrelated local changes. Stage only files required by the task, especially when release artifacts, Astryx metadata, or docs are already dirty.
+- Use `README.md` for the human-facing project summary; keep this file focused on agent execution rules.
+
 ## Project Map
-- `src/` contains the React/Vite frontend.
-- `src/components/` contains the reader UI, toolbar, sidebar, AI panel, and selection controls.
-- `src-tauri/` contains the Tauri shell and Rust commands used by the frontend.
-- `public/` contains static assets served by Vite.
-- `releases/` contains packaged release artifacts.
+
+- `src/components/`: reader UI, sidebar, toolbar, settings, selection controls, and AI panel.
+- `src/components/ai/`: AI message rendering, stream buffering helpers, conversation memory, context windows, and quick prompts.
+- `src/components/reader/`: EPUB selection, progress, keyboard, theme, lifecycle, and reader hooks.
+- `src/domain/`: pure AI request, Reading Context Snapshot, context trimming, and Reading Memory Markdown logic.
+- `src/services/`: IndexedDB, local storage, import/cover services, Reading Memory bridge, and reading engines.
+- `src-tauri/`: Tauri shell, Rust commands, file boundaries, AI provider storage, native search, and Reading Memory writes.
+- `releases/`: packaged artifacts. Do not edit unless the task is packaging or release publishing.
 
 ## Verification
-- Use `npm run typecheck` for TypeScript validation.
-- Use `npm run test` for the Vitest suite.
-- Use `npm run build` for a full frontend and Tauri-facing production build check.
-- Use `npm run check` as the default all-in-one verification command before handing off broad changes.
+
+- Use `npm run typecheck` after TypeScript or React changes.
+- Use `npm run test` when touching domain logic, services, hooks, stores, or command call shapes.
+- Use `npm run build` after broad frontend or Tauri-facing changes.
+- Use `npm run check` as the handoff gate for broad changes.
+- For Rust-only command or search-index changes, also run the focused Rust tests from `src-tauri/` when practical.
 
 ## Boundaries
-- Keep UI component changes scoped to `src/components/` unless shared styling or app wiring is required.
-- Keep native file, library, and platform behavior scoped to `src-tauri/`.
-- When changing a Tauri command signature, update the frontend call sites in the same change.
-- Do not edit generated release binaries in `releases/` unless the task is explicitly about packaging.
 
-## Hotspots
-- `src/components/AIPanel.tsx` and `src/components/AIPanel.css` own the AI panel experience; verify with `npm run typecheck` and `npm run build` after changes.
-- `src/components/SettingsPanel.tsx` owns user-facing AI configuration, Reading Memory configuration, and quick prompt editing.
-- `src/components/Sidebar.tsx` owns library navigation, tag actions, import actions, and the settings entry in the left sidebar.
-- `src-tauri/src/lib.rs` owns native library and file operations; keep command names and payload shapes stable unless coordinated with frontend updates.
-- Large shared styles in `src/index.css` and component CSS files should stay organized around existing selectors instead of introducing parallel styling systems.
+- Keep UI work in `src/components/` unless shared state, services, or styling must move with it.
+- Keep native file, provider, library, and platform behavior in `src-tauri/`.
+- When a Tauri command signature changes, update every frontend `invoke` call in the same patch.
+- Extend existing CSS/component selectors before introducing a parallel styling system.
+- Generated release binaries are immutable outside packaging tasks.
 
-## AI Panel
-- Keep provider/model, Reading Memory, and quick prompt management in the settings panel instead of adding persistent configuration controls back into the AI panel.
-- `SettingsPanel.tsx` groups controls under three primary tabs: `AI`, `Reading Memory`, and `快捷提示词`; keep new settings inside the matching tab instead of adding another top-level section.
-- The AI panel should stay focused on reading-context conversation: header, message stream, quick prompt buttons, and input.
-- Quick prompts are persisted by `src/components/ai/quickActions.tsx`; the AI panel shows up to six direct prompt buttons and moves overflow into the more menu.
-- The AI input intentionally uses an empty placeholder for a quieter reading surface.
-- AI is served over **OpenAI-compatible HTTP** (Chat Completions), not local CLIs. The user manages providers in Settings: each is a `{id, name, baseUrl, model}` config plus an API key. Provider configs live in `ai_providers.json` (app config dir); API keys live in `ai_keys.env` (app config dir, outside the repo) and are never shown back to the UI.
-- Exactly one provider is "active" at a time; the backend (`chat_with_ai_streaming`, `summarize_ai_conversation`, `ingest_reading_memory_direct`) resolves the active config + key itself. The chat request carries only the prompt and reading context — no `provider`/`model` fields.
-- The streaming contract is unchanged from the CLI era: Tauri `Channel<StreamEvent>` with `started`/`chunk`/`done`/`error`; the frontend buffers chunks via `requestAnimationFrame`.
-- AI text size and the active provider/model selection are user-managed in `SettingsPanel.tsx` (AI tab). `buildChatRequest` no longer picks a model; it only shapes context + history.
-- AI context window is user-configurable as 5, 20, or 40 recent messages. The frontend decides how many messages to send; the backend should not silently reduce that window again.
-- Auto summarization keeps old chat turns as hidden `ConversationMemory`; do not render that summary as a chat message or ingest it directly into Reading Memory.
-- Chapter context is smart-trimmed by `src/components/ai/contextWindow.ts`: selected or accumulated text is the focus, and chapter text should only provide nearby background when useful.
-- EPUB selected CFI ranges are captured as `selectedCfiRange` and persisted on `ChatMessage.contextCfi` for Reading Memory source tracing; keep this separate from the plain text smart-trimming path.
-- AI requests and Reading Memory ingestion should derive reader state from a frozen `ReadingContextSnapshot` in `src/domain/readingSource.ts` instead of re-reading live reader state after a user message is sent.
+## AI
+
+- Keep the AI panel a reading conversation surface: message stream, quick prompt buttons, and input. Put provider/model, AI text size, context window, Reading Memory path, and quick prompt management in `SettingsPanel.tsx`.
+- Settings has three top-level tabs: `AI`, `Reading Memory`, and `快捷提示词`. Add new settings inside the matching tab.
+- Quick prompts are persisted by `src/components/ai/quickActions.tsx`; show up to six direct buttons in the AI panel and put overflow in the more menu.
+- The input placeholder is intentionally empty.
+- Chat requests carry prompt, frozen reading context, conversation summary, and recent history only. Do not add provider/model fields to `buildChatRequest`.
+- The active OpenAI-compatible provider is resolved by the backend from `ai_providers.json` plus `ai_keys.env` in the app config dir. API keys never return to the UI or enter the repo.
+- Streaming uses Tauri `Channel<StreamEvent>` with `started`, `chunk`, `done`, and `error`. Keep frontend chunk buffering on the `requestAnimationFrame` path.
+- The Rust AI path uses `async-openai` first, with the compatibility SSE parser as fallback for providers the typed client cannot parse.
+- Auto summarization is hidden `ConversationMemory`; never render it as a chat message or ingest it directly into Reading Memory.
+- AI requests and Reading Memory ingestion must use the frozen `ReadingContextSnapshot` from `src/domain/readingSource.ts`, not live reader state after send.
+- Keep EPUB CFI range tracing separate from plain text context: `selectedCfiRange` becomes `ChatMessage.contextCfi`.
 
 ## Reading Memory
-- Reading Memory is a user-selected local Markdown repository laid out as an OKF-compatible LLM Wiki, not an internal database.
-- Users choose or open the Reading Memory path from the settings panel.
-- Repository structure: a root OKF package (`AGENTS.md`, `index.md`, `log.md`, `shared/` for cross-book concepts), plus one OKF sub-package per book under `<book-slug>/` (each with `AGENTS.md`, `index.md`, `chapters/ concepts/ claims/ questions/ sources/`). Legacy flat directories (`books/`, `concepts/`, `claims/`, `questions/`) are kept for backward compatibility.
-- CReader uses AI review before Reading Memory writes. When the AI decides a turn is durable, CReader appends a source-grounded Markdown page into the current book's sub-package (`<book-slug>/<target_dir>/`, where the AI's `target_dir` ∈ books/concepts/claims/questions maps to the matching book sub-package directory), then appends a write event (including `book_slug`, `package_path`) to `.reading-memory/ingestion-log.jsonl`.
-- Every note starts with OKF frontmatter: a non-empty `type` (Concept / Claim / OpenQuestions / ChapterNote), `source_refs`, `chapter_refs`, `tags`, `status: inbox`, plus book/chapter/CFI/progress traceability.
-- Reading Memory ingestion is intentionally selective: skip ordinary summaries, translations, meta prompts, socratic coaching interactions, short follow-up turns, and repeated explanations unless the user explicitly asks to save them.
-- Keep automatic ingestion source-grounded: include book title, author, progress, CFI when available, selected text or question, and the AI answer.
-- Reader-flow writes should be append-first and path-restricted to the book sub-package (or repository root) — slugs are sanitized; never let AI-selected paths escape the repository or overwrite arbitrary files.
-- External lint agents may organize the full Reading Memory repository by merging duplicates across packages, improving links, and cleaning low-value direct writes.
 
-## Agent skills
+- Reading Memory is a user-selected OKF-compatible Markdown repository, not an internal database.
+- Users choose and open its path from Settings, not the AI panel.
+- Current-book writes go into the sanitized book sub-package (`books/<book-slug>/...`); legacy flat directories remain compatibility paths only.
+- CReader writes only after AI review decides a turn is durable. Skip ordinary summaries, translations, meta prompts, socratic coaching, short follow-ups, and repeated explanations unless the user explicitly asks to save.
+- Notes must be source-grounded: include book title, author, chapter, progress, CFI when available, selected text or question, and AI answer.
+- TypeScript owns Markdown rendering/rewrite through unified/remark/YAML in `src/domain/readingMemoryMarkdown.ts`.
+- Rust owns the write boundary: validate repository paths, restrict target directories, write files, and append `.reading-memory/ingestion-log.jsonl`.
+- Never let AI-selected paths escape the repository or overwrite arbitrary files.
 
-### Issue tracker
+## Reading Engine
 
-Issues and PRDs are tracked in GitHub Issues for `lima1217/creader`. See `docs/agents/issue-tracker.md`.
+- Use `src/services/reader/readingEngine.ts` as the adapter boundary. `foliate-js` is preferred; `epubjs` stays as fallback.
+- Search index data is rebuildable derived data. Do not treat it as the source of truth for book content, AI context, or Reading Memory evidence.
+- Search Locators may be precise CFI or coarser href/spine locations; preserve that tolerance in UI and command contracts.
 
-### Triage labels
-
-Use the default five-role triage vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
+## Astryx UI
 
 <!-- ASTRYX:START -->
 Astryx v0.1.2 · 148 components

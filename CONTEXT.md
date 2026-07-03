@@ -8,6 +8,10 @@ CReader is a local-first reading application for EPUB books, reading-context AI 
 The part of CReader that renders book content, tracks locations, exposes selection context, and lets the reader move through an EPUB.
 _Avoid_: EPUB widget, viewer
 
+**Reading Engine Adapter**:
+The small contract that lets CReader use `foliate-js` or `epubjs` behind the same reader-facing API.
+_Avoid_: engine-specific UI branch, renderer switch scattered through components
+
 **Whole-Book Work**:
 Operations that need access to an entire book rather than the currently displayed passage, such as full-text extraction and search indexing.
 _Avoid_: reader UI work, chapter rendering
@@ -24,6 +28,18 @@ _Avoid_: always-CFI result, rendered selection
 A frozen record of what the reader was looking at or selecting when an AI message was sent.
 _Avoid_: live reader state, search index context
 
+**AI Provider**:
+A user-configured OpenAI-compatible HTTP endpoint, model, and local API key used by the backend to serve chat and Reading Memory review.
+_Avoid_: frontend-selected model per request, local CLI provider
+
+**Conversation Memory**:
+A hidden summary of older chat turns used to keep the AI conversation coherent without rendering the summary as a visible message.
+_Avoid_: Reading Memory note, chat message
+
+**Quick Prompt**:
+A user-editable shortcut prompt shown near the AI input and persisted by the quick actions module.
+_Avoid_: provider setting, hard-coded AI mode
+
 **Reading Memory**:
 A user-selected local Markdown repository where CReader writes durable, source-grounded notes from selected reading conversations.
 _Avoid_: internal memory database, chat history
@@ -35,3 +51,15 @@ _Avoid_: raw note markdown, AI-selected file path
 **Markdown Writer Boundary**:
 The split where CReader turns a note intent into valid OKF Markdown while still restricting where that Markdown may be written.
 _Avoid_: markdown string concatenation, unrestricted file write
+
+**Reading Memory Package**:
+The OKF-compatible root repository plus one sub-package per book, where current-book notes are written under the sanitized book slug.
+_Avoid_: flat app export folder, cross-book scratch directory
+
+**Reading Chrome**:
+The React-tree UI around the rendered book body — toolbar, TOC drawer, search overlay, progress bar, selection toolbar — as distinct from the book content the Reading Engine renders into its own content tree. Astryx components own chrome; they do not own the engine's rendered body.
+_Avoid_: "the reader" used to mean both the chrome and the book body interchangeably
+
+**Selection Coordinate**:
+An `{x, y}` pixel position produced by the reading engine's selection listeners and consumed by the SelectionToolbar. The Reading Engine Adapter emits coordinates, never a DOM anchor node, on both the foliate-js and epubjs paths; this is why the selection toolbar cannot use trigger-anchored overlays like Astryx `Popover`/`Tooltip`.
+_Avoid_: selection anchor, selection ref
