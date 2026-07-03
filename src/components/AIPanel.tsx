@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { invoke, Channel } from '@tauri-apps/api/core';
+import { ChatMessage as AstryxChatMessage } from '@astryxdesign/core/Chat';
+import { ChatComposerInput } from '@astryxdesign/core/Chat';
+import { ChatSendButton } from '@astryxdesign/core/Chat';
+import { Button } from '@astryxdesign/core/Button';
+import { MoreMenu } from '@astryxdesign/core/MoreMenu';
 import { useAIStore } from '../stores/aiStore';
 import { useProgressStore } from '../stores/progressStore';
 import { useLibraryStore } from '../stores/libraryStore';
@@ -81,7 +86,6 @@ export function AIPanel() {
     const [providers, setProviders] = useState<AIProviderStatus[]>([]);
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
     const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(loadQuickActionConfigs);
-    const [showQuickActionOverflow, setShowQuickActionOverflow] = useState(false);
     const [panelWidth, setPanelWidth] = useState(AI_PANEL_WIDTH);
     const [isResizing, setIsResizing] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -112,7 +116,6 @@ export function AIPanel() {
         };
     }, []);
 
-    const inputRef = useRef<HTMLTextAreaElement>(null);
     const panelRef = useRef<HTMLElement>(null);
 
     const quickActions = useMemo(() => hydrateQuickActions(quickActionConfigs), [quickActionConfigs]);
@@ -336,8 +339,9 @@ export function AIPanel() {
         settings.aiContextWindow,
     ]);
 
-    const sendMessage = async () => {
-        if (!input.trim() || isLoading || isSendingRef.current) return;
+    const sendMessage = async (overrideText?: string) => {
+        const trimmedInput = (overrideText ?? input).trim();
+        if (!trimmedInput || isLoading || isSendingRef.current) return;
         isSendingRef.current = true;
 
         const readingContext = buildReadingContextSnapshot({
@@ -353,14 +357,14 @@ export function AIPanel() {
 
         const userMessage = createUserChatMessage({
             id: userMessageTimestamp.toString(),
-            content: input.trim(),
+            content: trimmedInput,
             timestamp: userMessageTimestamp,
             context: combinedContext,
             contextCfi: readingContext.selection?.cfiRange,
         });
 
         addChatMessage(userMessage);
-        const messageToSend = input.trim();
+        const messageToSend = trimmedInput;
         setInput('');
         setIsLoading(true);
         setStreamingContent('');
@@ -499,13 +503,6 @@ export function AIPanel() {
         }
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    };
-
 
     // Stop AI generation
     const stopGeneration = async () => {
@@ -550,7 +547,11 @@ export function AIPanel() {
     const renderedMessages = useMemo(() => {
         if (!shouldRenderEmbeddedPanel) return null;
         return chatMessages.map(msg => (
-            <div key={msg.id} className={`ai-message ai-message-${msg.role}`}>
+            <AstryxChatMessage
+                key={msg.id}
+                sender={msg.role === 'user' ? 'user' : 'assistant'}
+                className={`ai-message ai-message-${msg.role}`}
+            >
                 {msg.context && (
                     <div className="ai-message-reference">
                         <QuoteIcon />
@@ -575,54 +576,38 @@ export function AIPanel() {
                         </button>
                     </div>
                 )}
-            </div>
+            </AstryxChatMessage>
         ));
     }, [shouldRenderEmbeddedPanel, chatMessages, copiedMessageId, copyMessage]);
 
     const quickActionControls = (
-        <>
-            <div className="ai-margin-actions">
-                {visibleQuickActions.map(action => (
-                    <button
-                        key={action.id}
-                        className="ai-margin-action"
-                        onClick={() => setInput(action.prompt)}
-                        disabled={isLoading}
-                    >
-                        {action.icon}
-                        <span>{action.label}</span>
-                    </button>
-                ))}
-                {overflowQuickActions.length > 0 && (
-                    <button
-                        className={`ai-margin-action ai-margin-more ${showQuickActionOverflow ? 'active' : ''}`}
-                        onClick={() => setShowQuickActionOverflow(open => !open)}
-                        disabled={isLoading}
-                        aria-label="更多旁注动作"
-                    >
-                        <span>更多</span>
-                    </button>
-                )}
-                {showQuickActionOverflow && overflowQuickActions.length > 0 && (
-                    <div className="ai-margin-overflow">
-                        {overflowQuickActions.map(action => (
-                            <button
-                                key={action.id}
-                                className="ai-margin-overflow-btn"
-                                onClick={() => {
-                                    setInput(action.prompt);
-                                    setShowQuickActionOverflow(false);
-                                }}
-                                disabled={isLoading}
-                            >
-                                {action.icon}
-                                <span>{action.label}</span>
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </>
+        <div className="ai-margin-actions">
+            {visibleQuickActions.map(action => (
+                <Button
+                    key={action.id}
+                    className="ai-margin-action"
+                    variant="ghost"
+                    size="sm"
+                    label={action.label}
+                    icon={action.icon}
+                    isDisabled={isLoading}
+                    onClick={() => setInput(action.prompt)}
+                />
+            ))}
+            {overflowQuickActions.length > 0 && (
+                <MoreMenu
+                    className="ai-margin-more"
+                    label="更多旁注动作"
+                    size="sm"
+                    isDisabled={isLoading}
+                    items={overflowQuickActions.map(action => ({
+                        label: action.label,
+                        icon: action.icon,
+                        onClick: () => setInput(action.prompt),
+                    }))}
+                />
+            )}
+        </div>
     );
 
     if (!shouldRenderEmbeddedPanel) return null;
@@ -730,7 +715,10 @@ export function AIPanel() {
                     renderedMessages
                 )}
                 {isLoading && (
-                    <div className="ai-message ai-message-assistant ai-message-streaming">
+                    <AstryxChatMessage
+                        sender="assistant"
+                        className="ai-message ai-message-assistant ai-message-streaming"
+                    >
                         <div className="ai-message-content">
                             {streamingContent ? (
                                 <>
@@ -745,7 +733,7 @@ export function AIPanel() {
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </AstryxChatMessage>
                 )}
                 <div ref={messagesEndRef} />
 
@@ -763,33 +751,24 @@ export function AIPanel() {
             {quickActionControls}
 
             <div className="ai-panel-input">
-                <textarea
-                    ref={inputRef}
+                <ChatComposerInput
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="提问，或选中正文后问 AI…"
-                    rows={1}
-                    disabled={isLoading}
+                    onChange={setInput}
+                    onSubmit={(text) => { void sendMessage(text); }}
+                    placeholder=""
+                    label="AI 输入"
+                    maxRows={4}
+                    isDisabled={isLoading}
+                    className="ai-composer-input"
                 />
-                {isLoading ? (
-                    <button
-                        className="btn btn-danger btn-icon ai-stop-btn"
-                        onClick={stopGeneration}
-                        aria-label="停止生成"
-                    >
-                        <StopIcon />
-                    </button>
-                ) : (
-                    <button
-                        className="btn btn-primary btn-icon"
-                        onClick={sendMessage}
-                        disabled={!input.trim()}
-                        aria-label="发送"
-                    >
-                        <SendIcon />
-                    </button>
-                )}
+                <ChatSendButton
+                    isStopShown={isLoading}
+                    isDisabled={!isLoading && !input.trim()}
+                    onSend={() => { void sendMessage(); }}
+                    onStop={stopGeneration}
+                    sendIcon={<SendIcon />}
+                    stopIcon={<StopIcon />}
+                />
             </div>
         </aside>
     );

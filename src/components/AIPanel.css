@@ -303,10 +303,12 @@
     height: 13px;
 }
 
+/* Message shells now render through Astryx ChatMessage (the <article> owns the
+   row/column layout and sender alignment). These rules only constrain width
+   and style the custom content/reference children living inside ChatMessage's
+   content slot — they never re-declare the article's flex model. */
 .ai-message {
     position: relative;
-    display: flex;
-    flex-direction: column;
     max-width: min(92%, 64ch);
 }
 
@@ -353,6 +355,9 @@
 }
 
 .ai-message-assistant .ai-message-content {
+    /* Assistant content stays full-width against ChatMessage's flex-start
+       children column so the accent left-rule reads as a gutter, not a chip. */
+    width: 100%;
     padding: 2px 2px 2px 11px;
     background: transparent;
     border-left: 1px solid var(--border-accent);
@@ -370,7 +375,7 @@
 
 .ai-message-user .ai-message-content ::selection {
     background: rgba(0, 0, 0, 0.34);
-    color: #fff;
+    color: var(--bg-elevated);
 }
 
 .ai-loading {
@@ -432,152 +437,86 @@
     }
 }
 
-/* Margin actions */
+/* Margin actions (slice #33): the direct quick-prompt buttons are Astryx
+   Button and the overflow is Astryx MoreMenu (its popover renders in a portal).
+   These token-only supplements keep the chips reading-margin-tight — width
+   clamping, icon sizing, label truncation — without re-skinning the button. */
 .ai-margin-actions {
     position: relative;
     display: flex;
     flex-wrap: nowrap;
     align-content: flex-start;
-    gap: 6px;
+    gap: var(--space-1);
     overflow: visible;
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     flex-shrink: 0;
     background: color-mix(in srgb, var(--bg-panel) 84%, var(--bg-primary));
 }
 
-.ai-margin-action,
-.ai-margin-overflow-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 32px;
-    padding: 0 8px;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
-    font: inherit;
-    font-size: 12px;
-    font-weight: 560;
-    white-space: nowrap;
-    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), scale var(--transition-fast);
-}
-
-.ai-margin-action {
+.ai-margin-action.astryx-button {
     flex: 0 1 auto;
     min-width: 0;
     max-width: 112px;
+    font-size: var(--text-xs);
 }
 
-.ai-margin-action span {
+.ai-margin-action.astryx-button > :last-child {
+    /* Truncate the label so long quick-prompt names ellipsis instead of wrap. */
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.ai-margin-action svg,
-.ai-margin-overflow-btn svg {
+.ai-margin-action.astryx-button svg {
     width: 13px;
     height: 13px;
     flex-shrink: 0;
 }
 
-.ai-margin-action:hover:not(:disabled),
-.ai-margin-action.active,
-.ai-margin-more.active,
-.ai-margin-overflow-btn:hover:not(:disabled) {
-    background: var(--bg-control-hover);
-    border-color: var(--border-soft);
-    color: var(--accent);
-}
-
-.ai-margin-action:active:not(:disabled),
-.ai-margin-overflow-btn:active:not(:disabled) {
-    scale: 0.98;
-}
-
-.ai-margin-action:disabled,
-.ai-margin-overflow-btn:disabled {
-    opacity: 0.45;
-}
-
-.ai-margin-overflow {
-    position: absolute;
-    right: 12px;
-    bottom: calc(100% + 6px);
-    z-index: 70;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 168px;
-    max-width: min(240px, calc(100vw - 32px));
-    padding: 5px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-secondary);
-    border-radius: var(--radius-surface);
-    box-shadow: var(--shadow-popover);
-}
-
-.ai-margin-overflow-btn {
-    justify-content: flex-start;
-    width: 100%;
-    min-height: 32px;
-}
-
-.ai-margin-overflow-btn span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 /* Composer */
+/* Composer (slice #32): Astryx ChatComposerInput owns the editable typography
+   and caret; these token-only supplements give it the reading-surface control
+   look (bg + border + radius) Astryx leaves to the consumer, and pin the AI
+   text-size token so the input tracks the Settings text-size control. */
 .ai-panel-input {
     position: relative;
     display: flex;
     align-items: flex-end;
-    gap: 8px;
-    padding: 10px 12px 12px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) var(--space-3);
     flex-shrink: 0;
     background: var(--bg-panel);
 }
 
-.ai-panel-input textarea {
+.ai-composer-input {
     flex: 1;
     min-height: 40px;
     max-height: 128px;
-    padding: 9px 10px;
-    resize: none;
     color: var(--text-primary);
     background: var(--bg-control);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-control);
-    font: inherit;
     font-size: var(--ai-text-size);
-    line-height: 1.5;
-    transition: background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
-.ai-panel-input textarea:focus {
+.ai-composer-input:focus-within {
     background: var(--bg-elevated);
     border-color: var(--border-accent);
-    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.10);
 }
 
-.ai-panel-input .btn {
+.ai-composer-input [role="textbox"] {
+    max-height: calc(128px - 2 * var(--space-1));
+    overflow-y: auto;
+}
+
+/* ChatSendButton renders a square icon-only Astryx Button; size it to the
+   composer row height and round it to the control radius. */
+.ai-panel-input .astryx-button {
     width: 40px;
     height: 40px;
     border-radius: var(--radius-control);
-}
-
-.ai-panel-input .btn:disabled {
-    opacity: 0.42;
-}
-
-.ai-stop-btn {
-    background: var(--error) !important;
-    border-color: var(--error) !important;
-    color: var(--bg-elevated) !important;
 }
 
 @media (max-width: 768px) {
@@ -598,8 +537,7 @@
 
     .ai-panel-resize-handle,
     .ai-panel-resize-handle::before,
-    .ai-margin-action,
-    .ai-margin-overflow-btn {
+    .ai-margin-action.astryx-button {
         transition-duration: 0.01ms !important;
     }
 }

@@ -64,6 +64,14 @@ Phase 1's precedent (`SettingsPanel.css`, comments "slice 3 / slice 4 ... Tokens
 
 (SelectionToolbar and AIPanel get their own grilling-confirmed slices after Sidebar ships, following the same per-slice test→migrate→green discipline. AIPanel in particular decomposes into: tests on the streaming contract → chrome leaves (`ChatMessage`/`ChatComposerInput`/`ChatSendButton`) → source-bar/quick-action overflow → empty-state/quiet-placeholder — each its own test-gated slice.)
 
+### AIPanel slices (shipped, #31–#33)
+
+The AIPanel decomposition landed as three test-gated slices, all keeping the #26 streaming/memory/overflow contract green:
+
+- **#31 — message rendering on `ChatMessage`:** each user/assistant/streaming message renders through `ChatMessage` (imported as `AstryxChatMessage` to avoid clashing with the local `ChatMessage` *type*). The source-reference, content bubble, and hover-revealed copy action stay as custom children inside `ChatMessage`'s content slot; the orphaned `display:flex` on `.ai-message` was pruned because `ChatMessage`'s `<article>` now owns the row/column layout.
+- **#32 — composer on `ChatComposerInput` + `ChatSendButton`:** `ChatComposerInput` is a `contentEditable` (not a `textarea`), driven via its controlled `value`/`onChange`/`onSubmit`; the per-message Enter-to-submit moved off the local `handleKeyDown` onto `ChatComposerInput`'s built-in `onSubmit`. The empty placeholder (the AGENTS.md quiet-surface rule) is preserved by passing `placeholder=""`. `ChatSendButton` is wired standalone (no `ChatComposer` wrapper) with explicit `isStopShown`/`onSend`/`onStop` and the existing `SendIcon`/`StopIcon`. The contract tests drive the contentEditable by setting `textContent` + an `input` event and find the button by its `Send` aria-label.
+- **#33 — chrome polish on tokens:** direct quick-prompt buttons adopt Astryx `Button` (`ghost`/`sm`) and the >6 overflow adopts `MoreMenu` (whose items render in a portal as `[role="menuitem"]`); the source bar, panel shell, resize handle, and quiet empty state stay custom and token-styled. The `.ai-margin-overflow*` / `.ai-stop-btn` / `.ai-panel-input textarea` rules were deleted as orphans.
+
 ## Consequences
 
 - The reader body's visual theming remains driven by the engine theme injection path (`epubTheme.ts` and the foliate theme bridge), not Astryx tokens. A future ADR may bridge engine theme tokens to Astryx paper-theme tokens if the book body should *visually* belong to the same system (that is a token-level concern, separate from this component-level migration).

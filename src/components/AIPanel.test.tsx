@@ -6,7 +6,7 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { useProgressStore } from '../stores/progressStore';
 import { useUIStore } from '../stores/uiStore';
 
-import { click, installIntersectionObserverStub, mount, setInputValue, settle } from './testUtils';
+import { click, installIntersectionObserverStub, mount, settle } from './testUtils';
 
 /**
  * AIPanel contract tests — issue #26 (Astryx Phase 2 prefactor).
@@ -114,13 +114,26 @@ function mountPanel() {
   return mount(<AIPanel />);
 }
 
-/** Type into the AIPanel input and click send. */
+/**
+ * Type into the AIPanel composer and click send.
+ *
+ * The composer is Astryx ChatComposerInput — a contentEditable (role="textbox"),
+ * not a textarea — so we set textContent on the editable region and dispatch an
+ * input event so the component's onInput → onChange path updates the store.
+ * The send affordance is Astryx ChatSendButton, whose underlying button carries
+ * aria-label "Send" (set by the component when not streaming).
+ */
 async function typeAndSend(container: HTMLElement, text: string) {
-  const input = container.querySelector('.ai-panel-input textarea, .ai-panel-input input, textarea') as HTMLElement;
-  setInputValue(input, text);
+  const input = container.querySelector('.ai-panel-input [role="textbox"]') as HTMLElement;
+  // Drive the contentEditable the way a keystroke would: write the text node
+  // and fire an input event so ChatComposerInput's handleInput → emitChange
+  // serializes it and calls onChange with the value.
+  input.textContent = text;
+  input.dispatchEvent(new InputEvent('input', { bubbles: true }));
   await settle();
-  const sendBtn = container.querySelector('button[aria-label*="发送"], .ai-send-btn, [class*="send"]') as HTMLElement
-    ?? Array.from(container.querySelectorAll('button')).pop()!;
+  const sendBtn = Array.from(container.querySelectorAll('.ai-panel-input button'))
+    .find((b) => (b.getAttribute('aria-label') ?? '').toLowerCase() === 'send') as HTMLElement
+    ?? Array.from(container.querySelectorAll('.ai-panel-input button')).pop()!;
   click(sendBtn);
   await settle();
 }
@@ -183,16 +196,58 @@ afterEach(() => {
 // --- Tests -----------------------------------------------------------------
 
 describe('AIPanel — input placeholder', () => {
-  it('renders the AI input with its current placeholder text', () => {
-    // NOTE: AGENTS.md says "the input placeholder is intentionally empty," but
-    // AIPanel.tsx currently renders placeholder="提问，或选中正文后问 AI…".
-    // This test pins the ACTUAL behavior; the slice that reconciles the two
-    // (#32, AIPanel composer) should update either the code or this assertion
-    // to whichever side wins.
+  it('renders the AI input with an intentionally empty placeholder (quiet reading surface)', () => {
+    // AGENTS.md: "The input placeholder is intentionally empty." The migrated
+    // composer (Astryx ChatComposerInput, slice #32) preserves this quiet
+    // convention rather than adopting Astryx's default "Type a message…" text.
+    // ChatComposerInput renders the placeholder inside a sibling div (visible
+    // only when the editable is empty), so assert on that node's text.
     const { container } = mountPanel();
-    const input = container.querySelector('textarea, input') as HTMLInputElement | HTMLTextAreaElement;
-    expect(input).not.toBeNull();
-    expect((input as HTMLInputElement).placeholder).toBe('提问，或选中正文后问 AI…');
+    const composer = container.querySelector('.ai-panel-input') as HTMLElement;
+    expect(composer).not.toBeNull();
+    const editable = container.querySelector('[role="textbox"]') as HTMLElement | null;
+    expect(editable).not.toBeNull();
+    // The placeholder region (a child div) must be empty or absent — never the
+    // Astryx default "Type a message…".
+    const placeholderHost = composer.querySelector('[aria-hidden="true"]');
+    const placeholderText = placeholderHost?.textContent ?? '';
+    expect(placeholderText).toBe('');
+    expect(placeholderText).not.toContain('Type a message');
+  });
+});
+
+describe('AIPanel — composer submit', () => {
+  it('submits on Enter (without Shift) via the composer onSubmit path', async () => {
+    // Slice #32: Enter-to-submit moved off the old textarea onKeyDown and onto
+    // ChatComposerInput's built-in onSubmit. Lock that the Enter key still
+    // fires the stream the same way clicking Send does.
+    const { container } = mountPanel();
+    const editable = container.querySelector('.ai-panel-input [role="textbox"]') as HTMLElement;
+    editable.textContent = 'via enter';
+    editable.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    await settle();
+    editable.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+    await settle();
+
+    expect(invokeCalls.some((c) => c.cmd === 'chat_with_ai_streaming')).toBe(true);
+    const user = useAIStore.getState().chatMessages.find((m) => m.role === 'user');
+    expect(user?.content).toBe('via enter');
+  });
+
+  it('does NOT submit on Shift+Enter (newline)', async () => {
+    const { container } = mountPanel();
+    const editable = container.querySelector('.ai-panel-input [role="textbox"]') as HTMLElement;
+    editable.textContent = 'no submit';
+    editable.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    await settle();
+    editable.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }),
+    );
+    await settle();
+
+    expect(invokeCalls.some((c) => c.cmd === 'chat_with_ai_streaming')).toBe(false);
   });
 });
 
@@ -305,17 +360,17 @@ describe('AIPanel — quick-action overflow', () => {
   it('moves the excess (>6) into the overflow more menu', async () => {
     seedQuickActions(8);
     const { container } = mountPanel();
-    // The more menu toggle is present.
-    const moreBtn = container.querySelector('.ai-margin-more') as HTMLElement | null;
-    expect(moreBtn).not.toBeNull();
-    // Open the overflow and confirm the 2 excess actions render inside.
-    click(moreBtn!);
+    // The overflow affordance is an Astryx MoreMenu (three-dot trigger). Its
+    // menu items render in a portal under document.body as [role="menuitem"].
+    const moreTrigger = container.querySelector('.ai-margin-more') as HTMLElement | null;
+    expect(moreTrigger).not.toBeNull();
+    click(moreTrigger!);
     await settle();
-    // The overflow region holds items beyond index 6 (Action 6, Action 7).
-    const overflow = container.querySelector('.ai-margin-overflow') as HTMLElement | null;
-    expect(overflow).not.toBeNull();
-    expect(overflow!.textContent).toContain('Action 6');
-    expect(overflow!.textContent).toContain('Action 7');
+    const overflowItems = Array.from(document.body.querySelectorAll('[role="menuitem"]'));
+    const labels = overflowItems.map((el) => el.textContent?.trim() ?? '');
+    // The overflow holds items beyond index 6 (Action 6, Action 7).
+    expect(labels.some((l) => l.includes('Action 6'))).toBe(true);
+    expect(labels.some((l) => l.includes('Action 7'))).toBe(true);
   });
 });
 
