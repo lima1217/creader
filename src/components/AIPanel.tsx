@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import { ChatMessage as AstryxChatMessage } from '@astryxdesign/core/Chat';
 import { ChatComposerInput } from '@astryxdesign/core/Chat';
 import { ChatSendButton } from '@astryxdesign/core/Chat';
@@ -13,9 +13,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
-import { perfMark, perfMeasure } from '../utils/perf';
-import { buildReadingMemoryIngestInput, ingestReadingMemoryDirect } from '../services/ReadingMemory';
-import type { AIProviderStatus, ChatMessage } from '../types';
+import type { AIProviderStatus } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
 import {
     SendIcon, AILogoIcon, TrashIcon, BookIcon,
@@ -27,29 +25,13 @@ import {
     loadQuickActionConfigs,
     QUICK_ACTIONS_CHANGED_EVENT,
 } from './ai/quickActions';
-import { buildChatRequest, buildContextFromReadingSnapshot, createUserChatMessage } from '../domain/aiRequest';
-import type { ChatRequest } from '../domain/aiRequest';
-import { buildReadingContextSnapshot } from '../domain/readingSource';
-import type { ReadingContextSnapshot } from '../domain/readingSource';
-import { getMessagesToSummarize } from './ai/conversationMemory';
-import { createOnceCommitter } from './ai/streamCommit';
+import { createTauriAIConversationSession } from './ai/AIConversationSession';
+import type { AIConversationSessionState } from './ai/AIConversationSession';
 import type { QuickActionConfig } from './ai/quickActions';
 import './AIPanel.css';
 import './AIPanelMarkdown.css';
 
 const logger = createLogger('AIPanel');
-
-type SummarizeConversationRequest = {
-    existing_summary?: string;
-    messages: { role: string; content: string }[];
-    book_title?: string;
-};
-
-type StreamEvent =
-    | { event: 'started'; data: { provider: string } }
-    | { event: 'chunk'; data: { text: string } }
-    | { event: 'done'; data: { fullText: string } }
-    | { event: 'error'; data: { message: string; provider?: string } };
 
 function ScrollDownIcon() {
     return (
@@ -95,8 +77,8 @@ export function AIPanel() {
     const pendingScrollBehaviorRef = useRef<ScrollBehavior>('auto');
     const pendingPanelWidthRef = useRef<number | null>(null);
     const panelWidthRafRef = useRef<number | null>(null);
-    const isSendingRef = useRef(false);
     const latestMemoryRef = useRef(conversationMemory);
+    const sessionStateRef = useRef<AIConversationSessionState | null>(null);
 
     useEffect(() => {
         streamingContentRef.current = streamingContent;
@@ -105,6 +87,21 @@ export function AIPanel() {
     useEffect(() => {
         latestMemoryRef.current = conversationMemory;
     }, [conversationMemory]);
+
+    sessionStateRef.current = {
+        input,
+        isLoading,
+        isTauri,
+        chatMessages,
+        conversationMemory,
+        currentBook,
+        bookProgressById,
+        selectedText,
+        selectedCfiRange,
+        accumulatedTexts,
+        currentChapterContent,
+        settings,
+    };
 
     useEffect(() => {
         const reloadQuickActions = () => setQuickActionConfigs(loadQuickActionConfigs());
@@ -254,290 +251,27 @@ export function AIPanel() {
         await refreshProviders();
     };
 
-    const autoIngestReadingMemory = useCallback(async (
-        userMessage: ChatMessage,
-        assistantMessage: ChatMessage,
-        readingContext: ReadingContextSnapshot,
-    ) => {
-        if (!isTauri) return;
-        if (!settings.readingMemoryAutoIngest || !settings.readingMemoryPath || !readingContext.book) return;
-
-        try {
-            const ingestInput = buildReadingMemoryIngestInput({
-                rootPath: settings.readingMemoryPath,
-                readingContext,
-                userMessage,
-                assistantMessage,
-            });
-            if (!ingestInput) return;
-
-            // The active provider/model is resolved by the backend.
-            await ingestReadingMemoryDirect(ingestInput);
-        } catch (error) {
-            logger.warn('Reading Memory ingest skipped:', error);
-        }
-    }, [
-        isTauri,
-        settings.readingMemoryAutoIngest,
-        settings.readingMemoryPath,
-    ]);
-
-    const ensureConversationMemory = useCallback(async (): Promise<string | undefined> => {
-        if (!settings.aiAutoSummarize || !isTauri || chatMessages.length <= settings.aiContextWindow) {
-            return conversationMemory?.summary;
-        }
-
-        const activeMemory = latestMemoryRef.current;
-        if (activeMemory?.bookId && currentBook?.id && activeMemory.bookId !== currentBook.id) {
-            return undefined;
-        }
-
-        const eligibleMessages = getMessagesToSummarize(chatMessages, settings.aiContextWindow, activeMemory);
-
-        if (eligibleMessages.length < Math.min(10, settings.aiContextWindow)) {
-            return activeMemory?.summary;
-        }
-
-        const lastFolded = eligibleMessages[eligibleMessages.length - 1];
-        const request: SummarizeConversationRequest = {
-            existing_summary: activeMemory?.summary,
-            messages: eligibleMessages.map(message => ({
-                role: message.role,
-                content: message.content,
-            })),
-            book_title: currentBook?.title,
-        };
-
-        try {
-            const summary = await invoke<string>('summarize_ai_conversation', { request });
-            const trimmedSummary = summary.trim();
-            if (!trimmedSummary) return activeMemory?.summary;
-
-            const nextMemory = {
-                id: activeMemory?.id ?? 'active',
-                bookId: currentBook?.id,
-                bookTitle: currentBook?.title,
-                summary: trimmedSummary,
-                summarizedThroughMessageId: lastFolded.id,
-                summarizedThroughTimestamp: lastFolded.timestamp,
-                updatedAt: Date.now(),
-            };
-            latestMemoryRef.current = nextMemory;
-            setConversationMemory(nextMemory);
-            return trimmedSummary;
-        } catch (error) {
-            logger.warn('Conversation summary skipped:', error);
-            return activeMemory?.summary;
-        }
-    }, [
-        chatMessages,
-        conversationMemory,
-        currentBook,
-        isTauri,
+    const session = useMemo(() => createTauriAIConversationSession({
+        getState: () => sessionStateRef.current!,
+        getLatestConversationMemory: () => latestMemoryRef.current,
+        setLatestConversationMemory: (memory) => {
+            latestMemoryRef.current = memory;
+        },
+        addChatMessage,
         setConversationMemory,
-        settings.aiAutoSummarize,
-        settings.aiContextWindow,
+        setInput,
+        setIsLoading,
+        setStreamingContent,
+        getStreamingContent: () => streamingContentRef.current,
+        clearSelectedText: () => setSelectedText(''),
+    }), [
+        addChatMessage,
+        setConversationMemory,
+        setSelectedText,
     ]);
 
-    const sendMessage = async (overrideText?: string) => {
-        const trimmedInput = (overrideText ?? input).trim();
-        if (!trimmedInput || isLoading || isSendingRef.current) return;
-        isSendingRef.current = true;
-
-        const readingContext = buildReadingContextSnapshot({
-            book: currentBook,
-            progress: currentBook ? bookProgressById[currentBook.id] || currentBook.progress : undefined,
-            selectedText,
-            selectedCfiRange,
-            accumulatedTexts,
-            chapterContent: currentChapterContent,
-        });
-        const { combinedContext } = buildContextFromReadingSnapshot(readingContext);
-        const userMessageTimestamp = Date.now();
-
-        const userMessage = createUserChatMessage({
-            id: userMessageTimestamp.toString(),
-            content: trimmedInput,
-            timestamp: userMessageTimestamp,
-            context: combinedContext,
-            contextCfi: readingContext.selection?.cfiRange,
-        });
-
-        addChatMessage(userMessage);
-        const messageToSend = trimmedInput;
-        setInput('');
-        setIsLoading(true);
-        setStreamingContent('');
-        const perfKey = `ai:sendMessage:${userMessage.id}`;
-        perfMark(`${perfKey}:start`);
-        let streamComplete = false;
-
-        try {
-            if (!isTauri) {
-                const assistantMessage: ChatMessage = {
-                    id: (Date.now() + 1).toString(),
-                    role: 'assistant',
-                    content: `（Web 预览模式）你发送了：\n\n${messageToSend}\n\n可以直接选中这段文字验证选中高亮效果。`,
-                    timestamp: Date.now(),
-                };
-                addChatMessage(assistantMessage);
-                setIsLoading(false);
-                return;
-            }
-
-            await invoke('reset_ai_cancel');
-            const conversationSummary = await ensureConversationMemory();
-
-            const request: ChatRequest = buildChatRequest({
-                message: messageToSend,
-                readingContext,
-                conversationSummary,
-                chatMessages,
-                settings,
-            });
-
-            // Create a channel to receive streaming events
-            const onEvent = new Channel<StreamEvent>();
-            let fullContent = '';
-            let pendingChunks: string[] = [];
-            let flushRaf: number | null = null;
-
-            const finalizeContent = () => {
-                if (pendingChunks.length > 0) {
-                    fullContent += pendingChunks.join('');
-                    pendingChunks = [];
-                }
-                return fullContent;
-            };
-
-            const commitAssistantMessage = createOnceCommitter((content: string) => {
-                const assistantMessage: ChatMessage = {
-                    id: (Date.now() + 1).toString(),
-                    role: 'assistant',
-                    content,
-                    timestamp: Date.now(),
-                };
-                addChatMessage(assistantMessage);
-                void autoIngestReadingMemory(userMessage, assistantMessage, readingContext);
-            });
-
-            const scheduleFlush = () => {
-                if (flushRaf !== null) return;
-                flushRaf = requestAnimationFrame(() => {
-                    flushRaf = null;
-                    setStreamingContent(finalizeContent());
-                });
-            };
-
-            onEvent.onmessage = (event: StreamEvent) => {
-                switch (event.event) {
-                    case 'started':
-                        // Stream started, content will come in chunks
-                        break;
-                    case 'chunk':
-                        pendingChunks.push(event.data.text);
-                        scheduleFlush();
-                        break;
-                    case 'done':
-                        streamComplete = true;
-                        if (flushRaf !== null) {
-                            cancelAnimationFrame(flushRaf);
-                            flushRaf = null;
-                        }
-                        perfMeasure(perfKey, `${perfKey}:start`, `${perfKey}:done`);
-                        const finalContent = event.data.fullText || finalizeContent();
-                        commitAssistantMessage(finalContent);
-                        setStreamingContent('');
-                        setIsLoading(false);
-                        if (selectedText) {
-                            setSelectedText('');
-                        }
-                        break;
-                    case 'error':
-                        streamComplete = true;
-                        if (flushRaf !== null) {
-                            cancelAnimationFrame(flushRaf);
-                            flushRaf = null;
-                        }
-                        perfMeasure(perfKey, `${perfKey}:start`, `${perfKey}:error`);
-                        const providerPrefix = event.data.provider ? `[${event.data.provider}] ` : '';
-                        const errorMessage: ChatMessage = {
-                            id: (Date.now() + 1).toString(),
-                            role: 'assistant',
-                            content: `${providerPrefix}${event.data.message}`,
-                            timestamp: Date.now(),
-                        };
-                        addChatMessage(errorMessage);
-                        setStreamingContent('');
-                        setIsLoading(false);
-                        setInput(messageToSend);
-                        break;
-                }
-            };
-
-            // Call streaming API
-            await invoke('chat_with_ai_streaming', { request, onEvent });
-
-            // Safety check: if stream didn't complete, ensure we clean up
-            if (!streamComplete && (fullContent || pendingChunks.length > 0)) {
-                perfMeasure(perfKey, `${perfKey}:start`, `${perfKey}:fallback`);
-                commitAssistantMessage(finalizeContent());
-                setStreamingContent('');
-                setIsLoading(false);
-            }
-        } catch (error) {
-            logger.error('AI error:', error);
-            if (streamComplete) return;
-            const errorMessage: ChatMessage = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: `AI 请求失败：${error}`,
-                timestamp: Date.now(),
-            };
-            addChatMessage(errorMessage);
-            setStreamingContent('');
-            setIsLoading(false);
-            setInput(messageToSend);
-        } finally {
-            isSendingRef.current = false;
-        }
-    };
-
-
-    // Stop AI generation
-    const stopGeneration = async () => {
-        try {
-            if (!isTauri) {
-                setStreamingContent('');
-                setIsLoading(false);
-                return;
-            }
-            await invoke('cancel_ai_streaming');
-            // Give the backend a moment to process the cancel
-            // If streaming doesn't stop within 500ms, force stop on frontend
-            setTimeout(() => {
-                if (isLoading) {
-                    // Force add the stopped message
-                    const stoppedMessage: ChatMessage = {
-                        id: (Date.now() + 1).toString(),
-                        role: 'assistant',
-                        content: streamingContentRef.current
-                            ? `${streamingContentRef.current}\n\n[已停止生成]`
-                            : '[已停止生成]',
-                        timestamp: Date.now(),
-                    };
-                    addChatMessage(stoppedMessage);
-                    setStreamingContent('');
-                    setIsLoading(false);
-                }
-            }, 500);
-        } catch (error) {
-            logger.error('Failed to cancel AI streaming:', error);
-            // Force stop on error
-            setStreamingContent('');
-            setIsLoading(false);
-        }
-    };
+    const sendMessage = useCallback((overrideText?: string) => session.send(overrideText), [session]);
+    const stopGeneration = useCallback(() => session.stop(), [session]);
 
     // Note: We still mount and run hooks while detached so the
     // window-bridge sync effects keep working. The actual embedded UI is
