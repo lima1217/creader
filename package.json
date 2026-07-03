@@ -23,7 +23,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "dexie": "^4.4.4",
     "epubjs": "^0.3.93",
-    "foliate-js": "github:johnfactotum/foliate-js",
+    "foliate-js": "^1.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "remark-frontmatter": "^5.0.0",
