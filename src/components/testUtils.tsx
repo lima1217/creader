@@ -83,11 +83,16 @@ export async function settle(): Promise<void> {
 }
 
 /**
- * Set a value on a React-controlled input so onChange fires. React 18 reads
- * from the native value setter, not the property, for controlled inputs.
+ * Set a value on a React-controlled input or textarea so onChange fires.
+ * React 18 reads from the native value setter, not the property, for controlled
+ * inputs — and the setter is element-type-specific (HTMLInputElement vs
+ * HTMLTextAreaElement), so pick the right prototype.
  */
 export function setInputValue(element: Element, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+  const proto = element instanceof window.HTMLTextAreaElement
+    ? window.HTMLTextAreaElement.prototype
+    : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
   setter?.call(element, value);
   element.dispatchEvent(new Event('input', { bubbles: true }));
 }
