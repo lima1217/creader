@@ -1,0 +1,25 @@
+{
+  "name": "low-value-follow-up-skip",
+  "skill": "save-reading-memory",
+  "scenario": "The user asks a short follow-up that does not add durable source-grounded content.",
+  "input": {
+    "book": {
+      "title": "The Reflective Reader",
+      "author": "Example Author"
+    },
+    "chapter": "Chapter 6: Memory",
+    "progress": 0.72,
+    "selectedText": "A remembered event is not a sealed artifact; it is a rehearsal shaped by the present question.",
+    "selectedCfiRange": "epubcfi(/6/20!/4/2/8,/1:0,/1:96)",
+    "userQuestion": "再说简单点？",
+    "assistantAnswer": "它的意思是：记忆会被你现在关心什么影响，不是原封不动地取出来。"
+  },
+  "expected": {
+    "decision": {
+      "should_ingest": false,
+      "target_dir": null,
+      "note_type": null,
+      "reason": "short follow-up restates an existing explanation"
+    }
+  }
+}

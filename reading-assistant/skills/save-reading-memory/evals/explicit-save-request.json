@@ -1,0 +1,35 @@
+{
+  "name": "explicit-save-request",
+  "skill": "save-reading-memory",
+  "scenario": "The user explicitly asks to save a source-grounded insight.",
+  "input": {
+    "book": {
+      "title": "The Reflective Reader",
+      "author": "Example Author"
+    },
+    "chapter": "Chapter 6: Memory",
+    "progress": 0.71,
+    "selectedText": "A remembered event is not a sealed artifact; it is a rehearsal shaped by the present question.",
+    "selectedCfiRange": "epubcfi(/6/20!/4/2/8,/1:0,/1:96)",
+    "userQuestion": "这个观点很重要，帮我存到 Reading Memory。",
+    "assistantAnswer": "这句话把记忆理解为一种被当下问题重新组织的排练，而不是密封保存的物品。它提醒我们，每次回忆都包含现在的关切。"
+  },
+  "expected": {
+    "decision": {
+      "should_ingest": true,
+      "target_dir": "books",
+      "note_type": "book",
+      "reason": "explicit save request with selected source evidence"
+    },
+    "noteMustInclude": [
+      "book title",
+      "author",
+      "chapter",
+      "progress",
+      "selected CFI",
+      "selected text",
+      "user question",
+      "assistant answer"
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "source-boundary-caution",
+  "skill": "explain-selection",
+  "scenario": "The user asks for author intent that the selected text does not prove.",
+  "input": {
+    "book": {
+      "title": "The Reflective Reader",
+      "author": "Example Author"
+    },
+    "chapter": "Chapter 4: Authority",
+    "progress": 0.51,
+    "selectedText": "The narrator pauses before the door and listens to the house settle.",
+    "selectedCfiRange": "epubcfi(/6/16!/4/2/10,/1:0,/1:66)",
+    "chapterContext": "The scene occurs before a confrontation.",
+    "userQuestion": "作者是不是在暗示童年创伤？"
+  },
+  "expected": {
+    "answerMust": [
+      "say the selected text alone does not establish childhood trauma",
+      "offer a conditional inference if supported by the chapter context",
+      "name what additional evidence would matter"
+    ],
+    "answerMustNot": [
+      "state author intent as fact",
+      "invent earlier scenes"
+    ],
+    "readingMemory": {
+      "shouldIngest": false,
+      "reason": "source-boundary clarification is useful in chat but not automatically durable"
+    }
+  }
+}
