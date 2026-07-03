@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { useLibrary, useUI, useBookProgress } from '../stores/AppContext';
+import { useLibraryStore } from '../stores/libraryStore';
+import { useUIStore } from '../stores/uiStore';
+import { useProgressStore } from '../stores/progressStore';
 import type { Book, BookCategory } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
 import { CATEGORY_COLORS } from '../constants';
@@ -87,19 +89,18 @@ function LazyBookCover({ book }: { book: Book }) {
 
 export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: SidebarProps) {
     const { confirm } = useAppDialog();
-    const {
-        library,
-        currentBook,
-        setCurrentBook,
-        removeBook,
-        updateBook,
-        addCategory,
-        removeCategory,
-        updateCategory,
-        setBookCategory
-    } = useLibrary();
-    const { bookProgressById } = useBookProgress();
-    const { isSidebarOpen, setSidebarOpen } = useUI();
+    const library = useLibraryStore((s) => s.library);
+    const currentBook = useLibraryStore((s) => s.currentBook);
+    const setCurrentBook = useLibraryStore((s) => s.setCurrentBook);
+    const removeBook = useLibraryStore((s) => s.removeBook);
+    const updateBook = useLibraryStore((s) => s.updateBook);
+    const addCategory = useLibraryStore((s) => s.addCategory);
+    const removeCategory = useLibraryStore((s) => s.removeCategory);
+    const updateCategory = useLibraryStore((s) => s.updateCategory);
+    const setBookCategory = useLibraryStore((s) => s.setBookCategory);
+    const bookProgressById = useProgressStore((s) => s.bookProgressById);
+    const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
+    const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
     const [bookToEdit, setBookToEdit] = useState<EditBookState | null>(null);
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);

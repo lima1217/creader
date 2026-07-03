@@ -1,6 +1,11 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { invoke, Channel } from '@tauri-apps/api/core';
-import { useAI, useBookProgress, useLibrary, useSettings, useUI } from '../stores/AppContext';
+import { useAIStore } from '../stores/aiStore';
+import { useProgressStore } from '../stores/progressStore';
+import { useLibraryStore } from '../stores/libraryStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useUIStore } from '../stores/uiStore';
+import { useSelectionStore } from '../stores/selectionStore';
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
 import { perfMark, perfMeasure } from '../utils/perf';
@@ -51,24 +56,22 @@ function ScrollDownIcon() {
 }
 
 export function AIPanel() {
-    const { isAIPanelOpen } = useUI();
-    const {
-        chatMessages,
-        conversationMemory,
-        addChatMessage,
-        setConversationMemory,
-        clearChat,
-        currentChapterContent,
-        selectedText,
-        setSelectedText,
-        selectedCfiRange,
-        accumulatedTexts,
-        removeAccumulatedText,
-        clearAccumulatedTexts,
-    } = useAI();
-    const { currentBook } = useLibrary();
-    const { bookProgressById } = useBookProgress();
-    const { settings } = useSettings();
+    const isAIPanelOpen = useUIStore((s) => s.isAIPanelOpen);
+    const chatMessages = useAIStore((s) => s.chatMessages);
+    const conversationMemory = useAIStore((s) => s.conversationMemory);
+    const addChatMessage = useAIStore((s) => s.addChatMessage);
+    const setConversationMemory = useAIStore((s) => s.setConversationMemory);
+    const clearChat = useAIStore((s) => s.clearChat);
+    const currentChapterContent = useAIStore((s) => s.currentChapterContent);
+    const selectedText = useSelectionStore((s) => s.selectedText);
+    const setSelectedText = useSelectionStore((s) => s.setSelectedText);
+    const selectedCfiRange = useSelectionStore((s) => s.selectedCfiRange);
+    const accumulatedTexts = useSelectionStore((s) => s.accumulatedTexts);
+    const removeAccumulatedText = useSelectionStore((s) => s.removeAccumulatedText);
+    const clearAccumulatedTexts = useSelectionStore((s) => s.clearAccumulatedTexts);
+    const currentBook = useLibraryStore((s) => s.currentBook);
+    const bookProgressById = useProgressStore((s) => s.bookProgressById);
+    const settings = useSettingsStore((s) => s.settings);
     const isTauri = isTauriRuntime();
 
     const [input, setInput] = useState('');

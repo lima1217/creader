@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Book as EpubBook, Rendition } from 'epubjs';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useAI, useLibrary, useSettings, useUI, useBookProgress } from '../stores/AppContext';
+import { useLibraryStore } from '../stores/libraryStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useUIStore } from '../stores/uiStore';
+import { useProgressStore } from '../stores/progressStore';
+import { useAIStore } from '../stores/aiStore';
+import { useSelectionStore } from '../stores/selectionStore';
 import type { Book, NavItem } from '../types';
 import type { EpubBookLike } from '../services/reader/epubAdapter';
 import { tryCopyBookToLibrary } from '../services/BookImportService';
@@ -37,19 +42,21 @@ function searchIndexMessage(state: string, error?: string): string {
 }
 
 export function EPUBReader() {
-    const { currentBook, updateBookFilePath, updateBookSearchIndex } = useLibrary();
-    const { updateBookProgress } = useBookProgress();
-    const { settings } = useSettings();
-    const { isSearchOpen, setSearchOpen, setAIPanelOpen } = useUI();
-    const {
-        currentChapterContent,
-        setCurrentChapterContent,
-        setSelectedText,
-        selectedText,
-        setSelectedCfiRange,
-        addToAccumulatedTexts,
-        accumulatedTexts,
-    } = useAI();
+    const currentBook = useLibraryStore((s) => s.currentBook);
+    const updateBookFilePath = useLibraryStore((s) => s.updateBookFilePath);
+    const updateBookSearchIndex = useLibraryStore((s) => s.updateBookSearchIndex);
+    const updateBookProgress = useProgressStore((s) => s.updateBookProgress);
+    const settings = useSettingsStore((s) => s.settings);
+    const isSearchOpen = useUIStore((s) => s.isSearchOpen);
+    const setSearchOpen = useUIStore((s) => s.setSearchOpen);
+    const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
+    const currentChapterContent = useAIStore((s) => s.currentChapterContent);
+    const setCurrentChapterContent = useAIStore((s) => s.setCurrentChapterContent);
+    const setSelectedText = useSelectionStore((s) => s.setSelectedText);
+    const selectedText = useSelectionStore((s) => s.selectedText);
+    const setSelectedCfiRange = useSelectionStore((s) => s.setSelectedCfiRange);
+    const addToAccumulatedTexts = useSelectionStore((s) => s.addToAccumulatedTexts);
+    const accumulatedTexts = useSelectionStore((s) => s.accumulatedTexts);
     const containerRef = useRef<HTMLDivElement>(null);
     const bookRef = useRef<EpubBook | null>(null);
     const renditionRef = useRef<Rendition | null>(null);

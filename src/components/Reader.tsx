@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect } from 'react';
-import { useLibrary } from '../stores/AppContext';
+import { useLibraryStore } from '../stores/libraryStore';
 import './Reader.css';
 
 let epubReaderPromise: ReturnType<typeof importEpubReader> | undefined;
@@ -29,7 +29,7 @@ const ReaderLoading = () => (
 );
 
 export function Reader() {
-    const { currentBook } = useLibrary();
+    const currentBook = useLibraryStore((s) => s.currentBook);
 
     useEffect(() => {
         if (currentBook) return;

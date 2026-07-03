@@ -1,4 +1,7 @@
-import { useLibrary, useSettings, useUI, useBookProgress } from '../stores/AppContext';
+import { useLibraryStore } from '../stores/libraryStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useUIStore } from '../stores/uiStore';
+import { useProgressStore } from '../stores/progressStore';
 import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
@@ -14,10 +17,16 @@ import {
 import './Toolbar.css';
 
 export function Toolbar() {
-    const { settings, setSettings } = useSettings();
-    const { currentBook } = useLibrary();
-    const { bookProgressById } = useBookProgress();
-    const { isSidebarOpen, setSidebarOpen, isAIPanelOpen, setAIPanelOpen, isSearchOpen, setSearchOpen } = useUI();
+    const settings = useSettingsStore((s) => s.settings);
+    const setSettings = useSettingsStore((s) => s.setSettings);
+    const currentBook = useLibraryStore((s) => s.currentBook);
+    const bookProgressById = useProgressStore((s) => s.bookProgressById);
+    const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
+    const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
+    const isAIPanelOpen = useUIStore((s) => s.isAIPanelOpen);
+    const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
+    const isSearchOpen = useUIStore((s) => s.isSearchOpen);
+    const setSearchOpen = useUIStore((s) => s.setSearchOpen);
 
     const displayProgress = currentBook ? (bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage ?? 0) : 0;
 

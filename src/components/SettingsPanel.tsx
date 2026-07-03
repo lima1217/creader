@@ -11,7 +11,7 @@ import { FieldStatus } from '@astryxdesign/core/FieldStatus';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Button } from '@astryxdesign/core/Button';
 import { ButtonGroup } from '@astryxdesign/core/ButtonGroup';
-import { useSettings } from '../stores/AppContext';
+import { useSettingsStore } from '../stores/settingsStore';
 import { ensureReadingMemoryRepository } from '../services/ReadingMemory';
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
@@ -73,7 +73,8 @@ type SettingsPanelProps = {
 };
 
 export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
-    const { settings, setSettings } = useSettings();
+    const settings = useSettingsStore((s) => s.settings);
+    const setSettings = useSettingsStore((s) => s.setSettings);
     const isTauri = isTauriRuntime();
     const aiProviders = useAIProviders({ isTauri, active: isOpen });
     const [isMemoryBusy, setMemoryBusy] = useState(false);
