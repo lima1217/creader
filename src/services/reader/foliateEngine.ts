@@ -15,14 +15,17 @@ type FoliateContent = {
   index?: number;
 };
 
+type FoliateRenderer = {
+  getContents?: () => FoliateContent[];
+  setStyles?: (styles: string) => void;
+};
+
 type FoliateViewElement = HTMLElement & {
   book?: {
     sections?: Array<{ id?: string; cfi?: string }>;
     toc?: FoliateTocItem[];
   };
-  renderer?: {
-    getContents?: () => FoliateContent[];
-  };
+  renderer?: FoliateRenderer;
   lastLocation?: FoliateLocation | null;
   open(book: File | Blob | string | unknown): Promise<void>;
   init(options: { lastLocation?: string; showTextStart?: boolean }): Promise<void>;
@@ -39,6 +42,18 @@ type FoliateTocItem = {
   label?: string;
   subitems?: FoliateTocItem[];
 };
+
+export function toFoliateThemeCss(styles: Record<string, Record<string, string>>): string {
+  return Object.entries(styles)
+    .map(([selector, rules]) => `${selector}{${Object.entries(rules).map(([key, value]) => `${key}:${value};`).join('')}}`)
+    .join('\n');
+}
+
+export function applyFoliateManagedStyles(renderer: FoliateRenderer | undefined, css: string): boolean {
+  if (!renderer?.setStyles) return false;
+  renderer.setStyles(css);
+  return true;
+}
 
 class FoliateRenditionEventBridge {
   private readonly handlers = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -172,21 +187,33 @@ class FoliateRendition implements ReadingEngineRendition {
   }
 
   private applyTheme(): void {
-    for (const content of this.getContents()) this.applyThemeToDocument(content.document);
+    const css = toFoliateThemeCss(this.themeStyles);
+    applyFoliateManagedStyles(this.view.renderer, css);
+    for (const content of this.getContents()) this.applyThemeToDocument(content.document, css);
   }
 
-  private applyThemeToDocument(doc?: Document): void {
+  private applyThemeToDocument(doc?: Document, css = toFoliateThemeCss(this.themeStyles)): void {
     if (!doc) return;
-    const id = 'creader-foliate-theme';
-    let style = doc.getElementById(id) as HTMLStyleElement | null;
-    if (!style) {
-      style = doc.createElement('style');
-      style.id = id;
-      doc.head.append(style);
+    if (!this.view.renderer?.setStyles) {
+      const id = 'creader-foliate-theme';
+      let style = doc.getElementById(id) as HTMLStyleElement | null;
+      if (!style) {
+        style = doc.createElement('style');
+        style.id = id;
+        doc.head.append(style);
+      }
+      style.textContent = css;
     }
-    style.textContent = Object.entries(this.themeStyles)
-      .map(([selector, rules]) => `${selector}{${Object.entries(rules).map(([key, value]) => `${key}:${value};`).join('')}}`)
-      .join('\n');
+
+    // foliate snapshots the section body background at load and repaints it from
+    // its own shadow-DOM `#background` layer (`paginator.js` →
+    // `#replaceBackground`). The public `renderer.setStyles()` path above
+    // schedules that replacement on the next animation frame, so the old
+    // background does not linger until a page turn. `--theme-bg-color` is
+    // foliate's hook for substituting the live theme into that replacement.
+    const bodyBackground = this.themeStyles.body?.background;
+    const bgColor = bodyBackground?.replace(/\s*!important\s*$/, '');
+    if (bgColor) doc.documentElement.style.setProperty('--theme-bg-color', bgColor);
   }
 }
 
