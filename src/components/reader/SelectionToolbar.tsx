@@ -1,5 +1,18 @@
 import type { ReactNode } from 'react';
+import { Button } from '@astryxdesign/core/Button';
+import { IconButton } from '@astryxdesign/core/IconButton';
 
+/**
+ * Selection toolbar — the floating chrome that appears over a reading-engine
+ * selection. See ADR 0011 §7 and the "Selection Coordinate" term in
+ * CONTEXT.md.
+ *
+ * The positioning shell, viewport-flip logic, and onMouseDown stop-propagation
+ * stay as bespoke JSX: the Reading Engine Adapter emits an `{x, y}` coordinate,
+ * never a DOM anchor, so Astryx trigger-anchored overlays (Popover/Tooltip)
+ * cannot own this surface. Only the inner buttons + hint styling move to
+ * Astryx tokens/components.
+ */
 export function SelectionToolbar(props: {
   visible: boolean;
   selectedText: string;
@@ -50,21 +63,34 @@ export function SelectionToolbar(props: {
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <button
-          className="reader-selection-btn"
+        <Button
+          variant="ghost"
+          size="sm"
+          label="加入选文"
+          tooltip="加入跨页选文"
+          icon={addIcon}
           onClick={onAdd}
-          title="加入跨页选文"
         >
-          {addIcon}
-          <span>加入选文{accumulatedCount > 0 ? ` (${accumulatedCount})` : ''}</span>
-        </button>
-        <button className="reader-selection-btn" onClick={onAsk} title="用选文询问 AI">
-          {askIcon}
-          <span>问 AI</span>
-        </button>
-        <button className="reader-selection-btn reader-selection-btn-close" onClick={onClose} title="关闭">
-          {closeIcon}
-        </button>
+          {accumulatedCount > 0 ? `加入选文 (${accumulatedCount})` : '加入选文'}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          label="问 AI"
+          tooltip="用选文询问 AI"
+          icon={askIcon}
+          onClick={onAsk}
+        >
+          问 AI
+        </Button>
+        <IconButton
+          variant="ghost"
+          size="sm"
+          label="关闭"
+          tooltip="关闭"
+          icon={closeIcon}
+          onClick={onClose}
+        />
       </div>
       {showHint && (
         <div
