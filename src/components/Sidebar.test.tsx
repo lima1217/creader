@@ -6,6 +6,7 @@ import { useUIStore } from '../stores/uiStore';
 
 import {
   click,
+  installDialogElementStub,
   installIntersectionObserverStub,
   mount,
   setInputValue,
@@ -133,21 +134,22 @@ function mountSidebar(handlers: Handlers = {}) {
 // node matching the given name. The click is async (React re-render), so the
 // caller awaits this and searches after the settle.
 async function expandTagsAndFindChild(container: HTMLElement, name: string): Promise<HTMLElement> {
-  const tagsToggle = Array.from(container.querySelectorAll('[role="button"]')).find(
-    (el) => el.querySelector('.category-filter-name')?.textContent === '标签',
+  const tagsToggle = Array.from(container.querySelectorAll('button')).find(
+    (el) => el.textContent?.includes('标签'),
   ) as HTMLElement;
   click(tagsToggle);
   await settle();
-  const child = Array.from(container.querySelectorAll('.category-child-item .category-filter-name')).find(
-    (el) => el.textContent === name,
+  const child = Array.from(container.querySelectorAll('button')).find(
+    (el) => el.textContent?.includes(name),
   ) as HTMLElement | undefined;
-  return child!.closest('.category-child-item') as HTMLElement;
+  return child!;
 }
 
 // --- Setup ---------------------------------------------------------------
 
 beforeEach(() => {
   installIntersectionObserverStub();
+  installDialogElementStub();
   resetConfirmState();
   useLibraryStore.setState({
     library: { books: [], categories: [], lastUpdated: 1 },
@@ -364,7 +366,7 @@ describe('Sidebar contract — category modal (add + edit)', () => {
     await settle();
 
     const modal = container.querySelector('.modal-category') as HTMLElement;
-    const nameInput = modal.querySelector('#category-name') as HTMLInputElement;
+    const nameInput = modal.querySelector('input') as HTMLInputElement;
     const createBtn = Array.from(modal.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === '创建',
     )!;
@@ -393,15 +395,18 @@ describe('Sidebar contract — category modal (add + edit)', () => {
     seedLibrary({ books: [], categories: [cat], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    // Expand tags, then click the category's edit action.
-    const editBtn = (await expandTagsAndFindChild(container, 'Old Name')).querySelector(
-      '[title="编辑分类"]',
+    // Expand tags, then open the category's MoreMenu edit action.
+    await expandTagsAndFindChild(container, 'Old Name');
+    click(container.querySelector('[aria-label="Old Name 操作"]')!);
+    await settle();
+    const editBtn = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+      (item) => item.textContent?.trim() === '编辑分类',
     )!;
     click(editBtn);
     await settle();
 
     const modal = container.querySelector('.modal-category') as HTMLElement;
-    const nameInput = modal.querySelector('#category-name') as HTMLInputElement;
+    const nameInput = modal.querySelector('input') as HTMLInputElement;
     expect(nameInput.value).toBe('Old Name');
     // The confirm button reads 保存 (not 创建) in edit mode.
     const saveBtn = Array.from(modal.querySelectorAll('button')).find(

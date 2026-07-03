@@ -7,11 +7,18 @@ import type { Book, BookCategory } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
 import { CATEGORY_COLORS } from '../constants';
 import { useAppDialog } from './AppDialog';
+import { Button } from '@astryxdesign/core/Button';
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { IconButton } from '@astryxdesign/core/IconButton';
 import { Icon } from '@astryxdesign/core/Icon';
+import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
+import { List, ListItem } from '@astryxdesign/core/List';
+import { MoreMenu } from '@astryxdesign/core/MoreMenu';
+import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
+import { TextInput } from '@astryxdesign/core/TextInput';
 import {
     EditIcon,
-    PlusIcon,
     SettingsIcon,
     SidebarBookIcon as BookIcon,
     TagIcon,
@@ -58,6 +65,63 @@ function AstryxPlusIcon(props: SVGProps<SVGSVGElement>) {
             <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
     );
+}
+
+function AstryxBookIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z" />
+        </svg>
+    );
+}
+
+function AstryxTagIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3H4v5.59A2 2 0 0 0 4.59 10l9.58 9.59a2 2 0 0 0 2.83 0l3.59-3.59a2 2 0 0 0 0-2.83z" />
+            <circle cx="7.5" cy="6.5" r="1" />
+        </svg>
+    );
+}
+
+function AstryxEditIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+    );
+}
+
+function AstryxTrashIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M19 6 18 20H6L5 6" />
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+        </svg>
+    );
+}
+
+function AstryxMutedDotIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="12" r="5" />
+        </svg>
+    );
+}
+
+function makeCategoryDotIcon(color: string) {
+    return function AstryxCategoryDotIcon(props: SVGProps<SVGSVGElement>) {
+        return (
+            <svg {...props} viewBox="0 0 24 24" fill={color}>
+                <circle cx="12" cy="12" r="5" />
+            </svg>
+        );
+    };
 }
 
 interface SidebarProps {
@@ -271,17 +335,14 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         setShowCategoryModal(true);
     };
 
-    const handleEditCategory = (e: React.MouseEvent, category: BookCategory) => {
-        e.stopPropagation();
+    const openEditCategory = (category: BookCategory) => {
         setEditingCategory(category);
         setNewCategoryName(category.name);
         setNewCategoryColor(category.color);
         setShowCategoryModal(true);
     };
 
-    const handleDeleteCategory = async (e: React.MouseEvent, categoryId: string) => {
-        e.stopPropagation();
-
+    const handleDeleteCategoryAction = async (categoryId: string) => {
         const shouldDelete = await confirm({
             title: 'Delete category',
             message: 'Books in this category will become uncategorized.',
@@ -331,96 +392,110 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         <aside className="sidebar">
             {/* Edit Book Modal */}
             {bookToEdit && (
-                <div className="modal-overlay" onClick={cancelEdit}>
-                    <div className="modal modal-edit" onClick={e => e.stopPropagation()}>
-                        <h3>编辑书籍</h3>
-                        <div className="modal-form">
-                            <div className="form-group">
-                                <label htmlFor="edit-title">书名</label>
-                                <input
+                <Dialog
+                    isOpen={bookToEdit !== null}
+                    onOpenChange={(open) => { if (!open) cancelEdit(); }}
+                    width={450}
+                    purpose="info"
+                    className="modal-overlay"
+                >
+                    <Layout className="modal modal-edit">
+                        <DialogHeader title="编辑书籍" onOpenChange={(open) => { if (!open) cancelEdit(); }} />
+                        <LayoutContent>
+                            <div className="modal-form">
+                                <TextInput
                                     id="edit-title"
-                                    type="text"
+                                    label="书名"
                                     value={bookToEdit.title}
-                                    onChange={e => setBookToEdit({ ...bookToEdit, title: e.target.value })}
+                                    onChange={value => setBookToEdit({ ...bookToEdit, title: value })}
                                     onKeyDown={handleEditKeyDown}
                                     placeholder="书名"
-                                    autoFocus
+                                    hasAutoFocus
                                 />
-                            </div>
-                            <div className="form-group">
-                                <label htmlFor="edit-author">作者</label>
-                                <input
+                                <TextInput
                                     id="edit-author"
-                                    type="text"
+                                    label="作者"
                                     value={bookToEdit.author}
-                                    onChange={e => setBookToEdit({ ...bookToEdit, author: e.target.value })}
+                                    onChange={value => setBookToEdit({ ...bookToEdit, author: value })}
                                     onKeyDown={handleEditKeyDown}
                                     placeholder="作者"
                                 />
                             </div>
-                        </div>
-                        <div className="modal-actions">
-                            <button className="btn btn-secondary" onClick={cancelEdit}>
-                                取消
-                            </button>
-                            <button className="btn btn-primary" onClick={confirmEdit}>
-                                保存
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                        </LayoutContent>
+                        <LayoutFooter hasDivider className="modal-actions">
+                            <Button variant="secondary" label="取消" onClick={cancelEdit} />
+                            <Button variant="primary" label="保存" onClick={confirmEdit} />
+                        </LayoutFooter>
+                    </Layout>
+                </Dialog>
             )}
 
             {/* Category Modal */}
             {showCategoryModal && (
-                <div className="modal-overlay" onClick={() => setShowCategoryModal(false)}>
-                    <div className="modal modal-category" onClick={e => e.stopPropagation()}>
-                        <h3>{editingCategory ? '编辑分类' : '新建分类'}</h3>
-                        <div className="modal-form">
-                            <div className="form-group">
-                                <label htmlFor="category-name">名称</label>
-                                <input
+                <Dialog
+                    isOpen={showCategoryModal}
+                    onOpenChange={(open) => { if (!open) setShowCategoryModal(false); }}
+                    width={450}
+                    purpose="info"
+                    className="modal-overlay"
+                >
+                    <Layout className="modal modal-category">
+                        <DialogHeader
+                            title={editingCategory ? '编辑分类' : '新建分类'}
+                            onOpenChange={(open) => { if (!open) setShowCategoryModal(false); }}
+                        />
+                        <LayoutContent>
+                            <div className="modal-form">
+                                <TextInput
                                     id="category-name"
-                                    type="text"
+                                    label="名称"
                                     value={newCategoryName}
-                                    onChange={e => setNewCategoryName(e.target.value)}
+                                    onChange={setNewCategoryName}
                                     onKeyDown={e => e.key === 'Enter' && confirmCategoryModal()}
                                     placeholder="分类名称"
-                                    autoFocus
+                                    hasAutoFocus
                                 />
-                            </div>
-                            <div className="form-group">
-                                <label>颜色</label>
-                                <div className="color-picker">
-                                    {CATEGORY_COLORS.map(color => (
-                                        <button
-                                            key={color}
-                                            className={`color-option ${newCategoryColor === color ? 'selected' : ''}`}
-                                            style={{ backgroundColor: color }}
-                                            onClick={() => setNewCategoryColor(color)}
-                                            type="button"
-                                        />
-                                    ))}
+                                <div className="form-group">
+                                    <label>颜色</label>
+                                    <div className="color-picker">
+                                        {CATEGORY_COLORS.map(color => (
+                                            <button
+                                                key={color}
+                                                className={`color-option ${newCategoryColor === color ? 'selected' : ''}`}
+                                                style={{ backgroundColor: color }}
+                                                onClick={() => setNewCategoryColor(color)}
+                                                type="button"
+                                            />
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div className="modal-actions">
-                            <button className="btn btn-secondary" onClick={() => setShowCategoryModal(false)}>
-                                取消
-                            </button>
-                            <button className="btn btn-primary" onClick={confirmCategoryModal} disabled={!newCategoryName.trim()}>
-                                {editingCategory ? '保存' : '创建'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                        </LayoutContent>
+                        <LayoutFooter hasDivider className="modal-actions">
+                            <Button variant="secondary" label="取消" onClick={() => setShowCategoryModal(false)} />
+                            <Button
+                                variant="primary"
+                                label={editingCategory ? '保存' : '创建'}
+                                onClick={confirmCategoryModal}
+                                isDisabled={!newCategoryName.trim()}
+                            />
+                        </LayoutFooter>
+                    </Layout>
+                </Dialog>
             )}
 
             {/* Assign Category Modal */}
             {bookForCategory && (
-                <div className="modal-overlay" onClick={() => setBookForCategory(null)}>
-                    <div className="modal modal-assign-category" onClick={e => e.stopPropagation()}>
-                        <h3>设置分类</h3>
+                <Dialog
+                    isOpen={bookForCategory !== null}
+                    onOpenChange={(open) => { if (!open) setBookForCategory(null); }}
+                    width={300}
+                    purpose="info"
+                    className="modal-overlay"
+                >
+                    <Layout className="modal modal-assign-category">
+                        <DialogHeader title="设置分类" onOpenChange={(open) => { if (!open) setBookForCategory(null); }} />
+                        <LayoutContent>
                         <div className="category-assign-list">
                             <button
                                 className="category-assign-item"
@@ -440,13 +515,12 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                 </button>
                             ))}
                         </div>
-                        <div className="modal-actions">
-                            <button className="btn btn-secondary" onClick={() => setBookForCategory(null)}>
-                                取消
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                        </LayoutContent>
+                        <LayoutFooter hasDivider className="modal-actions">
+                            <Button variant="secondary" label="取消" onClick={() => setBookForCategory(null)} />
+                        </LayoutFooter>
+                    </Layout>
+                </Dialog>
             )}
 
             <div className="sidebar-header">
@@ -483,116 +557,98 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
 
             {/* Category Filter */}
             <div className="sidebar-categories">
-                <button
-                    className={`category-filter-item category-primary-item ${!selectedCategoryId || selectedCategoryId === 'all' ? 'active' : ''}`}
-                    onClick={() => setSelectedCategoryId(null)}
-                >
-                    <BookIcon />
-                    <span className="category-filter-name">全部书籍</span>
-                    <span className="category-filter-count">{library.books.length}</span>
-                </button>
-
-                <div className="category-section">
-                    <div
-                        role="button"
-                        tabIndex={0}
-                        className={`category-filter-item category-primary-item ${isTagsOpen ? 'expanded' : ''}`}
-                        onClick={() => setTagsOpen(open => !open)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                setTagsOpen(open => !open);
-                            }
-                        }}
-                    >
-                        <TagIcon />
-                        <span className="category-filter-name">标签</span>
-                        <span className="category-filter-count">{categories.length}</span>
-                    </div>
-
-                    {isTagsOpen && (
-                        <div className="category-children">
+                <SideNav>
+                    <SideNavSection title="书库分类" isHeaderHidden>
+                        <SideNavItem
+                            label="全部书籍"
+                            icon={AstryxBookIcon}
+                            isSelected={!selectedCategoryId || selectedCategoryId === 'all'}
+                            onClick={() => setSelectedCategoryId(null)}
+                            endContent={<span className="category-filter-count">{library.books.length}</span>}
+                        />
+                        <SideNavItem
+                            label="标签"
+                            icon={AstryxTagIcon}
+                            endContent={<span className="category-filter-count">{categories.length}</span>}
+                            collapsible={{
+                                isCollapsed: !isTagsOpen,
+                                onCollapsedChange: collapsed => setTagsOpen(!collapsed),
+                            }}
+                        >
                             {groupedBooks.uncategorized.length > 0 && (
-                                <button
-                                    className={`category-filter-item category-child-item ${selectedCategoryId === 'uncategorized' ? 'active' : ''}`}
+                                <SideNavItem
+                                    label="未分类"
+                                    icon={AstryxMutedDotIcon}
+                                    isSelected={selectedCategoryId === 'uncategorized'}
                                     onClick={() => setSelectedCategoryId('uncategorized')}
-                                >
-                                    <span className="category-color category-color-muted" />
-                                    <span className="category-filter-name">未分类</span>
-                                    <span className="category-filter-count">{groupedBooks.uncategorized.length}</span>
-                                </button>
+                                    endContent={<span className="category-filter-count">{groupedBooks.uncategorized.length}</span>}
+                                />
                             )}
 
                             {categories.map(category => (
                                 <div key={category.id} className="category-filter-group">
-                                    <div
-                                        role="button"
-                                        tabIndex={0}
-                                        className={`category-filter-item category-child-item ${selectedCategoryId === category.id ? 'active' : ''}`}
+                                    <SideNavItem
+                                        label={category.name}
+                                        icon={makeCategoryDotIcon(category.color)}
+                                        isSelected={selectedCategoryId === category.id}
                                         onClick={() => setSelectedCategoryId(category.id)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === ' ') {
-                                                e.preventDefault();
-                                                setSelectedCategoryId(category.id);
-                                            }
-                                        }}
-                                    >
-                                        <span className="category-color" style={{ backgroundColor: category.color }} />
-                                        <span className="category-filter-name">{category.name}</span>
-                                        <span className="category-filter-count">{groupedBooks[category.id]?.length || 0}</span>
-                                        <div className="category-actions">
-                                            <button
-                                                className="btn btn-ghost btn-icon-sm"
-                                                onClick={(e) => handleEditCategory(e, category)}
-                                                title="编辑分类"
-                                            >
-                                                <EditIcon />
-                                            </button>
-                                            <button
-                                                className="btn btn-ghost btn-icon-sm"
-                                                onClick={(e) => handleDeleteCategory(e, category.id)}
-                                                title="删除分类"
-                                            >
-                                                <TrashIcon />
-                                            </button>
-                                        </div>
+                                        endContent={<span className="category-filter-count">{groupedBooks[category.id]?.length || 0}</span>}
+                                    />
+                                    <div className="category-actions">
+                                        <MoreMenu
+                                            label={`${category.name} 操作`}
+                                            size="sm"
+                                            items={[
+                                                { label: '编辑分类', icon: AstryxEditIcon, onClick: () => openEditCategory(category) },
+                                                { label: '删除分类', icon: AstryxTrashIcon, onClick: () => void handleDeleteCategoryAction(category.id) },
+                                            ]}
+                                        />
                                     </div>
                                 </div>
                             ))}
-                        </div>
-                    )}
-                </div>
+                        </SideNavItem>
+                    </SideNavSection>
+                </SideNav>
             </div>
 
             <div className="sidebar-content">
                 {filteredBooks.length === 0 ? (
                     <div className="sidebar-empty">
-                        <div className="sidebar-empty-icon">
-                            <BookIcon />
-                        </div>
-                        <h4>还没有书籍</h4>
-                        <p>导入第一本书开始阅读</p>
-                        <button className="btn btn-primary" onClick={onImportBook}>
-                            <PlusIcon />
-                            <span>导入书籍</span>
-                        </button>
+                        <EmptyState
+                            isCompact
+                            headingLevel={4}
+                            title="还没有书籍"
+                            description="导入第一本书开始阅读"
+                            icon={<Icon icon={AstryxBookIcon} />}
+                            actions={
+                                <Button
+                                    variant="primary"
+                                    label="导入书籍"
+                                    icon={<Icon icon={AstryxPlusIcon} size="sm" />}
+                                    onClick={onImportBook}
+                                />
+                            }
+                        />
                     </div>
                 ) : (
-                    <div className="book-list">
+                    <List density="compact" className="book-list">
                         {filteredBooks.map((book) => {
                             const percentage = bookProgressById[book.id]?.percentage ?? book.progress.percentage;
                             return (
-                                <div
+                                <ListItem
                                     key={book.id}
                                     className={`book-item ${currentBook?.id === book.id ? 'active' : ''}`}
                                     onMouseEnter={() => void onPreloadReader()}
                                     onClick={() => handleBookClick(book)}
-                                >
-                                    <LazyBookCover book={book} />
-                                    <div className="book-info">
+                                    isSelected={currentBook?.id === book.id}
+                                    startContent={<LazyBookCover book={book} />}
+                                    label={
                                         <span className="book-title-row">
                                             <span className="book-title">{book.title}</span>
                                         </span>
+                                    }
+                                    description={
+                                        <span className="book-info">
                                         <span className="book-author">{book.author || 'Unknown'}</span>
                                         {book.categoryId && (
                                             <span
@@ -613,8 +669,10 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                                 />
                                             </div>
                                         )}
-                                    </div>
-                                    <div className="book-actions">
+                                        </span>
+                                    }
+                                    endContent={
+                                        <span className="book-actions">
                                         <button
                                             className="btn btn-ghost btn-icon book-action-btn"
                                             onClick={(e) => handleSetBookCategory(e, book.id)}
@@ -636,11 +694,12 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                         >
                                             <TrashIcon />
                                         </button>
-                                    </div>
-                                </div>
+                                        </span>
+                                    }
+                                />
                             );
                         })}
-                    </div>
+                    </List>
                 )}
             </div>
 

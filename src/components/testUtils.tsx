@@ -57,6 +57,54 @@ export function installResizeObserverStub() {
   (window as unknown as { ResizeObserver: unknown }).ResizeObserver = RO;
 }
 
+/**
+ * jsdom has HTMLDialogElement but does not implement showModal()/close().
+ * Astryx Dialog relies on those browser APIs, so component tests that render
+ * real Dialogs need the minimal open-state behavior.
+ */
+export function installDialogElementStub() {
+  window.scrollTo = () => {};
+
+  const proto = window.HTMLDialogElement?.prototype;
+  if (!proto) return;
+
+  if (!proto.showModal) {
+    proto.showModal = function showModal() {
+      this.open = true;
+      this.setAttribute('open', '');
+    };
+  }
+
+  if (!proto.close) {
+    proto.close = function close() {
+      this.open = false;
+      this.removeAttribute('open');
+    };
+  }
+
+  const popoverProto = window.HTMLElement.prototype as HTMLElement & {
+    showPopover?: () => void;
+    hidePopover?: () => void;
+    togglePopover?: () => void;
+  };
+
+  popoverProto.showPopover ??= function showPopover(this: HTMLElement) {
+    this.setAttribute('popover-open', '');
+  };
+  popoverProto.hidePopover ??= function hidePopover(this: HTMLElement) {
+    this.removeAttribute('popover-open');
+  };
+  popoverProto.togglePopover ??= function togglePopover(this: HTMLElement) {
+    if (this.hasAttribute('popover-open')) {
+      this.hidePopover?.();
+      return false;
+    } else {
+      this.showPopover?.();
+      return true;
+    }
+  };
+}
+
 // --- mount / settle / input ---------------------------------------------
 
 const roots: Root[] = [];
