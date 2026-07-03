@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
+import type { ComponentProps, SVGProps } from 'react';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useUIStore } from '../stores/uiStore';
 import { useProgressStore } from '../stores/progressStore';
@@ -6,17 +7,58 @@ import type { Book, BookCategory } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
 import { CATEGORY_COLORS } from '../constants';
 import { useAppDialog } from './AppDialog';
+import { IconButton } from '@astryxdesign/core/IconButton';
+import { Icon } from '@astryxdesign/core/Icon';
 import {
     EditIcon,
-    FolderIcon,
     PlusIcon,
     SettingsIcon,
     SidebarBookIcon as BookIcon,
-    SidebarPanelIcon,
     TagIcon,
     TrashIcon,
 } from './icons/icons';
 import './Sidebar.css';
+
+type HeaderIconButtonProps = ComponentProps<typeof IconButton> & {
+    title: string;
+};
+
+function HeaderIconButton({ title, ...props }: HeaderIconButtonProps) {
+    return (
+        <IconButton
+            {...props}
+            ref={(button) => {
+                if (button) button.title = title;
+            }}
+        />
+    );
+}
+
+function AstryxSidebarPanelIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+            <rect x="5" y="4" width="14" height="16" rx="3.2" />
+            <line x1="10" y1="7" x2="10" y2="17" />
+        </svg>
+    );
+}
+
+function AstryxFolderIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+    );
+}
+
+function AstryxPlusIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+    );
+}
 
 interface SidebarProps {
     onImportBook: () => void;
@@ -408,21 +450,34 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
             )}
 
             <div className="sidebar-header">
-                <button
-                    className="btn btn-ghost btn-icon sidebar-toggle-btn"
-                    onClick={() => setSidebarOpen(false)}
+                <HeaderIconButton
+                    variant="ghost"
+                    size="sm"
+                    label="隐藏侧栏"
                     title="隐藏侧栏"
-                    aria-label="隐藏侧栏"
-                >
-                    <SidebarPanelIcon size={23} strokeWidth={1.7} />
-                </button>
+                    tooltip="隐藏侧栏"
+                    icon={<Icon icon={AstryxSidebarPanelIcon} size="md" />}
+                    onClick={() => setSidebarOpen(false)}
+                />
                 <div className="sidebar-header-actions">
-                    <button className="btn btn-secondary btn-icon" onClick={handleAddCategory} title="新增标签" aria-label="新增标签">
-                        <FolderIcon />
-                    </button>
-                    <button className="btn btn-secondary btn-icon sidebar-import-btn" onClick={onImportBook} title="导入 EPUB" aria-label="导入 EPUB">
-                        <PlusIcon />
-                    </button>
+                    <HeaderIconButton
+                        variant="ghost"
+                        size="sm"
+                        label="新增标签"
+                        title="新增标签"
+                        tooltip="新增标签"
+                        icon={<Icon icon={AstryxFolderIcon} size="sm" />}
+                        onClick={handleAddCategory}
+                    />
+                    <HeaderIconButton
+                        variant="ghost"
+                        size="sm"
+                        label="导入 EPUB"
+                        title="导入 EPUB"
+                        tooltip="导入 EPUB"
+                        icon={<Icon icon={AstryxPlusIcon} size="sm" />}
+                        onClick={onImportBook}
+                    />
                 </div>
             </div>
 

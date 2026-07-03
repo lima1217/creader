@@ -22,43 +22,9 @@
     background: var(--bg-primary);
 }
 
-.sidebar-toggle-btn {
-    width: 30px;
-    min-width: 30px;
-    height: 30px;
-    min-height: 30px;
-    color: var(--text-muted);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    box-shadow: none;
-    opacity: 0.9;
-    transition: background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
-}
-
-.sidebar-toggle-btn:hover:not(:disabled) {
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-    opacity: 1;
-}
-
-.sidebar-toggle-btn:active:not(:disabled) {
-    transform: none;
-}
-
 .sidebar-header-actions {
     display: flex;
     gap: var(--space-1);
-}
-
-.sidebar-header-actions .btn-icon {
-    border-radius: var(--radius-md);
-    transition: background-color var(--transition-fast), color var(--transition-fast);
-}
-
-.sidebar-header-actions .btn-icon:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
 }
 
 /* Category Filter Section */
@@ -662,11 +628,6 @@
     background: var(--bg-panel);
 }
 
-.sidebar-header {
-    padding: 0 var(--space-3);
-    border-bottom-color: transparent;
-}
-
 .sidebar-categories {
     padding: 7px var(--space-2) 8px;
     border-bottom-color: var(--border-soft);
@@ -846,49 +807,6 @@
 /* ============================================
    Library Action Layout Refresh
    ============================================ */
-.sidebar-header {
-    height: 52px;
-    padding: 0 12px;
-}
-
-.sidebar-toggle-btn {
-    width: 30px;
-    min-width: 30px;
-    height: 30px;
-    min-height: 30px;
-    border-radius: 6px;
-}
-
-.sidebar-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.sidebar-header-actions .btn-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 4px;
-    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.sidebar-import-btn {
-    min-height: 36px;
-    padding: 0 12px;
-    gap: 7px;
-    border-radius: 4px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 650;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
-
-.sidebar-import-btn svg {
-    width: 14px;
-    height: 14px;
-}
-
 .category-filter-item {
     min-height: 34px;
     border-radius: 4px;
@@ -929,17 +847,6 @@
     font-size: 11px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-}
-
-
-/* Compact icon-only import action */
-.sidebar-import-btn.btn-icon {
-    width: 36px;
-    min-width: 36px;
-    height: 36px;
-    min-height: 36px;
-    padding: 0;
-    justify-content: center;
 }
 
 
