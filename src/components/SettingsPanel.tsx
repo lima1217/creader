@@ -11,6 +11,7 @@ import { FieldStatus } from '@astryxdesign/core/FieldStatus';
 import { Switch } from '@astryxdesign/core/Switch';
 import { Button } from '@astryxdesign/core/Button';
 import { ButtonGroup } from '@astryxdesign/core/ButtonGroup';
+import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { useSettingsStore } from '../stores/settingsStore';
 import { ensureReadingMemoryRepository } from '../services/ReadingMemory';
 import { isTauriRuntime } from '../utils/tauri';
@@ -217,6 +218,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     };
 
     const missingDefaultQuickActions = getMissingDefaultQuickActions(quickActionConfigs);
+    const activeAIProvider = aiProviders.activeProvider ?? aiProviders.providers[0] ?? null;
 
     return (
         <Dialog
@@ -227,11 +229,21 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             purpose="form"
             className="settings-dialog"
         >
-            <Layout>
+            <Layout className="settings-dialog-layout">
                 <DialogHeader
+                    className="settings-dialog-header"
                     title="设置"
                     subtitle="阅读记忆与 AI 运行方式"
-                    onOpenChange={open => { if (!open) onClose(); }}
+                    hasDivider={false}
+                    endContent={(
+                        <Button
+                            variant="ghost"
+                            label="关闭设置"
+                            isIconOnly
+                            icon={<CloseIcon />}
+                            onClick={onClose}
+                        />
+                    )}
                 />
                 <LayoutContent isScrollable>
                     <div className="settings-tabs-row">
@@ -351,60 +363,80 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         </div>
                     ) : (
                         <>
-                            {aiProviders.providers.length === 0 ? (
-                                <p className="settings-provider-empty">尚未添加 AI 服务。点下方「添加」配置一个 OpenAI 兼容服务。</p>
-                            ) : (
-                                <ul className="settings-provider-list">
-                                    {aiProviders.providers.map(provider => (
-                                        <li
-                                            key={provider.id}
-                                            className={`settings-provider-item ${provider.active ? 'active' : ''}`}
-                                        >
-                                            <button
-                                                className="settings-provider-main"
-                                                onClick={() => !provider.active && aiProviders.setActive(provider.id)}
-                                                title={provider.active ? '当前启用的服务' : '点此启用'}
-                                            >
-                                                <span className={`settings-provider-dot ${provider.hasKey ? 'available' : 'unavailable'}`} />
-                                                <span className="settings-provider-copy">
-                                                    <span className="settings-provider-name">
-                                                        {provider.name}
-                                                        {provider.active && <CheckIcon />}
-                                                    </span>
-                                                    <small>{provider.model} · {provider.hasKey ? 'Key 已设置' : '未设置 Key'}</small>
-                                                    <small className="settings-provider-url">{provider.baseUrl}</small>
-                                                </span>
-                                            </button>
-                                            <div className="settings-provider-actions">
-                                                <button
-                                                    className="settings-icon-btn"
-                                                    onClick={() => startEditProvider(provider)}
-                                                    title="编辑"
-                                                >
-                                                    编辑
-                                                </button>
-                                                <button
-                                                    className="settings-icon-btn settings-danger-action"
-                                                    onClick={() => aiProviders.deleteProvider(provider.id)}
-                                                    title="删除"
-                                                >
-                                                    删除
-                                                </button>
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-
-                            <div className="settings-provider-add">
+                            <div className="settings-provider-summary">
+                                <span className={`settings-provider-dot ${activeAIProvider?.hasKey ? 'available' : 'unavailable'}`} />
+                                <span className="settings-provider-summary-copy">
+                                    <strong>{activeAIProvider ? activeAIProvider.name : '尚未配置 AI 服务'}</strong>
+                                    <small>
+                                        {activeAIProvider
+                                            ? `${activeAIProvider.model} · ${activeAIProvider.hasKey ? 'Key 已设置' : '未设置 Key'}`
+                                            : '添加一个 OpenAI 兼容服务后即可使用 AI。'}
+                                    </small>
+                                    {activeAIProvider && (
+                                        <small className="settings-provider-url">{activeAIProvider.baseUrl}</small>
+                                    )}
+                                </span>
                                 <Button
                                     variant="secondary"
-                                    label="添加 AI 服务"
+                                    size="sm"
+                                    label={activeAIProvider ? '添加' : '添加 AI 服务'}
                                     icon={<PlusIcon />}
                                     onClick={startNewProvider}
                                     isDisabled={!isTauri}
                                 />
                             </div>
+
+                            {aiProviders.providers.length > 0 && (
+                                <Collapsible
+                                    className="settings-provider-collapsible"
+                                    defaultIsOpen={false}
+                                    trigger={(
+                                        <span className="settings-provider-collapsible-trigger">
+                                            <span>管理服务</span>
+                                            <small>{aiProviders.providers.length} 个服务，可切换、编辑或删除</small>
+                                        </span>
+                                    )}
+                                >
+                                    <ul className="settings-provider-list">
+                                        {aiProviders.providers.map(provider => (
+                                            <li
+                                                key={provider.id}
+                                                className={`settings-provider-item ${provider.active ? 'active' : ''}`}
+                                            >
+                                                <button
+                                                    className="settings-provider-main"
+                                                    onClick={() => !provider.active && aiProviders.setActive(provider.id)}
+                                                    aria-label={provider.active ? `${provider.name}，当前启用的服务` : `启用 ${provider.name}`}
+                                                >
+                                                    <span className={`settings-provider-dot ${provider.hasKey ? 'available' : 'unavailable'}`} />
+                                                    <span className="settings-provider-copy">
+                                                        <span className="settings-provider-name">
+                                                            {provider.name}
+                                                            {provider.active && <CheckIcon />}
+                                                        </span>
+                                                        <small>{provider.model} · {provider.hasKey ? 'Key 已设置' : '未设置 Key'}</small>
+                                                        <small className="settings-provider-url">{provider.baseUrl}</small>
+                                                    </span>
+                                                </button>
+                                                <div className="settings-provider-actions">
+                                                    <button
+                                                        className="settings-icon-btn"
+                                                        onClick={() => startEditProvider(provider)}
+                                                    >
+                                                        编辑
+                                                    </button>
+                                                    <button
+                                                        className="settings-icon-btn settings-danger-action"
+                                                        onClick={() => aiProviders.deleteProvider(provider.id)}
+                                                    >
+                                                        删除
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </Collapsible>
+                            )}
                         </>
                     )}
 
@@ -434,6 +466,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         </ButtonGroup>
                     </div>
 
+                    <Switch
+                        label="自动压缩"
+                        description="超过轮次后，将更早对话压成隐藏摘要继续带上。"
+                        value={settings.aiAutoSummarize}
+                        onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
+                    />
+
                     <Field
                         className="settings-field settings-field-stacked"
                         inputID="settings-context-window"
@@ -452,13 +491,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             ))}
                         </div>
                     </Field>
-
-                    <Switch
-                        label="自动压缩"
-                        description="超过轮次后，将更早对话压成隐藏摘要继续带上。"
-                        value={settings.aiAutoSummarize}
-                        onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
-                    />
                     </div>
                 )}
 

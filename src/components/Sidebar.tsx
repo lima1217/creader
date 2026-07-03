@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import type { ComponentProps, SVGProps } from 'react';
+import type { SVGProps } from 'react';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useUIStore } from '../stores/uiStore';
 import { useProgressStore } from '../stores/progressStore';
@@ -12,12 +12,13 @@ import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { IconButton } from '@astryxdesign/core/IconButton';
 import { Icon } from '@astryxdesign/core/Icon';
-import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
+import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { MoreMenu } from '@astryxdesign/core/MoreMenu';
 import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import {
+    CloseIcon,
     EditIcon,
     SettingsIcon,
     SidebarBookIcon as BookIcon,
@@ -25,21 +26,6 @@ import {
     TrashIcon,
 } from './icons/icons';
 import './Sidebar.css';
-
-type HeaderIconButtonProps = ComponentProps<typeof IconButton> & {
-    title: string;
-};
-
-function HeaderIconButton({ title, ...props }: HeaderIconButtonProps) {
-    return (
-        <IconButton
-            {...props}
-            ref={(button) => {
-                if (button) button.title = title;
-            }}
-        />
-    );
-}
 
 function AstryxSidebarPanelIcon(props: SVGProps<SVGSVGElement>) {
     return (
@@ -386,6 +372,9 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         }
     };
 
+    const bookForCategoryRecord = bookForCategory ? library.books.find(book => book.id === bookForCategory) : null;
+    const assignedCategoryId = bookForCategoryRecord?.categoryId;
+
     if (!isSidebarOpen) return null;
 
     return (
@@ -397,11 +386,24 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     onOpenChange={(open) => { if (!open) cancelEdit(); }}
                     width={450}
                     purpose="info"
-                    className="modal-overlay"
+                    className="modal-overlay sidebar-dialog"
                 >
-                    <Layout className="modal modal-edit">
-                        <DialogHeader title="编辑书籍" onOpenChange={(open) => { if (!open) cancelEdit(); }} />
-                        <LayoutContent>
+                    <Layout height="auto" className="sidebar-dialog-layout modal-edit">
+                        <DialogHeader
+                            className="sidebar-dialog-header"
+                            title="编辑书籍"
+                            hasDivider={false}
+                            endContent={(
+                                <Button
+                                    variant="ghost"
+                                    label="关闭"
+                                    isIconOnly
+                                    icon={<CloseIcon />}
+                                    onClick={cancelEdit}
+                                />
+                            )}
+                        />
+                        <LayoutContent className="sidebar-dialog-content">
                             <div className="modal-form">
                                 <TextInput
                                     id="edit-title"
@@ -421,11 +423,11 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     placeholder="作者"
                                 />
                             </div>
+                            <div className="modal-actions">
+                                <Button variant="secondary" label="取消" onClick={cancelEdit} />
+                                <Button variant="primary" label="保存" onClick={confirmEdit} />
+                            </div>
                         </LayoutContent>
-                        <LayoutFooter hasDivider className="modal-actions">
-                            <Button variant="secondary" label="取消" onClick={cancelEdit} />
-                            <Button variant="primary" label="保存" onClick={confirmEdit} />
-                        </LayoutFooter>
                     </Layout>
                 </Dialog>
             )}
@@ -437,14 +439,24 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     onOpenChange={(open) => { if (!open) setShowCategoryModal(false); }}
                     width={450}
                     purpose="info"
-                    className="modal-overlay"
+                    className="modal-overlay sidebar-dialog"
                 >
-                    <Layout className="modal modal-category">
+                    <Layout height="auto" className="sidebar-dialog-layout modal-category">
                         <DialogHeader
+                            className="sidebar-dialog-header"
                             title={editingCategory ? '编辑分类' : '新建分类'}
-                            onOpenChange={(open) => { if (!open) setShowCategoryModal(false); }}
+                            hasDivider={false}
+                            endContent={(
+                                <Button
+                                    variant="ghost"
+                                    label="关闭"
+                                    isIconOnly
+                                    icon={<CloseIcon />}
+                                    onClick={() => setShowCategoryModal(false)}
+                                />
+                            )}
                         />
-                        <LayoutContent>
+                        <LayoutContent className="sidebar-dialog-content">
                             <div className="modal-form">
                                 <TextInput
                                     id="category-name"
@@ -470,16 +482,16 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     </div>
                                 </div>
                             </div>
+                            <div className="modal-actions">
+                                <Button variant="secondary" label="取消" onClick={() => setShowCategoryModal(false)} />
+                                <Button
+                                    variant="primary"
+                                    label={editingCategory ? '保存' : '创建'}
+                                    onClick={confirmCategoryModal}
+                                    isDisabled={!newCategoryName.trim()}
+                                />
+                            </div>
                         </LayoutContent>
-                        <LayoutFooter hasDivider className="modal-actions">
-                            <Button variant="secondary" label="取消" onClick={() => setShowCategoryModal(false)} />
-                            <Button
-                                variant="primary"
-                                label={editingCategory ? '保存' : '创建'}
-                                onClick={confirmCategoryModal}
-                                isDisabled={!newCategoryName.trim()}
-                            />
-                        </LayoutFooter>
                     </Layout>
                 </Dialog>
             )}
@@ -489,66 +501,77 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 <Dialog
                     isOpen={bookForCategory !== null}
                     onOpenChange={(open) => { if (!open) setBookForCategory(null); }}
-                    width={300}
+                    width={340}
                     purpose="info"
-                    className="modal-overlay"
+                    className="category-assign-dialog sidebar-dialog"
                 >
-                    <Layout className="modal modal-assign-category">
-                        <DialogHeader title="设置分类" onOpenChange={(open) => { if (!open) setBookForCategory(null); }} />
-                        <LayoutContent>
-                        <div className="category-assign-list">
-                            <button
-                                className="category-assign-item"
-                                onClick={() => confirmBookCategory(undefined)}
-                            >
-                                <span className="category-color" style={{ backgroundColor: 'var(--text-muted)' }} />
-                                <span>不分类</span>
-                            </button>
-                            {categories.map(cat => (
+                    <Layout height="auto" className="sidebar-dialog-layout modal-assign-category">
+                        <DialogHeader
+                            className="sidebar-dialog-header"
+                            title="设置分类"
+                            hasDivider={false}
+                            endContent={(
+                                <Button
+                                    variant="ghost"
+                                    label="关闭"
+                                    isIconOnly
+                                    icon={<CloseIcon />}
+                                    onClick={() => setBookForCategory(null)}
+                                />
+                            )}
+                        />
+                        <LayoutContent className="sidebar-dialog-content">
+                            <div className="category-assign-list" role="listbox" aria-label="设置书籍分类">
                                 <button
-                                    key={cat.id}
-                                    className="category-assign-item"
-                                    onClick={() => confirmBookCategory(cat.id)}
+                                    className={`category-assign-item ${!assignedCategoryId ? 'selected' : ''}`}
+                                    onClick={() => confirmBookCategory(undefined)}
+                                    aria-pressed={!assignedCategoryId}
                                 >
-                                    <span className="category-color" style={{ backgroundColor: cat.color }} />
-                                    <span>{cat.name}</span>
+                                    <span className="category-color muted" />
+                                    <span className="category-assign-name">不分类</span>
+                                    {!assignedCategoryId && <span className="category-assign-current">当前</span>}
                                 </button>
-                            ))}
-                        </div>
+                                {categories.map(cat => (
+                                    <button
+                                        key={cat.id}
+                                        className={`category-assign-item ${assignedCategoryId === cat.id ? 'selected' : ''}`}
+                                        onClick={() => confirmBookCategory(cat.id)}
+                                        aria-pressed={assignedCategoryId === cat.id}
+                                    >
+                                        <span className="category-color" style={{ backgroundColor: cat.color }} />
+                                        <span className="category-assign-name">{cat.name}</span>
+                                        {assignedCategoryId === cat.id && <span className="category-assign-current">当前</span>}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="modal-actions">
+                                <Button variant="secondary" label="取消" onClick={() => setBookForCategory(null)} />
+                            </div>
                         </LayoutContent>
-                        <LayoutFooter hasDivider className="modal-actions">
-                            <Button variant="secondary" label="取消" onClick={() => setBookForCategory(null)} />
-                        </LayoutFooter>
                     </Layout>
                 </Dialog>
             )}
 
             <div className="sidebar-header">
-                <HeaderIconButton
+                <IconButton
                     variant="ghost"
                     size="sm"
                     label="隐藏侧栏"
-                    title="隐藏侧栏"
-                    tooltip="隐藏侧栏"
                     icon={<Icon icon={AstryxSidebarPanelIcon} size="md" />}
                     onClick={() => setSidebarOpen(false)}
                 />
                 <div className="sidebar-header-actions">
-                    <HeaderIconButton
+                    <IconButton
                         variant="ghost"
                         size="sm"
                         label="新增标签"
-                        title="新增标签"
-                        tooltip="新增标签"
                         icon={<Icon icon={AstryxFolderIcon} size="sm" />}
                         onClick={handleAddCategory}
                     />
-                    <HeaderIconButton
+                    <IconButton
                         variant="ghost"
                         size="sm"
                         label="导入 EPUB"
-                        title="导入 EPUB"
-                        tooltip="导入 EPUB"
                         icon={<Icon icon={AstryxPlusIcon} size="sm" />}
                         onClick={onImportBook}
                     />
@@ -676,21 +699,21 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                         <button
                                             className="btn btn-ghost btn-icon book-action-btn"
                                             onClick={(e) => handleSetBookCategory(e, book.id)}
-                                            title="设置分类"
+                                            aria-label="设置分类"
                                         >
                                             <TagIcon />
                                         </button>
                                         <button
                                             className="btn btn-ghost btn-icon book-edit"
                                             onClick={(e) => handleEditBook(e, book)}
-                                            title="编辑书籍信息"
+                                            aria-label="编辑书籍信息"
                                         >
                                             <EditIcon />
                                         </button>
                                         <button
                                             className="btn btn-ghost btn-icon book-delete"
                                             onClick={(e) => handleDeleteBook(e, book.id)}
-                                            title="移除书籍"
+                                            aria-label="移除书籍"
                                         >
                                             <TrashIcon />
                                         </button>
@@ -708,7 +731,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 <span className="book-count">
                     {filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'}
                 </span>
-                <button className="sidebar-settings-btn" onClick={onOpenSettings}>
+                <button className="sidebar-settings-btn" onClick={onOpenSettings} aria-label="打开设置">
                     <SettingsIcon />
                     <span>设置</span>
                 </button>

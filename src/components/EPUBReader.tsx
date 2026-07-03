@@ -482,7 +482,6 @@ export function EPUBReader() {
             <button
                 className="reader-chrome-control reader-toc-toggle btn btn-ghost btn-icon"
                 onClick={() => setShowToc(!showToc)}
-                title="目录"
                 aria-label="目录"
             >
                 <EpubTocIcon size={18} />
@@ -528,7 +527,7 @@ export function EPUBReader() {
                             setAccumulatedPreviewOpen(open => !open);
                             setAIPanelOpen(true);
                         }}
-                        title={`${accumulatedTexts.length} 段选文，发送给 AI`}
+                        aria-label={`${accumulatedTexts.length} 段选文，发送给 AI`}
                         aria-expanded={accumulatedPreviewOpen}
                     >
                         <LayersIcon />
@@ -558,7 +557,6 @@ export function EPUBReader() {
                             addToAccumulatedTexts(currentChapterContent);
                             setAIPanelOpen(true);
                         }}
-                        title="把当前章节发送给 AI"
                     >
                         <BookOpenIcon size={18} strokeWidth={2} />
                         <span>使用本章（约 {Math.round(currentChapterContent.length / 1000)}k 字）</span>
@@ -566,7 +564,6 @@ export function EPUBReader() {
                     <button
                         className={`reader-chrome-control reader-chapter-btn reader-chapter-copy ${chapterCopied ? 'copied' : ''}`}
                         onClick={handleCopyChapter}
-                        title={chapterCopied ? '已复制' : '复制章节'}
                     >
                         {chapterCopied ? <CheckIcon /> : <CopyIcon />}
                         <span>{chapterCopied ? '已复制' : '复制章节'}</span>

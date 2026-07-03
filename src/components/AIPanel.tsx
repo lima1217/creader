@@ -569,7 +569,7 @@ export function AIPanel() {
                         <button
                             className={`ai-message-copy ${copiedMessageId === msg.id ? 'copied' : ''}`}
                             onClick={() => copyMessage(msg.id, msg.content)}
-                            title={copiedMessageId === msg.id ? '已复制' : '复制回答'}
+                            aria-label={copiedMessageId === msg.id ? '已复制' : '复制回答'}
                         >
                             {copiedMessageId === msg.id ? <CheckIcon /> : <CopyIcon />}
                         </button>
@@ -650,7 +650,7 @@ export function AIPanel() {
                     <button
                         className="btn btn-ghost btn-icon"
                         onClick={startNewSession}
-                        title="新会话"
+                        aria-label="新会话"
                         disabled={isLoading}
                     >
                         <TrashIcon />
@@ -674,7 +674,6 @@ export function AIPanel() {
                             <button
                                 className="ai-source-clear"
                                 onClick={() => setSelectedText('')}
-                                title="清除选区"
                                 aria-label="清除选区"
                             >
                                 <CloseIcon />
@@ -688,7 +687,6 @@ export function AIPanel() {
                                 <button
                                     className="ai-source-clear-all"
                                     onClick={clearAccumulatedTexts}
-                                    title="清除所有累积文本"
                                 >
                                     清空
                                 </button>
@@ -702,7 +700,6 @@ export function AIPanel() {
                                         <button
                                             className="ai-source-clear"
                                             onClick={() => removeAccumulatedText(index)}
-                                            title="移除这段文本"
                                             aria-label="移除这段文本"
                                         >
                                             <CloseIcon />
@@ -756,7 +753,6 @@ export function AIPanel() {
                     <button
                         className="ai-scroll-to-latest"
                         onClick={scrollToLatest}
-                        title="回到底部"
                         aria-label="回到底部"
                     >
                         <ScrollDownIcon />
@@ -780,7 +776,7 @@ export function AIPanel() {
                     <button
                         className="btn btn-danger btn-icon ai-stop-btn"
                         onClick={stopGeneration}
-                        title="停止生成"
+                        aria-label="停止生成"
                     >
                         <StopIcon />
                     </button>
@@ -789,7 +785,7 @@ export function AIPanel() {
                         className="btn btn-primary btn-icon"
                         onClick={sendMessage}
                         disabled={!input.trim()}
-                        title="发送（Enter）"
+                        aria-label="发送"
                     >
                         <SendIcon />
                     </button>

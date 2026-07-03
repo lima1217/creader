@@ -32,13 +32,18 @@ export function Toolbar() {
 
     const themes: Theme[] = ['light', 'dark'];
     const themeIcons: Record<Theme, React.ReactNode> = {
-        light: <SunIcon />,
-        dark: <MoonIcon />,
+        light: <SunIcon size={18} strokeWidth={1.9} />,
+        dark: <MoonIcon size={18} strokeWidth={1.9} />,
     };
 
     const themeLabels: Record<Theme, string> = {
         light: '亮色',
         dark: '暗色',
+    };
+
+    const themeDescriptions: Record<Theme, string> = {
+        light: '纸面阅读',
+        dark: '夜间阅读',
     };
 
     const selectTheme = (theme: Theme) => {
@@ -66,7 +71,6 @@ export function Toolbar() {
                     <button
                         className="btn btn-ghost btn-icon toolbar-sidebar-restore"
                         onClick={() => setSidebarOpen(true)}
-                        title="显示侧栏"
                         aria-label="显示侧栏"
                     >
                         <SidebarPanelIcon size={23} strokeWidth={1.7} />
@@ -87,7 +91,7 @@ export function Toolbar() {
                     <button
                         className="btn btn-ghost btn-icon"
                         onClick={() => adjustFontSize(-1)}
-                        title="减小字号"
+                        aria-label="减小字号"
                         disabled={settings.fontSize <= 12}
                     >
                         <MinusIcon />
@@ -96,7 +100,7 @@ export function Toolbar() {
                     <button
                         className="btn btn-ghost btn-icon"
                         onClick={() => adjustFontSize(1)}
-                        title="增大字号"
+                        aria-label="增大字号"
                         disabled={settings.fontSize >= 24}
                     >
                         <PlusIcon />
@@ -108,16 +112,24 @@ export function Toolbar() {
                             isIconOnly: true,
                             icon: themeIcons[settings.theme],
                             variant: 'secondary',
+                            size: 'md',
                             className: 'toolbar-action toolbar-theme-button',
                         }}
                         hasChevron={false}
                         placement="below"
+                        menuWidth={184}
                         aria-label="主题"
-                        items={themes.map(theme => ({
-                            label: themeLabels[theme],
-                            icon: themeIcons[theme],
-                            onClick: () => selectTheme(theme),
-                        }))}
+                        items={[
+                            {
+                                type: 'section',
+                                title: '阅读主题',
+                                items: themes.map(theme => ({
+                                    label: `${themeLabels[theme]} · ${themeDescriptions[theme]}`,
+                                    icon: themeIcons[theme],
+                                    onClick: () => selectTheme(theme),
+                                })),
+                            },
+                        ]}
                     />
                 </div>
             </div>
@@ -127,7 +139,6 @@ export function Toolbar() {
                     <button
                         className={`btn btn-secondary toolbar-action ${isSearchOpen ? 'active' : ''}`}
                         onClick={() => setSearchOpen(!isSearchOpen)}
-                        title="搜索（Cmd/Ctrl+F）"
                         aria-label="搜索"
                     >
                         <SearchIcon />
@@ -136,7 +147,6 @@ export function Toolbar() {
                     <button
                         className="btn btn-secondary toolbar-action toolbar-ai-action"
                         onClick={() => setAIPanelOpen(!isAIPanelOpen)}
-                        title="AI 助手"
                         aria-label="AI 助手"
                     >
                         <ToolbarAIIcon />

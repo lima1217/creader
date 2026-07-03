@@ -1,327 +1,28 @@
 /* ============================================
-   Toolbar
+   Toolbar - Astryx-era single source
    ============================================ */
 
 .toolbar {
-    height: var(--header-height);
-    background: var(--bg-primary);
-    border-bottom: 1px solid var(--border-secondary);
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    align-items: center;
-    gap: var(--space-3);
-    padding: 0 var(--space-3);
-    flex-shrink: 0;
     position: relative;
     z-index: 110;
-}
-
-/* Layout Sections */
-.toolbar-left,
-.toolbar-center,
-.toolbar-right {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.toolbar-left {
-    justify-self: start;
-    min-width: 0;
-    gap: var(--space-2);
-}
-
-.toolbar-center {
-    justify-self: center;
-}
-
-.toolbar-right {
-    justify-self: end;
-    min-width: 0;
-    justify-content: flex-end;
-    gap: var(--space-2);
-}
-
-/* ============================================
-   Book Info Display
-   ============================================ */
-.toolbar-book-info {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-height: var(--control-size);
-    padding: 0 var(--space-3);
-    background: var(--bg-secondary);
-    border-radius: var(--control-radius);
-    border: 1px solid var(--border-secondary);
-    max-width: 400px;
-}
-
-.toolbar-book-title {
-    font-size: var(--text-sm);
-    font-weight: 500;
-    color: var(--text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
-}
-
-.toolbar-book-progress {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--accent);
-    background: rgba(var(--accent-rgb), 0.08);
-    padding: 2px var(--space-2);
-    border-radius: 100px;
-    flex-shrink: 0;
-}
-
-/* ============================================
-   Button Groups - Enhanced
-   ============================================ */
-.toolbar-group {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    min-height: var(--control-size);
-    padding: 0 var(--space-1);
-    background: var(--bg-secondary);
-    border-radius: calc(var(--control-radius) + 2px);
-    border: 1px solid var(--border-secondary);
-}
-
-.toolbar-group .btn-icon {
-    border-radius: var(--control-radius);
-    padding: var(--space-1);
-    color: var(--text-secondary);
-}
-
-.toolbar-group .btn-icon:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-}
-
-.toolbar-font-size {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--text-primary);
-    min-width: 42px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-    padding: 0 var(--space-1);
-    user-select: none;
-}
-
-/* ============================================
-   Toolbar Buttons
-   ============================================ */
-.toolbar .btn-icon {
-    position: relative;
-    border-radius: var(--control-radius);
-    width: var(--control-size);
-    height: var(--control-size);
-    padding: 0;
-    color: var(--text-secondary);
-    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
-    overflow: hidden;
-}
-
-.toolbar .btn-icon:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-}
-
-.toolbar .btn-icon:active {
-    transform: scale(0.96);
-    filter: none;
-}
-
-/* ============================================
-   Active State Button
-   ============================================ */
-.toolbar .btn-icon.active {
-    background: var(--accent);
-    color: var(--bg-elevated);
-}
-
-.toolbar .btn-icon.active::before {
-    display: none;
-}
-
-.toolbar .btn-icon.active:hover {
-    background: var(--accent-hover);
-    color: var(--bg-elevated);
-}
-
-/* ============================================
-   AI Assistant Button - Special Emphasis
-   ============================================ */
-.toolbar .btn-icon[data-tooltip="AI Assistant"] {
-    position: relative;
-}
-
-.toolbar .btn-icon[data-tooltip="AI Assistant"]::after {
-    display: none;
-}
-
-/* ============================================
-   Responsive Adjustments
-   ============================================ */
-@media (max-width: 768px) {
-    .toolbar {
-        padding: 0 var(--space-3);
-    }
-
-    .toolbar-book-info {
-        max-width: 200px;
-    }
-
-    .toolbar-book-title {
-        font-size: var(--text-xs);
-    }
-}
-
-/* ============================================
-   Paper Workspace Toolbar Refinement
-   ============================================ */
-.toolbar {
-    background: var(--bg-panel);
-    border-bottom-color: var(--border-secondary);
-    padding: 0 var(--space-3);
-}
-
-.toolbar-left {
-    gap: var(--space-2);
-}
-
-.toolbar-right {
-    gap: var(--space-2);
-}
-
-.toolbar-book-info {
-    min-height: var(--control-size);
-    max-width: min(440px, 44vw);
-    background: var(--bg-control);
-    border-color: var(--border-soft);
-    border-radius: var(--control-radius);
-    padding: 0 10px;
-}
-
-.toolbar-book-title {
-    font-weight: 520;
-    color: var(--text-primary);
-}
-
-.toolbar-book-progress {
-    min-width: 38px;
-    text-align: center;
-    color: var(--accent);
-    background: var(--accent-soft);
-    border-radius: var(--radius-control);
-    font-variant-numeric: tabular-nums;
-}
-
-.toolbar-group {
-    min-height: calc(var(--control-size) + 2px);
-    gap: 2px;
-    padding: 1px;
-    background: var(--bg-control);
-    border-color: var(--border-soft);
-    border-radius: calc(var(--control-radius) + 3px);
-}
-
-.toolbar .btn-icon,
-.toolbar-group .btn-icon {
-    width: var(--control-size);
-    height: var(--control-size);
-    border-radius: var(--control-radius);
-    color: var(--text-secondary);
-    transition: background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.toolbar .btn-icon:hover,
-.toolbar-group .btn-icon:hover {
-    background: var(--bg-control-hover);
-    color: var(--text-primary);
-}
-
-.toolbar .toolbar-sidebar-restore.btn-icon {
-    width: 30px;
-    min-width: 30px;
-    height: 30px;
-    min-height: 30px;
-    color: var(--text-muted);
-    background: transparent;
-    border-color: transparent;
-    border-radius: 6px;
-    box-shadow: none;
-    opacity: 0.9;
-}
-
-.toolbar .toolbar-sidebar-restore.btn-icon:hover {
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-    opacity: 1;
-}
-
-.toolbar .toolbar-sidebar-restore.btn-icon:active {
-    transform: none;
-}
-
-.toolbar .btn-icon:active {
-    transform: scale(0.96);
-    filter: none;
-}
-
-.toolbar .btn-icon.active {
-    background: var(--accent);
-    color: var(--bg-elevated);
-}
-
-.toolbar .btn-icon.active:hover {
-    background: var(--accent-hover);
-    color: var(--bg-elevated);
-}
-
-.toolbar-font-size {
-    min-width: 46px;
-    color: var(--text-secondary);
-    font-weight: 560;
-}
-
-@media (max-width: 900px) {
-    .toolbar-book-info {
-        max-width: 260px;
-    }
-
-    .toolbar-right {
-        gap: 4px;
-    }
-}
-
-
-/* ============================================
-   Stable Toolbar Layout Refresh
-   ============================================ */
-.toolbar {
-    height: 52px;
     display: grid;
     grid-template-columns: minmax(0, 1fr) max-content max-content;
     align-items: center;
     gap: 8px;
+    height: 52px;
     padding: 0 10px;
-    background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-primary));
     overflow: visible;
+    flex-shrink: 0;
+    background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-primary));
+    border-bottom: 1px solid var(--border-secondary);
 }
 
 .toolbar-left,
 .toolbar-center,
 .toolbar-right {
-    min-width: 0;
     display: flex;
     align-items: center;
+    min-width: 0;
 }
 
 .toolbar-left {
@@ -329,40 +30,54 @@
     overflow: hidden;
 }
 
-.toolbar-sidebar-restore {
-    flex: 0 0 auto;
-}
-
 .toolbar-center,
 .toolbar-right {
     justify-content: flex-end;
     overflow: visible;
 }
 
+.toolbar-sidebar-restore {
+    flex: 0 0 auto;
+}
+
 .toolbar-book-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
     min-width: 0;
     max-width: clamp(120px, 30vw, 420px);
     min-height: 36px;
     padding: 0 10px;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--bg-control) 72%, transparent);
     overflow: hidden;
+    background: color-mix(in srgb, var(--bg-control) 72%, transparent);
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
 }
 
 .toolbar-book-title {
     min-width: 0;
+    flex: 1;
     overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: 520;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .toolbar-book-progress {
     min-width: 40px;
+    flex-shrink: 0;
     padding: 3px 8px;
     border-radius: 4px;
+    background: var(--accent-soft);
+    color: var(--accent);
     font-family: var(--font-mono);
     font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
     letter-spacing: 0.02em;
+    text-align: center;
 }
 
 .toolbar-group,
@@ -379,30 +94,39 @@
 }
 
 .toolbar-action-group {
-    background: transparent;
-    border-color: transparent;
     gap: 5px;
     padding: 0;
-}
-
-.toolbar-action span,
-.toolbar-theme-button span {
-    display: none !important;
+    background: transparent;
+    border-color: transparent;
 }
 
 .toolbar .btn-icon,
 .toolbar-group .btn-icon,
 .toolbar-action,
 .toolbar-theme-button {
+    justify-content: center;
     width: 34px;
     min-width: 34px;
     height: 34px;
     min-height: 34px;
     padding: 0;
     border-radius: 4px;
-    justify-content: center;
+    color: var(--text-secondary);
     transform-origin: center;
+    transition: background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
     will-change: scale, opacity;
+}
+
+.toolbar .btn-icon:hover,
+.toolbar-group .btn-icon:hover,
+.toolbar-action:hover {
+    background: var(--bg-control-hover);
+    color: var(--text-primary);
+}
+
+.toolbar .btn-icon:active {
+    transform: scale(0.96);
+    filter: none;
 }
 
 .toolbar .toolbar-sidebar-restore.btn-icon {
@@ -410,7 +134,29 @@
     min-width: 30px;
     height: 30px;
     min-height: 30px;
+    border-color: transparent;
     border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--text-muted);
+    opacity: 0.9;
+}
+
+.toolbar .toolbar-sidebar-restore.btn-icon:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    opacity: 1;
+}
+
+.toolbar .toolbar-sidebar-restore.btn-icon:active {
+    transform: none;
+}
+
+.toolbar .btn-icon.active,
+.toolbar-action.active.btn-secondary {
+    background: var(--accent-soft);
+    border-color: var(--border-accent);
+    color: var(--accent);
 }
 
 .toolbar-font-size {
@@ -419,8 +165,10 @@
     color: var(--text-secondary);
     font-family: var(--font-mono);
     font-size: 11px;
+    font-variant-numeric: tabular-nums;
     font-weight: 600;
     text-align: center;
+    user-select: none;
 }
 
 .toolbar-group-divider {
@@ -430,24 +178,74 @@
     background: var(--border-secondary);
 }
 
-.toolbar-action.active.btn-secondary {
-    color: var(--accent);
-    background: var(--accent-soft);
-    border-color: var(--border-accent);
-}
-
 .toolbar-theme-button > svg,
 .toolbar-action > svg,
 .toolbar-ai-action > svg {
     display: block !important;
     visibility: visible !important;
-    opacity: 1 !important;
     width: 18px !important;
     height: 18px !important;
     flex: 0 0 18px;
     color: currentColor;
-    stroke: currentColor;
+    opacity: 1 !important;
     pointer-events: none;
+    stroke: currentColor;
+}
+
+.toolbar .toolbar-theme-button.astryx-button {
+    background: transparent;
+    border-color: var(--border-primary);
+    color: var(--text-secondary);
+}
+
+.toolbar .toolbar-theme-button.astryx-button:hover {
+    background: var(--bg-control-hover);
+    border-color: var(--border-accent);
+    color: var(--text-primary);
+}
+
+.toolbar .toolbar-theme-button.astryx-button svg {
+    display: block !important;
+    visibility: visible !important;
+    width: 18px !important;
+    height: 18px !important;
+    opacity: 1 !important;
+}
+
+.astryx-dropdown-menu[role="menu"] {
+    padding: 6px !important;
+    border: 1px solid var(--border-secondary) !important;
+    border-radius: 8px !important;
+    background: var(--bg-elevated) !important;
+    box-shadow: var(--shadow-popover) !important;
+}
+
+.astryx-dropdown-menu[role="menu"] [role="group"] > div[aria-hidden="true"] {
+    padding: 5px 10px 4px !important;
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+    font-weight: 650 !important;
+    letter-spacing: 0 !important;
+}
+
+.astryx-dropdown-menu-item[role="menuitem"] {
+    min-height: 42px !important;
+    gap: 10px !important;
+    padding: 7px 10px !important;
+    border-radius: 6px !important;
+    color: var(--text-secondary) !important;
+}
+
+.astryx-dropdown-menu-item[role="menuitem"]:hover,
+.astryx-dropdown-menu-item[role="menuitem"]:focus-visible {
+    background: var(--bg-control-hover) !important;
+    color: var(--text-primary) !important;
+}
+
+.astryx-dropdown-menu-item[role="menuitem"] svg {
+    width: 17px !important;
+    height: 17px !important;
+    color: var(--accent) !important;
 }
 
 @media (max-width: 920px) {

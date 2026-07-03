@@ -67,7 +67,6 @@ export function SelectionToolbar(props: {
           variant="ghost"
           size="sm"
           label="加入选文"
-          tooltip="加入跨页选文"
           icon={addIcon}
           onClick={onAdd}
         >
@@ -77,7 +76,6 @@ export function SelectionToolbar(props: {
           variant="ghost"
           size="sm"
           label="问 AI"
-          tooltip="用选文询问 AI"
           icon={askIcon}
           onClick={onAsk}
         >
@@ -87,7 +85,6 @@ export function SelectionToolbar(props: {
           variant="ghost"
           size="sm"
           label="关闭"
-          tooltip="关闭"
           icon={closeIcon}
           onClick={onClose}
         />

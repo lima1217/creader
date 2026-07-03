@@ -242,7 +242,7 @@ describe('Sidebar contract — book interactions', () => {
     const onImportBook = vi.fn();
     seedLibrary({ books: [makeBook()], categories: [], lastUpdated: 1 });
     const { container } = mountSidebar({ onImportBook });
-    const importBtn = container.querySelector('[title="导入 EPUB"]') as HTMLButtonElement;
+    const importBtn = container.querySelector('[aria-label="导入 EPUB"]') as HTMLButtonElement;
     click(importBtn);
     expect(onImportBook).toHaveBeenCalledTimes(1);
   });
@@ -362,7 +362,7 @@ describe('Sidebar contract — category modal (add + edit)', () => {
     const { container } = mountSidebar();
     expect(container.querySelector('.modal-category')).toBeNull();
 
-    click(container.querySelector('[title="新增标签"]')!);
+    click(container.querySelector('[aria-label="新增标签"]')!);
     await settle();
 
     const modal = container.querySelector('.modal-category') as HTMLElement;
@@ -427,7 +427,7 @@ describe('Sidebar contract — category modal (add + edit)', () => {
   it('closes when the overlay is clicked without creating a category', async () => {
     seedLibrary({ books: [], categories: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    click(container.querySelector('[title="新增标签"]')!);
+    click(container.querySelector('[aria-label="新增标签"]')!);
     await settle();
 
     click(container.querySelector('.modal-overlay')!);
@@ -488,7 +488,7 @@ describe('Sidebar contract — assign-category modal', () => {
     click(container.querySelector('.book-action-btn')!);
     await settle();
 
-    click(container.querySelector('.modal-overlay')!);
+    click(document.body.querySelector('.category-assign-dialog')!);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].categoryId).toBe('cat1');

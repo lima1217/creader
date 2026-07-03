@@ -15,7 +15,7 @@
     align-items: center;
     justify-content: space-between;
     height: var(--header-height);
-    padding: 0 var(--space-4);
+    padding: 0 12px;
     border-bottom: 1px solid var(--border-secondary);
     background: var(--bg-panel);
     flex-shrink: 0;
@@ -23,19 +23,73 @@
 
 .sidebar-header-actions {
     display: flex;
-    gap: var(--space-1);
+    gap: 6px;
+}
+
+.sidebar .astryx-button,
+.sidebar-dialog-layout .astryx-button {
+    border-radius: 6px !important;
+}
+
+.sidebar .astryx-button:not([data-icon-only]),
+.sidebar-dialog-layout .astryx-button:not([data-icon-only]) {
+    min-height: 38px !important;
+    padding-inline: 15px !important;
+    gap: 8px !important;
+}
+
+.sidebar .astryx-button[data-size="sm"]:not([data-icon-only]),
+.sidebar-dialog-layout .astryx-button[data-size="sm"]:not([data-icon-only]) {
+    min-height: 34px !important;
+    padding-inline: 13px !important;
+}
+
+.sidebar .astryx-button[data-icon-only],
+.sidebar-dialog-layout .astryx-button[data-icon-only] {
+    min-width: 34px !important;
+    min-height: 34px !important;
+}
+
+.sidebar-header .astryx-button[data-icon-only] {
+    min-width: 36px !important;
+    min-height: 36px !important;
 }
 
 .sidebar-categories {
-    max-height: 200px;
+    max-height: 216px;
     overflow-y: auto;
     border-bottom: 1px solid var(--border-soft);
     background: var(--bg-panel);
     flex-shrink: 0;
+    padding: 8px 8px 9px;
 }
 
 .sidebar-categories nav {
     width: 100%;
+}
+
+.sidebar-categories .astryx-side-nav,
+.sidebar-categories .astryx-side-nav-section {
+    background: transparent !important;
+}
+
+.sidebar-categories .astryx-side-nav-item {
+    min-height: 38px !important;
+    padding-inline: 10px 8px !important;
+    border-radius: 6px !important;
+    color: var(--text-secondary) !important;
+}
+
+.sidebar-categories .astryx-side-nav-item:hover {
+    background: var(--bg-control-hover) !important;
+    color: var(--text-primary) !important;
+}
+
+.sidebar-categories .astryx-side-nav-item[aria-current="page"],
+.sidebar-categories .astryx-side-nav-item[aria-selected="true"],
+.sidebar-categories .astryx-side-nav-item[data-selected="true"] {
+    background: var(--accent-soft) !important;
+    color: var(--accent) !important;
 }
 
 .category-filter-count {
@@ -49,13 +103,13 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--space-1);
+    gap: 4px;
 }
 
 .category-filter-group .category-actions {
     display: flex;
     align-items: center;
-    padding-right: var(--space-1);
+    padding-right: 2px;
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--transition-fast);
@@ -78,7 +132,7 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 10px 8px var(--space-3);
+    padding: 12px 10px var(--space-3);
 }
 
 .sidebar-content::-webkit-scrollbar,
@@ -108,17 +162,24 @@
 .book-list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: 9px;
 }
 
 .book-item {
-    min-height: 84px;
+    min-height: 88px;
     border: 1px solid transparent;
-    border-radius: var(--radius-surface);
+    border-radius: 8px;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .book-item:hover {
-    border-color: transparent;
+    background: var(--bg-control);
+    border-color: var(--border-soft);
+}
+
+.book-item.active {
+    background: var(--accent-soft);
+    border-color: var(--border-accent);
 }
 
 .book-cover {
@@ -156,6 +217,7 @@
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+    pointer-events: none;
 }
 
 .book-title-row {
@@ -163,6 +225,7 @@
     align-items: flex-start;
     gap: var(--space-1);
     min-width: 0;
+    pointer-events: none;
 }
 
 .book-title {
@@ -232,10 +295,11 @@
 .book-actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     position: absolute;
-    right: 8px;
-    bottom: 8px;
+    right: 9px;
+    bottom: 9px;
+    z-index: 2;
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--transition-fast);
@@ -247,16 +311,20 @@
     pointer-events: auto;
 }
 
+.book-actions button {
+    pointer-events: auto;
+}
+
 .book-delete,
 .book-edit,
 .book-action-btn {
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
     padding: 0;
     color: var(--text-secondary);
-    background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+    background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
     border: 1px solid var(--border-soft);
-    border-radius: var(--radius-control);
+    border-radius: 6px;
 }
 
 .book-delete svg,
@@ -278,16 +346,96 @@
     border-color: var(--border-primary);
 }
 
+dialog.sidebar-dialog {
+    --sidebar-dialog-surface: var(--color-background-popover, var(--bg-elevated));
+    position: fixed !important;
+    inset: auto !important;
+    top: 50% !important;
+    left: 50% !important;
+    display: flex !important;
+    width: min(450px, calc(100vw - 32px)) !important;
+    max-height: min(78vh, calc(100vh - 32px)) !important;
+    padding: 0 !important;
+    overflow: hidden;
+    background: var(--sidebar-dialog-surface) !important;
+    border: 1px solid var(--border-secondary) !important;
+    border-radius: 10px !important;
+    box-shadow: var(--shadow-popover) !important;
+    transform: translate(-50%, -50%) !important;
+}
+
+dialog.sidebar-dialog::backdrop {
+    background: rgba(31, 41, 51, 0.34);
+    backdrop-filter: blur(1.5px);
+}
+
+.sidebar-dialog > * {
+    width: 100%;
+    background: var(--sidebar-dialog-surface) !important;
+}
+
+.sidebar-dialog-layout {
+    width: 100%;
+    max-height: inherit;
+    min-height: 0;
+    background: var(--sidebar-dialog-surface) !important;
+}
+
+.sidebar-dialog-layout > div {
+    min-height: 0 !important;
+}
+
+.sidebar-dialog-header {
+    flex-shrink: 0;
+    padding: var(--spacing-4, 16px) var(--spacing-4, 16px) var(--spacing-2, 8px) !important;
+    background: var(--sidebar-dialog-surface) !important;
+}
+
+.sidebar-dialog-header > div {
+    align-items: flex-start !important;
+    gap: var(--spacing-3, 12px) !important;
+}
+
+.sidebar-dialog-header h2 {
+    margin: 0 !important;
+    color: var(--text-primary) !important;
+    font-size: 18px !important;
+    font-weight: 680 !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0 !important;
+}
+
+.sidebar-dialog-header h2:focus {
+    outline: none !important;
+}
+
+.sidebar-dialog-header .astryx-button[data-icon-only] {
+    min-width: 34px !important;
+    min-height: 34px !important;
+    color: var(--text-secondary) !important;
+}
+
+.sidebar-dialog-content {
+    min-height: 0;
+    padding: var(--spacing-3, 12px) var(--spacing-4, 16px) var(--spacing-4, 16px) !important;
+    background: var(--sidebar-dialog-surface) !important;
+}
+
 .modal-form {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
 }
 
-.modal-actions > div {
+.sidebar-dialog .modal-actions {
     display: flex;
     justify-content: flex-end;
-    gap: var(--space-2);
+    gap: var(--spacing-2, 8px);
+    width: 100%;
+    margin-top: var(--spacing-4, 16px);
+    padding: var(--spacing-3, 12px) 0 0 !important;
+    background: var(--sidebar-dialog-surface) !important;
+    border-top: 1px solid var(--border-soft);
 }
 
 .form-group {
@@ -325,34 +473,79 @@
 .category-assign-list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
-    max-height: 300px;
+    gap: var(--spacing-1, 4px);
+    max-height: 224px;
+    padding: 2px;
     overflow-y: auto;
 }
 
 .category-assign-item {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--spacing-3, 12px);
     width: 100%;
-    padding: var(--space-3);
-    background: var(--bg-primary);
-    border: 1px solid var(--border-secondary);
-    border-radius: var(--radius-md);
+    min-height: 38px;
+    padding: var(--spacing-2, 8px) var(--spacing-3, 12px);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
     color: var(--text-primary);
-    font-size: var(--text-sm);
+    font: inherit;
+    font-size: 13px;
     text-align: left;
     cursor: default;
-    transition: background-color var(--transition-fast), border-color var(--transition-fast);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .category-assign-item:hover {
-    background: var(--bg-hover);
-    border-color: var(--border-primary);
+    background: var(--bg-control-hover);
+    border-color: var(--border-soft);
+}
+
+.category-assign-item.selected {
+    background: var(--accent-soft);
+    border-color: var(--border-accent);
+    color: var(--accent);
+}
+
+.category-assign-name {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.category-assign-current {
+    flex-shrink: 0;
+    padding: 2px var(--spacing-2, 8px);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.category-color.muted {
+    background: var(--text-muted);
+}
+
+dialog.category-assign-dialog.sidebar-dialog {
+    width: min(360px, calc(100vw - 32px)) !important;
+    max-height: min(420px, calc(100vh - 32px)) !important;
+}
+
+.category-assign-dialog .sidebar-dialog-content {
+    padding-top: var(--spacing-2, 8px) !important;
+}
+
+.category-assign-dialog .modal-actions {
+    margin-top: var(--spacing-2, 8px);
+    padding-top: var(--spacing-2, 8px) !important;
 }
 
 .sidebar-footer {
-    padding: var(--space-2);
+    padding: 10px;
     border-top: 1px solid var(--border-soft);
     background: var(--bg-panel);
     color: var(--text-muted);
@@ -366,17 +559,17 @@
 .book-count {
     opacity: 0.8;
     font-weight: 500;
-    padding: 0 8px;
+    padding: 0 10px;
 }
 
 .sidebar-settings-btn {
     width: 100%;
-    min-height: 38px;
+    min-height: 42px;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 0 10px;
-    border: 0;
+    padding: 0 13px;
+    border: 1px solid transparent;
     border-radius: 6px;
     background: transparent;
     color: var(--text-secondary);
@@ -392,5 +585,6 @@
 
 .sidebar-settings-btn:hover {
     background: var(--bg-control);
+    border-color: var(--border-soft);
     color: var(--text-primary);
 }
