@@ -419,17 +419,6 @@
     color: var(--error);
 }
 
-.settings-provider-empty {
-    padding: var(--spacing-5, 20px);
-    margin: 0 0 var(--spacing-4, 16px);
-    border: 1px dashed var(--border-soft);
-    border-radius: 8px;
-    color: var(--text-tertiary);
-    font-size: 12.5px;
-    line-height: 1.55;
-    text-align: center;
-}
-
 .settings-provider-editor {
     display: flex;
     flex-direction: column;
@@ -454,10 +443,6 @@
     justify-content: flex-end;
     gap: var(--spacing-3, 12px);
     margin-top: var(--spacing-1, 4px);
-}
-
-.settings-provider-add {
-    margin-top: var(--spacing-4, 16px);
 }
 
 .settings-quick-actions {

@@ -120,15 +120,6 @@
   transition: background-color 200ms ease;
 }
 
-/* ============================================
-   Focus Ring Improvements
-   ============================================ */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-
 /* Custom focus for buttons */
 button:focus-visible,
 [role="button"]:focus-visible {

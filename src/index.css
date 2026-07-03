@@ -313,15 +313,6 @@ a:hover {
   color: var(--accent);
 }
 
-.btn-danger {
-  background: var(--error);
-  color: white;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #DC2626;
-}
-
 /* ============================================
    Floating Dialog Primitive
    ============================================ */
@@ -534,9 +525,7 @@ button,
 [role='button'],
 summary,
 .book-item,
-.category-filter-item,
-.category-assign-item,
-.toc-item {
+.category-assign-item {
   cursor: default !important;
 }
 
@@ -555,10 +544,6 @@ summary,
 .message-content {
   user-select: text;
   -webkit-user-select: text;
-}
-
-html {
-  color-scheme: light dark;
 }
 
 /* ============================================
@@ -613,8 +598,7 @@ li {
   padding: 0;
 }
 
-.btn-primary,
-.btn-danger {
+.btn-primary {
   color: var(--bg-elevated);
 }
 

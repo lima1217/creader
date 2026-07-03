@@ -509,6 +509,10 @@
 .ai-composer-input [role="textbox"] {
     max-height: calc(128px - 2 * var(--space-1));
     overflow-y: auto;
+    /* Suppress the global :focus-visible outline — focus feedback is
+       carried by the outer .ai-composer-input border-color change, so an
+       outline here reads as a second frame inside the composer shell. */
+    outline: none;
 }
 
 /* ChatSendButton renders a square icon-only Astryx Button; size it to the
