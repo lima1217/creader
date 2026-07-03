@@ -6,8 +6,8 @@ import { defineTheme } from '@astryxdesign/core/theme';
  * truth shared by the Astryx `--color-*` tokens below and the reading-engine
  * theme bridge in `src/components/reader/epubTheme.ts`.
  *
- * The book body renders in its own DOM document (foliate section doc)
- * iframe) that does NOT inherit the host app's `:root` tokens, so the engine
+ * The book body renders in foliate-owned section documents that do NOT
+ * inherit the host app's `:root` tokens, so the engine
  * bridge injects these literal values rather than `var(--color-*)`. Keeping
  * them named here means a palette edit reaches both chrome and body from one
  * place. See ADR-0011 ("token-level concern, separate from component-level

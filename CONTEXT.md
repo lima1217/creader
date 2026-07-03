@@ -9,8 +9,12 @@ The part of CReader that renders book content, tracks locations, exposes selecti
 _Avoid_: EPUB widget, viewer
 
 **Reading Engine Adapter**:
-The small contract that lets CReader use `foliate-js` or `epubjs` behind the same reader-facing API.
+The small contract between CReader's reader-facing features and the single `foliate-js` Reading Engine.
 _Avoid_: engine-specific UI branch, renderer switch scattered through components
+
+**Scripted EPUB**:
+An EPUB that depends on embedded book scripts for its reading behavior. CReader does not support scripted EPUB execution.
+_Avoid_: safe mode, fallback renderer support
 
 **Whole-Book Work**:
 Operations that need access to an entire book rather than the currently displayed passage, such as full-text extraction and search indexing.
@@ -19,6 +23,10 @@ _Avoid_: reader UI work, chapter rendering
 **Search Index**:
 A rebuildable local representation of a book's text used to answer search queries without loading the whole book into the WebView.
 _Avoid_: book storage, source of truth
+
+**Generated Location Cache**:
+The removed epubjs-era IndexedDB `locations` store for calculated page/location data. Current CReader treats it as migration-only legacy data; foliate location events drive progress.
+_Avoid_: current progress source, search index
 
 **Search Locator**:
 A search result location that may point to a precise CFI or to a coarser EPUB spine item or href when precise CFI generation is not yet reliable.
@@ -61,5 +69,5 @@ The React-tree UI around the rendered book body — toolbar, TOC drawer, search 
 _Avoid_: "the reader" used to mean both the chrome and the book body interchangeably
 
 **Selection Coordinate**:
-An `{x, y}` pixel position produced by the reading engine's selection listeners and consumed by the SelectionToolbar. The Reading Engine Adapter emits coordinates, never a DOM anchor node, on both the foliate-js and epubjs paths; this is why the selection toolbar cannot use trigger-anchored overlays like Astryx `Popover`/`Tooltip`.
+An `{x, y}` pixel position produced by the reading engine's selection listeners and consumed by the SelectionToolbar. The Reading Engine Adapter emits coordinates, never a DOM anchor node; this is why the selection toolbar cannot use trigger-anchored overlays like Astryx `Popover`/`Tooltip`.
 _Avoid_: selection anchor, selection ref

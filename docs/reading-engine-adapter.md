@@ -33,6 +33,7 @@ Validated by implementation:
 - Scripted EPUB execution is not supported.
 - There is no safe-mode or compatibility fallback prompt.
 - Reading progress uses foliate's reported location fraction rather than cached generated locations.
+- The old epubjs generated-location IndexedDB cache is migration-only data. Dexie v7 deletes the `locations` object store; new code should not read or write it.
 
 ## Migration Outcome
 

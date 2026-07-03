@@ -3,7 +3,7 @@ export function computeEpubPercentage(params: {
   cfi: string | null;
   bookAny: any;
 }): number {
-  const { location, cfi, bookAny } = params;
+  const { location, bookAny } = params;
 
   let percentage = 0;
 
@@ -15,21 +15,6 @@ export function computeEpubPercentage(params: {
 
   if (percentage === 0 && location?.atEnd) {
     percentage = 100;
-  }
-
-  if (percentage === 0 && cfi && bookAny?.locations) {
-    try {
-      if (
-        typeof bookAny.locations.length === 'function' &&
-        typeof bookAny.locations.percentageFromCfi === 'function'
-      ) {
-        const locLength = bookAny.locations.length();
-        if (locLength > 0) {
-          percentage = bookAny.locations.percentageFromCfi(cfi) * 100;
-        }
-      }
-    } catch {
-    }
   }
 
   if (percentage === 0 && location?.start?.index !== undefined && bookAny?.spine) {

@@ -20,7 +20,6 @@ describe('ChatStore Dexie persistence', () => {
       'chatMessages',
       'conversationMemory',
       'covers',
-      'locations',
     ]);
   });
 

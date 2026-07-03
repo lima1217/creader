@@ -60,7 +60,7 @@
 
 ## Reading Engine
 
-- Use `src/services/reader/readingEngine.ts` as the adapter boundary. `foliate-js` is preferred; `epubjs` stays as fallback.
+- Use `src/services/reader/readingEngine.ts` as the adapter boundary around the single `foliate-js` Reading Engine. Do not reintroduce an `epubjs` fallback or scripted-EPUB compatibility UI.
 - Search index data is rebuildable derived data. Do not treat it as the source of truth for book content, AI context, or Reading Memory evidence.
 - Search Locators may be precise CFI or coarser href/spine locations; preserve that tolerance in UI and command contracts.
 

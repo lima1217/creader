@@ -2,18 +2,25 @@ import Dexie, { type Table } from 'dexie';
 import type { ChatMessage, ConversationMemory } from '../types';
 
 export const DB_NAME = 'creader';
-export const DB_VERSION = 6;
+export const DB_VERSION = 7;
 
-const STORE_SCHEMA = {
+// v5/v6 included the old epubjs generated-location cache. Keep the schema only
+// so Dexie can migrate existing users and delete `locations` in the current DB.
+const LEGACY_V5_STORE_SCHEMA = {
   covers: '',
   locations: '',
   chatMessages: '',
   conversationMemory: '',
 } as const;
 
+const STORE_SCHEMA = {
+  covers: '',
+  chatMessages: '',
+  conversationMemory: '',
+} as const;
+
 class CReaderDexie extends Dexie {
   covers!: Table<Blob, string>;
-  locations!: Table<string, string>;
   chatMessages!: Table<ChatMessage, string>;
   conversationMemory!: Table<ConversationMemory, string>;
 
@@ -21,9 +28,15 @@ class CReaderDexie extends Dexie {
     super(DB_NAME);
 
     // Version 5 matches the raw IndexedDB schema: outbound keys, no indexes.
-    this.version(5).stores(STORE_SCHEMA);
+    this.version(5).stores(LEGACY_V5_STORE_SCHEMA);
+    this.version(6).stores({
+      ...LEGACY_V5_STORE_SCHEMA,
+      searchText: null,
+      searchResults: null,
+    });
     this.version(DB_VERSION).stores({
       ...STORE_SCHEMA,
+      locations: null,
       searchText: null,
       searchResults: null,
     });

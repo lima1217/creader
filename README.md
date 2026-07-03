@@ -10,7 +10,7 @@
 - OpenAI-compatible HTTP AI provider 配置和流式对话
 - 选区、进度、CFI、章节上下文和最近聊天记录驱动的 AI 对话
 - AI 审稿后选择性写入本地 Reading Memory Markdown 仓库
-- foliate-js 优先的阅读引擎，epubjs 作为兼容 fallback
+- foliate-js 阅读引擎；不执行 EPUB 内嵌脚本，也不提供兼容 fallback
 
 ## 开发
 
@@ -37,16 +37,20 @@ npm run check
 src/            React/Vite 前端
 src/components/ 阅读器、侧栏、工具栏、AI 面板、设置面板
 src/domain/     AI 请求、上下文裁剪、Reading Memory Markdown 纯逻辑
-src/services/   IndexedDB、本地存储、导入、封面、阅读引擎和搜索
+src/services/   IndexedDB、本地存储、导入、封面、聊天持久化、阅读引擎和搜索
 src-tauri/      Tauri shell 和 Rust commands
 public/         Vite 静态资源
 ```
 
 ## 阅读引擎
 
-CReader 通过 `src/services/reader/readingEngine.ts` 的 adapter contract 读取 EPUB。当前默认优先使用 `foliate-js`；如果打开失败，会回退到 `epubjs`。两个 adapter 都对上层暴露同一组能力：章节导航、上一页/下一页、阅读进度、文本选区、Search Locator 跳转和主题注入。
+CReader 通过 `src/services/reader/readingEngine.ts` 的 adapter contract 读取 EPUB。当前只支持 `foliate-js`：章节导航、上一页/下一页、阅读进度、文本选区、Search Locator 跳转和主题注入都经由这一条阅读引擎边界。无法由 foliate-js 打开的 EPUB 会明确失败，不会静默切换到另一个 renderer。
 
 全文搜索是可重建的派生索引，不是书籍内容或 AI 上下文的 source of truth。搜索结果可能携带精确 CFI，也可能退化为 href/spine 级定位。
+
+## 本地数据
+
+CReader 使用 IndexedDB/Dexie 保存封面、聊天消息和 Conversation Memory。旧版本为 epubjs generated locations 建过 `locations` object store；现在阅读进度来自 foliate-js 的位置事件，Dexie v7 会在迁移时删除旧 `locations` store。搜索索引仍是可重建数据，丢失后应通过搜索索引状态和重建动作恢复，而不是把 IndexedDB cache 当成书籍内容来源。
 
 ## AI
 

@@ -1,30 +1,23 @@
 # Save Reading Memory
 
-Use this skill when deciding whether an assistant turn should become a durable Reading Memory note and when rendering the note content.
+Use this branch when deciding whether an assistant turn should become a durable Reading Memory note. Leading word: **durable**.
 
-## Ingestion Decision
+## Steps
 
-Save only when the turn is durable, source-grounded, and useful outside the chat.
+1. Check for source evidence: book title plus selected text, chapter context, or a source-grounded user question.
+2. Check for a save trigger: explicit save request, reusable passage insight, concept, claim, question, or chapter note.
+3. Check skip rules: ordinary summary, translation, explanation, meta prompt, coaching exchange, short follow-up, repeated explanation, or weak source context.
+4. If saving, choose the narrowest target type: `book`, `concept`, `question`, or `claim`.
+5. Preserve source metadata and the ingestion reason.
 
-Save when:
-
-- the user explicitly asks to save, remember, record, or add to Reading Memory;
-- the answer creates a reusable source-grounded insight;
-- the turn captures a concept, claim, question, or book note worth revisiting.
-
-Skip when:
-
-- the turn is an ordinary summary, translation, or explanation;
-- the user is asking about the assistant, settings, or workflow;
-- the assistant is coaching the reader without a durable book note;
-- the new answer repeats earlier content;
-- source context is missing or too weak.
+Done means the decision can be explained by one save trigger or one skip rule.
 
 ## Note Requirements
 
-Each saved note should preserve:
+Each saved note must preserve:
 
-- book title and author when available;
+- book title;
+- author when available;
 - chapter or section;
 - reading progress;
 - CFI range when available;
@@ -36,6 +29,8 @@ Each saved note should preserve:
 
 Current-book notes belong in the sanitized book sub-package under `books/<book-slug>/...`. Rust owns repository path validation, target directory restriction, file writes, and ingestion logging. Behavior files and evals must not grant the AI arbitrary file paths.
 
-## Good Outcome
+## Completion Criteria
 
-The Reading Memory repository grows only with durable, source-grounded notes, while ordinary chat remains in chat.
+- `should_ingest=true` only for durable, source-grounded turns.
+- Ordinary chat remains in chat.
+- Saved notes have enough source metadata to audit the original reading context.

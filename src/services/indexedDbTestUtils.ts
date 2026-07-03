@@ -14,7 +14,7 @@ export async function seedRawIndexedDb(
     const request = indexedDB.open(DB_NAME, version);
     request.onupgradeneeded = () => {
       const db = request.result;
-      for (const name of ['covers', 'locations', 'chatMessages', 'conversationMemory']) {
+      for (const name of ['covers', 'chatMessages', 'conversationMemory']) {
         if (!db.objectStoreNames.contains(name)) {
           db.createObjectStore(name);
         }
