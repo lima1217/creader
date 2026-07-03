@@ -115,12 +115,27 @@ describe('SelectionToolbar contract — button handlers', () => {
 
 describe('SelectionToolbar contract — positioning + flip logic', () => {
   it('positions the toolbar at the selection coordinate', () => {
+    vi.stubGlobal('innerWidth', 1024);
+    vi.stubGlobal('innerHeight', 800);
     const { container } = mount(
       <SelectionToolbar {...baseProps({ position: { x: 250, y: 400 } })} />,
     );
     const toolbar = container.querySelector('.reader-selection-toolbar') as HTMLElement;
     expect(toolbar.style.left).toBe('250px');
     expect(toolbar.style.top).toBe('400px');
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps the toolbar inside the viewport edges', () => {
+    vi.stubGlobal('innerWidth', 320);
+    vi.stubGlobal('innerHeight', 180);
+    const { container } = mount(
+      <SelectionToolbar {...baseProps({ position: { x: 4, y: 10 } })} />,
+    );
+    const toolbar = container.querySelector('.reader-selection-toolbar') as HTMLElement;
+    expect(toolbar.style.left).toBe('138px');
+    expect(toolbar.style.top).toBe('56px');
+    vi.unstubAllGlobals();
   });
 
   it('places the hint below the toolbar when it fits within the viewport', () => {

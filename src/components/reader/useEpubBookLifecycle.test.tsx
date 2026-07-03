@@ -56,10 +56,12 @@ function Harness({
   onLoadingChange,
   onLocationsResolved,
   onError,
+  onFileNotFound,
 }: {
   onLoadingChange: (loading: boolean) => void;
   onLocationsResolved?: (available: boolean) => void;
   onError?: (error: string | null) => void;
+  onFileNotFound?: (isNotFound: boolean) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBookLike | null>(null);
@@ -89,7 +91,7 @@ function Harness({
       onLoadingChange(loading);
     },
     setError: onError ?? (() => {}),
-    setIsFileNotFound: () => {},
+    setIsFileNotFound: onFileNotFound ?? (() => {}),
     onLocationsResolved,
   });
 
@@ -128,6 +130,35 @@ describe('useEpubBookLifecycle opening critical path', () => {
     expect(adapterMocks.foliateOpen).toHaveBeenCalledOnce();
     expect(mocks.display).not.toHaveBeenCalled();
     expect(onError).toHaveBeenLastCalledWith(expect.stringContaining('CReader 当前不支持'));
+
+    flushSync(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  it('surfaces missing files as a recoverable file-not-found state', async () => {
+    mocks.readFile.mockRejectedValue(new Error('No such file or directory'));
+
+    const onError = vi.fn();
+    const onFileNotFound = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    flushSync(() => root.render(
+      <Harness
+        onLoadingChange={() => {}}
+        onError={onError}
+        onFileNotFound={onFileNotFound}
+      />,
+    ));
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+
+    expect(onFileNotFound).toHaveBeenCalledWith(false);
+    expect(onFileNotFound).toHaveBeenLastCalledWith(true);
+    expect(onError).toHaveBeenLastCalledWith('找不到文件。它可能已被移动、重命名或删除。');
+    expect(adapterMocks.foliateOpen).not.toHaveBeenCalled();
 
     flushSync(() => root.unmount());
     container.remove();

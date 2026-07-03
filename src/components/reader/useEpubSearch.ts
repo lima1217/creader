@@ -5,6 +5,7 @@ import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import type { ReaderSearchResult } from '../../services/reader/types';
 import { getSearchIndexStatus, rebuildSearchIndex, searchBookIndex, toSearchIndexSummary } from '../../services/reader/searchIndex';
 import { createLogger } from '../../utils/logger';
+import { resolveSearchResultTarget } from './readerNavigation';
 
 const logger = createLogger('useEpubSearch');
 
@@ -95,8 +96,16 @@ export function useEpubSearch(params: {
   }, [currentBook, onSearchIndexStatus]);
 
   const handleSearchResultClick = useCallback((result: ReaderSearchResult) => {
-    const target = result.locator?.cfi || result.locator?.href || result.cfi;
-    renditionRef.current?.display(target);
+    const target = resolveSearchResultTarget(result);
+    if (!target) {
+      setSearchError('这个搜索结果缺少可跳转的位置。');
+      return;
+    }
+    const displayResult = renditionRef.current?.display(target);
+    void Promise.resolve(displayResult).catch((err: unknown) => {
+      logger.warn('Search result navigation failed:', err);
+      setSearchError('无法跳转到这个搜索结果。');
+    });
     cancelSearch();
     onCloseSearch();
   }, [cancelSearch, onCloseSearch, renditionRef]);

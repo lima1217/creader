@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -18,6 +18,7 @@ import { useEpubProgressTracking } from './reader/useEpubProgressTracking';
 import { useEpubSelectionTracking } from './reader/useEpubSelectionTracking';
 import { useEpubSearch } from './reader/useEpubSearch';
 import { useReaderKeyboardShortcuts } from './reader/useReaderKeyboardShortcuts';
+import { findChapterLabelByHref, isTocItemActive } from './reader/readerNavigation';
 import './EPUBReader.css';
 import './SelectionToolbar.css';
 import { AILogoIcon, CheckIcon, CopyIcon, PlusIcon as SelectionPlusIcon } from './ai/icons';
@@ -68,28 +69,11 @@ export function EPUBReader() {
     // reader relocates, derived from the rendition's current location start.
     const [currentTocHref, setCurrentTocHref] = useState<string>('');
 
-    // Map a spine href to a human-readable chapter label, so search results can
-    // show a real chapter title instead of the raw OPF idref / href. Flattens
-    // nested TOC entries and normalizes anchor + path prefixes.
-    const chapterLabelByHref = useMemo(() => {
-        const map = new Map<string, string>();
-        const normalize = (href: string) => (href || '').split('#')[0].trim();
-        const walk = (items: NavItem[]) => {
-            for (const item of items) {
-                const key = normalize(item.href);
-                if (key && item.label && !map.has(key)) map.set(key, item.label);
-                if (item.subitems?.length) walk(item.subitems);
-            }
-        };
-        walk(toc);
-        return map;
-    }, [toc]);
-
     const resolveChapterLabel = useCallback((result: { section?: string; cfi?: string }) => {
         // Prefer resolving via the result's href (carried on `cfi` in the slow
         // path); fall back to the existing `section` if it is already a title.
         const href = (result.cfi || '').split('#')[0].trim();
-        const viaHref = href ? chapterLabelByHref.get(href) : undefined;
+        const viaHref = href ? findChapterLabelByHref(toc, href) : undefined;
         if (viaHref) return viaHref;
         const section = result.section || '';
         // Heuristic: `section` can be a spine idref (e.g. "id123") or a
@@ -97,7 +81,7 @@ export function EPUBReader() {
         // like a real title rather than a raw id/filename.
         if (section && !/^(id\d+|.*\.(x?html|htm|xhtml))$/i.test(section)) return section;
         return '';
-    }, [chapterLabelByHref]);
+    }, [toc]);
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -274,9 +258,32 @@ export function EPUBReader() {
     };
 
     const handleTocClick = (href: string) => {
-        renditionRef.current?.display(href);
+        if (!href) return;
+        const displayResult = renditionRef.current?.display(href);
+        void Promise.resolve(displayResult).catch((err: unknown) => logger.warn('TOC navigation failed:', err));
         setShowToc(false);
+        setShowSelectionToolbar(false);
     };
+
+    const renderTocItems = (items: NavItem[], depth = 0) => items.map(item => {
+        const isActive = isTocItemActive(item.href, currentTocHref);
+        const isSubitem = depth > 0;
+        return (
+            <li key={item.id}>
+                <button
+                    className={`reader-toc-item ${isSubitem ? 'reader-toc-subitem' : ''} ${isActive ? 'current' : ''}`}
+                    onClick={() => handleTocClick(item.href)}
+                >
+                    {item.label}
+                </button>
+                {item.subitems && item.subitems.length > 0 && (
+                    <ul className="reader-toc-sublist">
+                        {renderTocItems(item.subitems, depth + 1)}
+                    </ul>
+                )}
+            </li>
+        );
+    });
 
     // Handle relocating a book file
     const handleRelocateFile = async () => {
@@ -396,37 +403,7 @@ export function EPUBReader() {
                         {toc.length === 0 ? (
                             <li className="reader-toc-empty">没有可用章节</li>
                         ) : (
-                            toc.map(item => {
-                                const isActive = item.href === currentTocHref ||
-                                    (currentTocHref && item.href && currentTocHref.startsWith(item.href));
-                                return (
-                                <li key={item.id}>
-                                    <button
-                                        className={`reader-toc-item ${isActive ? 'current' : ''}`}
-                                        onClick={() => handleTocClick(item.href)}
-                                    >
-                                        {item.label}
-                                    </button>
-                                    {item.subitems && item.subitems.length > 0 && (
-                                        <ul className="reader-toc-sublist">
-                                            {item.subitems.map(sub => {
-                                                const subActive = sub.href === currentTocHref;
-                                                return (
-                                                <li key={sub.id}>
-                                                    <button
-                                                        className={`reader-toc-item reader-toc-subitem ${subActive ? 'current' : ''}`}
-                                                        onClick={() => handleTocClick(sub.href)}
-                                                    >
-                                                        {sub.label}
-                                                    </button>
-                                                </li>
-                                                );
-                                            })}
-                                        </ul>
-                                    )}
-                                </li>
-                                );
-                            })
+                            renderTocItems(toc)
                         )}
                     </ul>
                 </div>

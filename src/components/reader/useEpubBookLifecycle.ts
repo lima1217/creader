@@ -55,6 +55,7 @@ export function useEpubBookLifecycle(params: {
     const loadBook = async () => {
       setIsLoading(true);
       setError(null);
+      setIsFileNotFound(false);
       setToc([]);
 
       // Yield to allow the loading UI to paint before heavy work.

@@ -42,24 +42,36 @@ export function SelectionToolbar(props: {
 
   if (!visible || !selectedText || !position) return null;
 
+  const TOOLBAR_WIDTH = 260;
+  const TOOLBAR_HEIGHT = 48;
+  const VIEWPORT_MARGIN = 8;
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0;
+  const renderedX = viewportWidth > 0
+    ? Math.max(TOOLBAR_WIDTH / 2 + VIEWPORT_MARGIN, Math.min(position.x, viewportWidth - TOOLBAR_WIDTH / 2 - VIEWPORT_MARGIN))
+    : position.x;
+  const renderedY = viewportHeight > 0
+    ? Math.max(TOOLBAR_HEIGHT + VIEWPORT_MARGIN, Math.min(position.y, viewportHeight - VIEWPORT_MARGIN))
+    : position.y;
+
   // If the hint would overflow the bottom of the viewport, render it above the
   // toolbar instead of always 60px below it.
   const HINT_HEIGHT = 32;
   const hintOffset = 60;
   const placeHintAbove =
     typeof window !== 'undefined' &&
-    position.y + hintOffset + HINT_HEIGHT > window.innerHeight;
+    renderedY + hintOffset + HINT_HEIGHT > window.innerHeight;
   const hintTop = placeHintAbove
-    ? position.y - hintOffset
-    : position.y + hintOffset;
+    ? renderedY - hintOffset
+    : renderedY + hintOffset;
 
   return (
     <>
       <div
         className="reader-selection-toolbar"
         style={{
-          left: `${position.x}px`,
-          top: `${position.y}px`,
+          left: `${renderedX}px`,
+          top: `${renderedY}px`,
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -93,7 +105,7 @@ export function SelectionToolbar(props: {
         <div
           className="reader-selection-hint"
           style={{
-            left: `${position.x}px`,
+            left: `${renderedX}px`,
             top: `${hintTop}px`,
           }}
         >
