@@ -14,22 +14,17 @@ import {
 } from './testUtils';
 
 /**
- * Sidebar contract tests — issue #24 (Astryx Phase 2 Sidebar prefactor).
+ * Sidebar contract tests — Library Organizer behavior closure.
  *
- * These lock Sidebar's behavior against its CURRENT JSX before any Astryx
- * migration (slices #27–#30). The point of this slice is the safety net: when
- * a `List`/`SideNav`/`Dialog` swaps in, these tests must stay green because
- * they assert owned behavior (store interactions, modal open/close, folder
- * filtering, click handlers, confirm gating), never Astryx internals.
+ * These lock owned behavior (store interactions, modal open/close, folder
+ * filtering, drag/drop, click handlers, confirm gating), never Astryx internals.
  *
  * Test style follows the Phase 1 contract-mock precedent (`AppDialog.test.tsx`)
  * via the shared harness in `./testUtils.tsx` (extracted in the #24 hardening
  * so SelectionToolbar #25 and AIPanel #26 reuse it).
  *
  * We do NOT adopt @testing-library/react. DOM assertions are limited to the
- * selectors/text Sidebar itself owns; when Astryx swaps in the selectors will
- * change and these tests get updated as part of that migration slice — which is
- * exactly the signal we want.
+ * selectors/text Sidebar itself owns.
  */
 
 // --- Mocks --------------------------------------------------------------
@@ -384,8 +379,8 @@ describe('Sidebar contract — folder nav', () => {
     await settle();
 
     const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
-    dispatchDragEvent(container.querySelector('.category-filter-group')!, 'dragover', dataTransfer);
-    dispatchDragEvent(container.querySelector('.category-filter-group')!, 'drop', dataTransfer);
+    dispatchDragEvent(container.querySelector('.folder-nav-group')!, 'dragover', dataTransfer);
+    dispatchDragEvent(container.querySelector('.folder-nav-group')!, 'drop', dataTransfer);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
@@ -413,7 +408,7 @@ describe('Sidebar contract — folder nav', () => {
     await settle();
 
     const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
-    dispatchDragEvent(container.querySelector('.category-filter-group')!, 'drop', dataTransfer);
+    dispatchDragEvent(container.querySelector('.folder-nav-group')!, 'drop', dataTransfer);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
@@ -446,7 +441,7 @@ describe('Sidebar contract — folder nav', () => {
 
     vi.useFakeTimers();
     const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
-    dispatchDragEvent(container.querySelector('.category-filter-group')!, 'dragover', dataTransfer);
+    dispatchDragEvent(container.querySelector('.folder-nav-group')!, 'dragover', dataTransfer);
     vi.advanceTimersByTime(500);
     await Promise.resolve();
     vi.useRealTimers();
@@ -537,12 +532,12 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
   it('disables the create button when the name is empty and creates a colorless folder when filled', async () => {
     seedLibrary({ books: [], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    expect(container.querySelector('.modal-category')).toBeNull();
+    expect(container.querySelector('.modal-folder')).toBeNull();
 
     click(container.querySelector('[aria-label="新增文件夹"]')!);
     await settle();
 
-    const modal = container.querySelector('.modal-category') as HTMLElement;
+    const modal = container.querySelector('.modal-folder') as HTMLElement;
     const nameInput = modal.querySelector('input') as HTMLInputElement;
     const createBtn = Array.from(modal.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === '创建',
@@ -557,7 +552,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     const folder = useLibraryStore.getState().library.folders[0];
     expect(folder.name).toBe('Favorites');
     expect('color' in folder).toBe(false);
-    expect(container.querySelector('.modal-category')).toBeNull();
+    expect(container.querySelector('.modal-folder')).toBeNull();
   });
 
   it('rejects duplicate folder names case-insensitively', async () => {
@@ -568,7 +563,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     click(container.querySelector('[aria-label="新增文件夹"]')!);
     await settle();
 
-    const modal = container.querySelector('.modal-category') as HTMLElement;
+    const modal = container.querySelector('.modal-folder') as HTMLElement;
     const nameInput = modal.querySelector('input') as HTMLInputElement;
     const createBtn = Array.from(modal.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === '创建',
@@ -596,7 +591,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     click(editBtn);
     await settle();
 
-    const modal = container.querySelector('.modal-category') as HTMLElement;
+    const modal = container.querySelector('.modal-folder') as HTMLElement;
     const nameInput = modal.querySelector('input') as HTMLInputElement;
     expect(nameInput.value).toBe('Old Name');
     // The confirm button reads 保存 (not 创建) in edit mode.
@@ -611,7 +606,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     const updated = useLibraryStore.getState().library.folders[0];
     expect(updated.name).toBe('New Name');
     expect('color' in updated).toBe(false);
-    expect(container.querySelector('.modal-category')).toBeNull();
+    expect(container.querySelector('.modal-folder')).toBeNull();
   });
 
   it('closes when the overlay is clicked without creating a folder', async () => {
@@ -623,7 +618,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     click(container.querySelector('.modal-overlay')!);
     await settle();
 
-    expect(container.querySelector('.modal-category')).toBeNull();
+    expect(container.querySelector('.modal-folder')).toBeNull();
     expect(useLibraryStore.getState().library.folders).toHaveLength(0);
   });
 
@@ -655,7 +650,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     const { container } = mountSidebar();
     await settle();
 
-    const groups = container.querySelectorAll('.category-filter-group');
+    const groups = container.querySelectorAll('.folder-nav-group');
     const { dataTransfer } = dispatchDragEvent(groups[1], 'dragstart');
     dispatchDragEvent(groups[0], 'dragover', dataTransfer);
     dispatchDragEvent(groups[0], 'drop', dataTransfer);
@@ -678,15 +673,15 @@ describe('Sidebar contract — assign-folder modal', () => {
 
     await clickBookAction(container, 'Unfiled', '移动到文件夹');
 
-    const modal = container.querySelector('.modal-assign-category') as HTMLElement;
-    const catOption = Array.from(modal.querySelectorAll('button')).find(
+    const modal = container.querySelector('.modal-assign-folder') as HTMLElement;
+    const folderOption = Array.from(modal.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === 'Reading',
     )!;
-    click(catOption);
+    click(folderOption);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
-    expect(container.querySelector('.modal-assign-category')).toBeNull();
+    expect(container.querySelector('.modal-assign-folder')).toBeNull();
   });
 
   it('clears the book folder when "未归档" is selected', async () => {
@@ -698,15 +693,15 @@ describe('Sidebar contract — assign-folder modal', () => {
 
     await clickBookAction(container, 'Filed', '移动到文件夹');
 
-    const modal = container.querySelector('.modal-assign-category') as HTMLElement;
-    const uncatOption = Array.from(modal.querySelectorAll('button')).find(
+    const modal = container.querySelector('.modal-assign-folder') as HTMLElement;
+    const unfiledOption = Array.from(modal.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === '未归档',
     )!;
-    click(uncatOption);
+    click(unfiledOption);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
-    expect(container.querySelector('.modal-assign-category')).toBeNull();
+    expect(container.querySelector('.modal-assign-folder')).toBeNull();
   });
 
   it('closes without changing the book when the overlay is clicked', async () => {
@@ -718,10 +713,10 @@ describe('Sidebar contract — assign-folder modal', () => {
 
     await clickBookAction(container, 'Original', '移动到文件夹');
 
-    click(document.body.querySelector('.category-assign-dialog')!);
+    click(document.body.querySelector('.folder-assign-dialog')!);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
-    expect(container.querySelector('.modal-assign-category')).toBeNull();
+    expect(container.querySelector('.modal-assign-folder')).toBeNull();
   });
 });

@@ -564,7 +564,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     <span className="book-info">
                         <span className="book-author">{book.author || 'Unknown'}</span>
                         {book.folderId && (
-                            <span className="book-category-badge">
+                            <span className="book-folder-badge">
                                 {folders.find(folder => folder.id === book.folderId)?.name || ''}
                             </span>
                         )}
@@ -664,7 +664,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     purpose="info"
                     className="modal-overlay sidebar-dialog"
                 >
-                    <Layout height="auto" className="sidebar-dialog-layout modal-category">
+                    <Layout height="auto" className="sidebar-dialog-layout modal-folder">
                         <DialogHeader
                             className="sidebar-dialog-header"
                             title={editingFolder ? '编辑文件夹' : '新建文件夹'}
@@ -682,7 +682,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                         <LayoutContent className="sidebar-dialog-content">
                             <div className="modal-form">
                                 <TextInput
-                                    id="category-name"
+                                    id="folder-name"
                                     label="名称"
                                     value={newFolderName}
                                     onChange={(value) => {
@@ -716,9 +716,9 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     onOpenChange={(open) => { if (!open) setBookForFolder(null); }}
                     width={340}
                     purpose="info"
-                    className="category-assign-dialog sidebar-dialog"
+                    className="folder-assign-dialog sidebar-dialog"
                 >
-                    <Layout height="auto" className="sidebar-dialog-layout modal-assign-category">
+                    <Layout height="auto" className="sidebar-dialog-layout modal-assign-folder">
                         <DialogHeader
                             className="sidebar-dialog-header"
                             title="设置文件夹"
@@ -734,29 +734,27 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                             )}
                         />
                         <LayoutContent className="sidebar-dialog-content">
-                            <div className="category-assign-list" role="listbox" aria-label="设置书籍文件夹">
-                                <button
-                                    className={`category-assign-item ${!assignedFolderId ? 'selected' : ''}`}
+                            <List density="compact" className="folder-assign-list" aria-label="设置书籍文件夹">
+                                <ListItem
+                                    className="folder-assign-item"
+                                    label="未归档"
                                     onClick={() => confirmBookFolder(undefined)}
-                                    aria-pressed={!assignedFolderId}
-                                >
-                                    <span className="category-color muted" />
-                                    <span className="category-assign-name">未归档</span>
-                                    {!assignedFolderId && <span className="category-assign-current">当前</span>}
-                                </button>
+                                    isSelected={!assignedFolderId}
+                                    startContent={<span className="folder-muted-dot" />}
+                                    endContent={!assignedFolderId ? <span className="folder-assign-current">当前</span> : undefined}
+                                />
                                 {folders.map(folder => (
-                                    <button
+                                    <ListItem
                                         key={folder.id}
-                                        className={`category-assign-item ${assignedFolderId === folder.id ? 'selected' : ''}`}
+                                        className="folder-assign-item"
+                                        label={folder.name}
                                         onClick={() => confirmBookFolder(folder.id)}
-                                        aria-pressed={assignedFolderId === folder.id}
-                                    >
-                                        <Icon icon={AstryxFolderIcon} size="sm" />
-                                        <span className="category-assign-name">{folder.name}</span>
-                                        {assignedFolderId === folder.id && <span className="category-assign-current">当前</span>}
-                                    </button>
+                                        isSelected={assignedFolderId === folder.id}
+                                        startContent={<Icon icon={AstryxFolderIcon} size="sm" />}
+                                        endContent={assignedFolderId === folder.id ? <span className="folder-assign-current">当前</span> : undefined}
+                                    />
                                 ))}
-                            </div>
+                            </List>
                             <div className="modal-actions">
                                 <Button variant="secondary" label="取消" onClick={() => setBookForFolder(null)} />
                             </div>
@@ -823,7 +821,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 />
             </div>
 
-            <div className="sidebar-categories">
+            <div className="sidebar-organizer-nav">
                 <SideNav>
                     <SideNavSection title="书库整理" isHeaderHidden>
                         <SideNavItem
@@ -831,10 +829,10 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                             icon={AstryxBookIcon}
                             isSelected={selectedView === 'all'}
                             onClick={() => setSelectedView('all')}
-                            endContent={<span className="category-filter-count">{library.books.length}</span>}
+                            endContent={<span className="organizer-count">{library.books.length}</span>}
                         />
                         <div
-                            className="category-drop-target"
+                            className="folder-drop-target"
                             onDragOver={(event) => handleFolderDropTargetDragOver(event, undefined)}
                             onDragLeave={handleFolderDropTargetDragLeave}
                             onDrop={(event) => handleFolderDropTargetDrop(event, undefined)}
@@ -844,13 +842,13 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                 icon={AstryxMutedDotIcon}
                                 isSelected={selectedView === 'unfiled'}
                                 onClick={() => setSelectedView('unfiled')}
-                                endContent={<span className="category-filter-count">{groupedBooks.unfiled.length}</span>}
+                                endContent={<span className="organizer-count">{groupedBooks.unfiled.length}</span>}
                             />
                         </div>
                         {folders.map(folder => (
                             <div
                                 key={folder.id}
-                                className="category-filter-group"
+                                className="folder-nav-group"
                                 draggable
                                 onDragStart={(event) => handleFolderDragStart(event, folder)}
                                 onDragOver={(event) => {
@@ -871,9 +869,9 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                         setSelectedView(folder.id);
                                         if (!expandedFolderIds.has(folder.id)) toggleFolder(folder.id);
                                     }}
-                                    endContent={<span className="category-filter-count">{groupedBooks[folder.id]?.length || 0}</span>}
+                                    endContent={<span className="organizer-count">{groupedBooks[folder.id]?.length || 0}</span>}
                                 />
-                                <div className="category-actions">
+                                <div className="folder-actions">
                                     <MoreMenu
                                         label={`${folder.name} 操作`}
                                         size="sm"
@@ -939,7 +937,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     >
                                         <Icon icon={group.isFolder ? AstryxFolderIcon : AstryxMutedDotIcon} size="sm" />
                                         <span className="organizer-group-title">{group.label}</span>
-                                        <span className="category-filter-count">{group.books.length}</span>
+                                        <span className="organizer-count">{group.books.length}</span>
                                         {group.isFolder && (
                                             <Icon icon={AstryxChevronIcon} size="sm" />
                                         )}

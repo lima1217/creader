@@ -525,7 +525,7 @@ button,
 [role='button'],
 summary,
 .book-item,
-.category-assign-item {
+.folder-assign-item {
   cursor: default !important;
 }
 
