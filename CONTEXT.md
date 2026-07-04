@@ -49,7 +49,7 @@ A user-editable shortcut prompt shown near the AI input and persisted by the qui
 _Avoid_: provider setting, hard-coded AI mode
 
 **AI Settings Dialog**:
-The modal settings surface for AI-assisted reading. It has three top tabs: `AI`, `阅读记忆`, and `快捷提示词`.
+The modal settings surface for AI-assisted reading. It has three top-level tabs: `AI 设置`, `阅读记忆`, and `快捷提示词`. The dialog does not repeat the `AI 设置` title above the tab row; the close control stays visible at the top.
 _Avoid_: AI Reading Console, Console Overview, readiness dashboard
 
 **AI Settings Tab**:
@@ -57,11 +57,11 @@ The AI Settings Dialog tab that configures how the reading conversation runs: Op
 _Avoid_: split AI Service Settings and Conversation Behavior Settings, provider health dashboard
 
 **AI Service Ready**:
-The local boolean that is true only when an active provider has a stored key. If false, the `AI` tab shows a small attention dot; there is no positive ready marker.
+The local boolean that is true only when an active provider has a stored key. If false, the `AI 设置` tab shows a small attention dot; there is no positive ready marker.
 _Avoid_: three-level Console Readiness, Reading Memory/Quick Prompt degradation
 
 **Reading Memory Settings Tab**:
-The AI Settings Dialog tab for choosing, opening, disconnecting, and enabling automatic ingestion for the Reading Memory repository.
+The AI Settings Dialog tab for choosing, opening, replacing, and enabling automatic ingestion for the Reading Memory repository.
 _Avoid_: internal memory database, readiness blocker
 
 **Quick Prompt Settings Tab**:

@@ -39,29 +39,16 @@
 
 .settings-dialog-header {
     flex-shrink: 0;
-    padding: var(--spacing-5) var(--spacing-5) var(--spacing-2) !important;
     background: var(--settings-surface) !important;
 }
 
-.settings-dialog-header > div {
-    align-items: flex-start !important;
-    gap: var(--spacing-4) !important;
+.settings-dialog-header-close {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--spacing-3) var(--spacing-5) 0;
 }
 
-.settings-dialog-header h2 {
-    margin: 0 !important;
-    color: var(--text-primary) !important;
-    font-size: var(--font-size-xl) !important;
-    line-height: 1.18 !important;
-    font-weight: 680 !important;
-    letter-spacing: 0 !important;
-}
-
-.settings-dialog-header h2:focus {
-    outline: none !important;
-}
-
-.settings-dialog-header .astryx-button[data-icon-only] {
+.settings-dialog-header-close > .astryx-button[data-icon-only] {
     min-width: var(--size-element-lg) !important;
     min-height: var(--size-element-lg) !important;
     color: var(--text-secondary) !important;
@@ -133,6 +120,29 @@
 .settings-subsection-separated {
     padding-top: var(--spacing-5);
     border-top: var(--border-width) solid var(--border-soft);
+}
+
+.settings-conversation-behavior {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+    padding: var(--spacing-4);
+    background: var(--bg-control);
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--radius-element);
+}
+
+.settings-conversation-control {
+    margin-bottom: 0;
+}
+
+.settings-conversation-control.settings-field {
+    min-height: 0;
+}
+
+.settings-text-size-field .astryx-number-input {
+    width: min(100%, calc(var(--spacing-9) * 5));
+    max-width: calc(var(--spacing-9) * 5);
 }
 
 .settings-section-title {
@@ -469,7 +479,24 @@
 
 .settings-quick-list,
 .settings-quick-form {
+    gap: var(--spacing-3);
+}
+
+.settings-quick-form .astryx-field {
     gap: var(--spacing-2);
+}
+
+.settings-quick-form .astryx-text-input,
+.settings-quick-form .astryx-text-area {
+    background: var(--bg-control) !important;
+    border: var(--border-width) solid var(--border-soft) !important;
+    border-radius: var(--settings-control-radius) !important;
+}
+
+.settings-quick-form .astryx-text-input:focus-within,
+.settings-quick-form .astryx-text-area:focus-within {
+    border-color: var(--border-accent) !important;
+    box-shadow: var(--shadow-inset-selected);
 }
 
 .settings-quick-item {

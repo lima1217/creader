@@ -151,6 +151,12 @@ function clickTab(container: HTMLElement, label: string) {
   tabByLabel(container, label)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 }
 
+function buttonByLabel(container: HTMLElement, label: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll('button')).find((button) =>
+    (button.textContent ?? '').includes(label),
+  ) as HTMLButtonElement | undefined;
+}
+
 function providerTestButton(container: HTMLElement, name: string): HTMLButtonElement | null {
   const item = Array.from(container.querySelectorAll('.settings-provider-item')).find((el) =>
     (el.textContent ?? '').includes(name),
@@ -168,7 +174,7 @@ function seedOrderedActions(labels: string[]) {
   localStorage.setItem('creader-quick-actions', JSON.stringify({ v: 1, data: actions }));
 }
 
-describe('SettingsPanel — AI 设置三标签弹窗 (#61)', () => {
+describe('SettingsPanel — 三项一级菜单 (#62-#65)', () => {
   beforeEach(() => {
     installDialogElementStub();
     installResizeObserverStub();
@@ -183,40 +189,44 @@ describe('SettingsPanel — AI 设置三标签弹窗 (#61)', () => {
     unmountAll();
   });
 
-  it('opens as AI 设置 with three top tabs and no console overview shell', async () => {
+  it('opens with three top-level tabs and no duplicate dialog title (#62)', async () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    expect(container.textContent ?? '').toContain('AI 设置');
+    expect(container.querySelector('.settings-dialog-header h2')).toBeNull();
     expect(tabs(container).length).toBe(3);
-    expect(tabByLabel(container, 'AI')).toBeTruthy();
+    expect(tabByLabel(container, 'AI 设置')).toBeTruthy();
     expect(tabByLabel(container, '阅读记忆')).toBeTruthy();
     expect(tabByLabel(container, '快捷提示词')).toBeTruthy();
-    expect(tabByLabel(container, 'AI')?.hasAttribute('data-selected')).toBe(true);
+    expect(tabByLabel(container, 'AI 设置')?.hasAttribute('data-selected')).toBe(true);
     expect(container.querySelector('.console-sidenav')).toBeNull();
     expect(container.querySelector('.console-hero')).toBeNull();
     expect(container.querySelector('.console-status-row')).toBeNull();
     expect(container.querySelector('.console-strategy')).toBeNull();
   });
 
-  it('shows AI service and conversation behavior together on the AI tab', async () => {
+  it('shows AI service and grouped conversation behavior on the AI 设置 tab (#63)', async () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
     expect(container.querySelector('.settings-provider-summary')).not.toBeNull();
     expect(container.textContent ?? '').toContain('AI 服务');
     expect(container.textContent ?? '').toContain('对话行为');
+    expect(container.querySelector('.settings-conversation-behavior')).not.toBeNull();
+    expect(container.textContent ?? '').toContain('自动压缩');
+    expect(container.textContent ?? '').toContain('AI 文字大小');
     expect(container.querySelector('#settings-context-window')).not.toBeNull();
+    expect(container.querySelector('#settings-ai-text-size')).not.toBeNull();
     expect(container.querySelector('.astryx-number-input input')?.getAttribute('min')).toBe('13');
     expect(container.querySelector('.astryx-number-input input')?.getAttribute('max')).toBe('20');
   });
 
-  it('shows an attention dot only on the AI tab when no active keyed provider exists', async () => {
+  it('shows an attention dot only on the AI 设置 tab when no active keyed provider exists', async () => {
     setProviderList([]);
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    expect(tabByLabel(container, 'AI')?.querySelector('.settings-tab-attention')).not.toBeNull();
+    expect(tabByLabel(container, 'AI 设置')?.querySelector('.settings-tab-attention')).not.toBeNull();
     expect(tabByLabel(container, '阅读记忆')?.querySelector('.settings-tab-attention')).toBeNull();
     expect(tabByLabel(container, '快捷提示词')?.querySelector('.settings-tab-attention')).toBeNull();
   });
@@ -255,7 +265,7 @@ describe('SettingsPanel — AI 设置三标签弹窗 (#61)', () => {
     expect(reopened.querySelector('.settings-provider-test')).toBeNull();
   });
 
-  it('keeps Reading Memory behavior while removing the strategy banner', async () => {
+  it('shows open and replace actions when connected without a disconnect control (#64)', async () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
     clickTab(container, '阅读记忆');
@@ -263,18 +273,29 @@ describe('SettingsPanel — AI 设置三标签弹窗 (#61)', () => {
 
     expect(container.querySelector('.console-strategy')).toBeNull();
     expect(container.textContent ?? '').toContain('/mem/root');
-    const disconnectBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      (b.textContent ?? '').includes('断开仓库'),
-    ) as HTMLButtonElement | undefined;
-    disconnectBtn?.click();
-    await settle();
-
-    const after = useSettingsStore.getState().settings;
-    expect(after.readingMemoryPath).toBeUndefined();
-    expect(after.readingMemoryAutoIngest).toBe(true);
+    expect(buttonByLabel(container, '打开')).toBeTruthy();
+    expect(buttonByLabel(container, '更换')).toBeTruthy();
+    expect(buttonByLabel(container, '断开仓库')).toBeUndefined();
   });
 
-  it('keeps Quick Prompt ordering and uses a lightweight first-six hint', async () => {
+  it('shows a select action when Reading Memory is not connected (#64)', async () => {
+    useSettingsStore.setState({
+      settings: {
+        ...useSettingsStore.getState().settings,
+        readingMemoryPath: undefined,
+      },
+    });
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    clickTab(container, '阅读记忆');
+    await settle();
+
+    expect(buttonByLabel(container, '选择')).toBeTruthy();
+    expect(buttonByLabel(container, '打开')).toBeUndefined();
+    expect(buttonByLabel(container, '更换')).toBeUndefined();
+  });
+
+  it('keeps Quick Prompt ordering and uses labeled edit fields (#65)', async () => {
     seedOrderedActions(['一', '二', '三']);
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
@@ -283,6 +304,9 @@ describe('SettingsPanel — AI 设置三标签弹窗 (#61)', () => {
 
     expect(container.querySelector('.console-strategy')).toBeNull();
     expect(container.querySelector('.settings-quick-help')?.textContent ?? '').toContain('前 6 个');
+    expect(container.querySelector('.settings-quick-form')).not.toBeNull();
+    expect(container.querySelector('input[name="settings-quick-label"]')).not.toBeNull();
+    expect(container.querySelector('textarea[name="settings-quick-prompt"]')).not.toBeNull();
 
     const rows = container.querySelectorAll('.settings-quick-item');
     const secondRow = rows[1] as HTMLElement;

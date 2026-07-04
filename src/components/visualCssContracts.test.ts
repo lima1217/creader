@@ -43,6 +43,14 @@ describe('visual CSS contracts', () => {
     expect(settingsPanelCss).not.toContain('.console-status-row');
   });
 
+  it('groups conversation behavior controls and styles quick prompt edit fields', () => {
+    expect(settingsPanelCss).toContain('.settings-conversation-behavior');
+    expect(settingsPanelCss).toContain('.settings-text-size-field');
+    expect(settingsPanelCss).toContain('.settings-quick-form .astryx-text-input');
+    expect(settingsPanelCss).toContain('.settings-quick-form .astryx-text-area');
+    expect(settingsPanelCss).toContain('.settings-dialog-header-close');
+  });
+
   it('falls back to a single-column layout on small viewports', () => {
     expect(settingsPanelCss).toContain('@media (max-width: 45rem)');
     expect(settingsPanelCss).toContain('flex-direction: column;');

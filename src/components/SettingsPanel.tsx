@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { openPath } from '@tauri-apps/plugin-opener';
-import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Dialog } from '@astryxdesign/core/Dialog';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import { TextArea } from '@astryxdesign/core/TextArea';
@@ -34,7 +34,6 @@ import {
     addQuickAction,
     applyProviderTemplate,
     clampAITextSize,
-    clearReadingMemoryPath,
     commitQuickActionDraft,
     createCustomQuickAction,
     formatQuickPromptStatus,
@@ -220,14 +219,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         }
     };
 
-    // Disconnect the Reading Memory repository: clear the configured path only.
-    // Auto-ingest preference is preserved; local Markdown files are never
-    // deleted (this is a pure settings change with no FS call).
-    const disconnectReadingMemory = () => {
-        if (!settings.readingMemoryPath) return;
-        setSettings(clearReadingMemoryPath(settings));
-    };
-
     const persistQuickActions = (actions: QuickActionConfig[]) => {
         setQuickActionConfigs(actions);
         saveQuickActionConfigs(actions);
@@ -298,20 +289,15 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             className="settings-dialog"
         >
             <Layout className="settings-dialog-layout">
-                <DialogHeader
-                    className="settings-dialog-header"
-                    title="AI 设置"
-                    hasDivider={false}
-                    endContent={(
-                        <Button
-                            variant="ghost"
-                            label="关闭设置"
-                            isIconOnly
-                            icon={<CloseIcon />}
-                            onClick={onClose}
-                        />
-                    )}
-                />
+                <div className="settings-dialog-header settings-dialog-header-close">
+                    <Button
+                        variant="ghost"
+                        label="关闭设置"
+                        isIconOnly
+                        icon={<CloseIcon />}
+                        onClick={onClose}
+                    />
+                </div>
                 <div className="settings-tabs-row">
                     <TabList
                         value={activeTab}
@@ -322,7 +308,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     >
                         <Tab
                             value="ai"
-                            label="AI"
+                            label="AI 设置"
                             endContent={!aiServiceReady ? (
                                 <span className="settings-tab-attention" aria-label="需要配置 AI 服务" />
                             ) : undefined}
@@ -527,51 +513,63 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
                             <section className="settings-subsection settings-subsection-separated">
                                 <div className="settings-section-title">对话行为</div>
-                                <Field
-                                    className="settings-field settings-field-stacked"
-                                    inputID="settings-context-window"
-                                    label="上下文轮次"
-                                    description="每次提问带上的最近记录，越多越连贯，也越慢。"
-                                >
-                                    <div id="settings-context-window">
-                                        <SegmentedControl
-                                            label="AI 上下文轮次"
-                                            size="sm"
-                                            layout="fill"
-                                            value={String(settings.aiContextWindow)}
-                                            onChange={value => setSettings({ ...settings, aiContextWindow: Number(value) as Settings['aiContextWindow'] })}
-                                        >
-                                            {contextWindowOptions.map(option => (
-                                                <SegmentedControlItem
-                                                    key={option.value}
-                                                    value={String(option.value)}
-                                                    label={option.label}
-                                                />
-                                            ))}
-                                        </SegmentedControl>
+                                <div className="settings-conversation-behavior">
+                                    <Field
+                                        className="settings-field settings-field-stacked settings-conversation-control"
+                                        inputID="settings-context-window"
+                                        label="上下文轮次"
+                                        description="每次提问带上的最近记录，越多越连贯，也越慢。"
+                                    >
+                                        <div id="settings-context-window">
+                                            <SegmentedControl
+                                                label="AI 上下文轮次"
+                                                size="sm"
+                                                layout="fill"
+                                                value={String(settings.aiContextWindow)}
+                                                onChange={value => setSettings({ ...settings, aiContextWindow: Number(value) as Settings['aiContextWindow'] })}
+                                            >
+                                                {contextWindowOptions.map(option => (
+                                                    <SegmentedControlItem
+                                                        key={option.value}
+                                                        value={String(option.value)}
+                                                        label={option.label}
+                                                    />
+                                                ))}
+                                            </SegmentedControl>
+                                        </div>
+                                    </Field>
+
+                                    <div className="settings-conversation-control">
+                                        <Switch
+                                            label="自动压缩"
+                                            description="超过轮次后，将更早对话压成隐藏摘要继续带上（摘要不作为消息渲染）。"
+                                            value={settings.aiAutoSummarize}
+                                            onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
+                                        />
                                     </div>
-                                </Field>
 
-                                <Switch
-                                    label="自动压缩"
-                                    description="超过轮次后，将更早对话压成隐藏摘要继续带上（摘要不作为消息渲染）。"
-                                    value={settings.aiAutoSummarize}
-                                    onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
-                                />
-
-                                <NumberInput
-                                    label="AI 文字大小"
-                                    isLabelHidden
-                                    description="调整旁注正文和输入框文字（13–20px）。"
-                                    value={settings.aiTextSize}
-                                    onChange={value => setSettings({ ...settings, aiTextSize: clampAITextSize(value) })}
-                                    min={AI_TEXT_SIZE_MIN}
-                                    max={AI_TEXT_SIZE_MAX}
-                                    step={1}
-                                    isIntegerOnly
-                                    units="px"
-                                    size="sm"
-                                />
+                                    <Field
+                                        className="settings-field settings-field-stacked settings-conversation-control settings-text-size-field"
+                                        inputID="settings-ai-text-size"
+                                        label="AI 文字大小"
+                                        description="调整旁注正文和输入框文字（13–20px）。"
+                                    >
+                                        <div id="settings-ai-text-size">
+                                            <NumberInput
+                                                label="AI 文字大小"
+                                                isLabelHidden
+                                                value={settings.aiTextSize}
+                                                onChange={value => setSettings({ ...settings, aiTextSize: clampAITextSize(value) })}
+                                                min={AI_TEXT_SIZE_MIN}
+                                                max={AI_TEXT_SIZE_MAX}
+                                                step={1}
+                                                isIntegerOnly
+                                                units="px"
+                                                size="sm"
+                                            />
+                                        </div>
+                                    </Field>
+                                </div>
                             </section>
                         </div>
                     )}
@@ -593,7 +591,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                 ) : (
                                     <>
                                         <strong>未连接仓库</strong>
-                                        <small>选择本地 Markdown 仓库后，AI 才能写入值得保留的笔记。断开仓库只会清除路径，不会删除本地文件。</small>
+                                        <small>选择本地 Markdown 仓库后，AI 才能写入值得保留的笔记。</small>
                                     </>
                                 )}
                             </div>
@@ -604,13 +602,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                 description="AI 只在值得保留时写入知识页，后续可交给外部整理。"
                             >
                                 <div className="settings-memory-picker" id="settings-memory-path">
-                                    <Button
-                                        variant="primary"
-                                        label={settings.readingMemoryPath ? '更换' : '选择'}
-                                        onClick={chooseReadingMemory}
-                                        isDisabled={!isTauri || isMemoryBusy}
-                                    />
-                                    {settings.readingMemoryPath && (
+                                    {settings.readingMemoryPath ? (
                                         <span className="settings-inline-path">
                                             <code>{settings.readingMemoryPath}</code>
                                             <Button
@@ -622,11 +614,18 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                label="断开仓库"
-                                                className="settings-danger-action"
-                                                onClick={disconnectReadingMemory}
+                                                label="更换"
+                                                onClick={chooseReadingMemory}
+                                                isDisabled={!isTauri || isMemoryBusy}
                                             />
                                         </span>
+                                    ) : (
+                                        <Button
+                                            variant="primary"
+                                            label="选择"
+                                            onClick={chooseReadingMemory}
+                                            isDisabled={!isTauri || isMemoryBusy}
+                                        />
                                     )}
                                 </div>
                             </Field>
