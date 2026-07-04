@@ -40,8 +40,10 @@ export interface ReadingProgress {
   currentChapter?: string;
 }
 
-export type BookProgressUpdate =
-  | { kind: 'epub'; currentCfi: string; percentage: number };
+export interface BookProgressUpdate {
+  currentCfi: string;
+  percentage: number;
+}
 
 // Library state
 export interface Library {

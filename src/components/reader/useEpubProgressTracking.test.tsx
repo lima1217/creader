@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
-import type { EpubBookLike, ReaderRendition } from '../../services/reader/epubAdapter';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { useEpubProgressTracking } from './useEpubProgressTracking';
 
 const location = {
@@ -33,13 +33,9 @@ function Harness({
   updateBookProgress: ReturnType<typeof vi.fn>;
 }) {
   const renditionRef = useRef(rendition as unknown as ReaderRendition);
-  const bookLikeRef = useRef({
-    spine: { length: 10 },
-  } as unknown as EpubBookLike);
 
   useEpubProgressTracking({
     renditionRef,
-    bookLikeRef,
     renditionKey: 1,
     bookId: 'book-1',
     updateBookProgress,
@@ -66,7 +62,6 @@ describe('useEpubProgressTracking', () => {
     });
 
     expect(updateBookProgress).toHaveBeenCalledWith('book-1', {
-      kind: 'epub',
       currentCfi: location.start.cfi,
       percentage: 62,
     });

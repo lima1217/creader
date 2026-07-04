@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import type { EpubBookLike, ReaderRendition } from '../../services/reader/epubAdapter';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { getRenditionContents } from '../../services/reader/epubAdapter';
 import { computeEpubPercentage } from './epubProgress';
 import { CHAPTER_EXTRACT_INTERVAL_MS, MAX_CHAPTER_CONTENT_LENGTH, PROGRESS_UPDATE_INTERVAL_MS, PROGRESS_UPDATE_THRESHOLD_PERCENT } from '../../constants';
@@ -10,13 +10,12 @@ const logger = createLogger('useEpubProgressTracking');
 
 export function useEpubProgressTracking(params: {
   renditionRef: RefObject<ReaderRendition | null>;
-  bookLikeRef: RefObject<EpubBookLike | null>;
   renditionKey: number;
   bookId: string | null;
-  updateBookProgress: (bookId: string, update: { kind: 'epub'; currentCfi: string; percentage: number }) => void;
+  updateBookProgress: (bookId: string, update: { currentCfi: string; percentage: number }) => void;
   setCurrentChapterContent: (content: string) => void;
 }) {
-  const { renditionRef, bookLikeRef, renditionKey, bookId, updateBookProgress, setCurrentChapterContent } = params;
+  const { renditionRef, renditionKey, bookId, updateBookProgress, setCurrentChapterContent } = params;
   const progressStateRef = useRef({ lastTs: 0, lastCfi: '', lastPercentage: 0 });
   const chapterStateRef = useRef({ lastTs: 0, lastCfi: '' });
 
@@ -27,8 +26,7 @@ export function useEpubProgressTracking(params: {
 
   useEffect(() => {
     const rendition = renditionRef.current;
-    const bookAny = bookLikeRef.current;
-    if (!rendition || !bookAny || !bookId) return;
+    if (!rendition || !bookId) return;
 
     const handleLocationChange = (location: any) => {
       if (!location) return;
@@ -42,7 +40,7 @@ export function useEpubProgressTracking(params: {
         cfi = location;
       }
 
-      percentage = computeEpubPercentage({ location, cfi, bookAny });
+      percentage = computeEpubPercentage({ location, cfi });
 
       if (cfi) {
         const now = Date.now();
@@ -58,7 +56,7 @@ export function useEpubProgressTracking(params: {
             lastCfi: cfi,
             lastPercentage: percentage,
           };
-          updateBookProgress(bookId, { kind: 'epub', currentCfi: cfi, percentage });
+          updateBookProgress(bookId, { currentCfi: cfi, percentage });
         }
       }
 

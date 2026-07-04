@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Book, NavItem } from '../../types';
-import type { EpubBookLike, ReaderRendition } from '../../services/reader/epubAdapter';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
 import { useEpubBookLifecycle } from './useEpubBookLifecycle';
 
@@ -45,27 +45,22 @@ function foliateInstance(): ReadingEngineInstance {
   return {
     name: 'foliate',
     rendition,
-    bookLike: {} as EpubBookLike,
     toc: [] as NavItem[],
-    locationsAvailable: true,
     destroy: mocks.destroy,
   };
 }
 
 function Harness({
   onLoadingChange,
-  onLocationsResolved,
   onError,
   onFileNotFound,
 }: {
   onLoadingChange: (loading: boolean) => void;
-  onLocationsResolved?: (available: boolean) => void;
   onError?: (error: string | null) => void;
   onFileNotFound?: (isNotFound: boolean) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<ReaderRendition | null>(null);
-  const bookLikeRef = useRef<EpubBookLike | null>(null);
   const [, setLoading] = useState(false);
 
   useEpubBookLifecycle({
@@ -82,7 +77,6 @@ function Harness({
       aiAutoSummarize: false,
     },
     renditionRef,
-    bookLikeRef,
     setToc: () => {},
     setIsLoading: (loading) => {
       setLoading(loading);
@@ -90,7 +84,6 @@ function Harness({
     },
     setError: onError ?? (() => {}),
     setIsFileNotFound: onFileNotFound ?? (() => {}),
-    onLocationsResolved,
   });
 
   return <div ref={containerRef} />;
@@ -163,13 +156,12 @@ describe('useEpubBookLifecycle opening critical path', () => {
     vi.useRealTimers();
   });
 
-  it('shows the first page before resolving foliate progress availability', async () => {
+  it('clears loading only after the first display resolves', async () => {
     let finishDisplay!: () => void;
     mocks.display.mockImplementation(() => new Promise<void>((resolve) => {
       finishDisplay = resolve;
     }));
     const loadingStates: boolean[] = [];
-    const onLocationsResolved = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -177,7 +169,6 @@ describe('useEpubBookLifecycle opening critical path', () => {
     flushSync(() => root.render(
       <Harness
         onLoadingChange={(loading) => loadingStates.push(loading)}
-        onLocationsResolved={onLocationsResolved}
       />,
     ));
     await vi.advanceTimersByTimeAsync(0);
@@ -190,7 +181,6 @@ describe('useEpubBookLifecycle opening critical path', () => {
     await settle();
 
     expect(loadingStates[loadingStates.length - 1]).toBe(false);
-    expect(onLocationsResolved).toHaveBeenCalledWith(true);
 
     flushSync(() => root.unmount());
     container.remove();
@@ -199,7 +189,6 @@ describe('useEpubBookLifecycle opening critical path', () => {
 
   it('opens only the foliate engine', async () => {
     mocks.display.mockResolvedValue(undefined);
-    const onLocationsResolved = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -207,14 +196,12 @@ describe('useEpubBookLifecycle opening critical path', () => {
     flushSync(() => root.render(
       <Harness
         onLoadingChange={() => {}}
-        onLocationsResolved={onLocationsResolved}
       />,
     ));
     await vi.advanceTimersByTimeAsync(0);
     await settle();
 
     expect(adapterMocks.foliateOpen).toHaveBeenCalledOnce();
-    expect(onLocationsResolved).toHaveBeenCalledWith(true);
 
     flushSync(() => root.unmount());
     container.remove();

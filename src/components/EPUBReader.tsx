@@ -3,7 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { NavItem } from '../types';
-import type { EpubBookLike, ReaderRendition } from '../services/reader/epubAdapter';
+import type { ReaderRendition } from '../services/reader/epubAdapter';
 import { tryCopyBookToLibrary } from '../services/BookImportService';
 import { rebuildSearchIndexQuietly, toSearchIndexSummary } from '../services/reader/searchIndex';
 import { createLogger } from '../utils/logger';
@@ -25,7 +25,6 @@ export function EPUBReader() {
     const settings = useSettingsStore((s) => s.settings);
     const containerRef = useRef<HTMLDivElement>(null);
     const renditionRef = useRef<ReaderRendition | null>(null);
-    const bookLikeRef = useRef<EpubBookLike | null>(null);
     const [renditionKey, setRenditionKey] = useState(0);
 
     const [isLoading, setIsLoading] = useState(false);
@@ -36,7 +35,6 @@ export function EPUBReader() {
     const chrome = useReadingChromeSession({
         currentBook,
         renditionRef,
-        bookLikeRef,
         renditionKey,
     });
 
@@ -45,7 +43,6 @@ export function EPUBReader() {
         containerRef,
         settings,
         renditionRef,
-        bookLikeRef,
         setToc: chrome.setToc,
         setIsLoading,
         setError,

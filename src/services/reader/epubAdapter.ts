@@ -1,17 +1,3 @@
-export type EpubSpineItem = {
-  href?: string;
-  idref?: string;
-};
-
-export type EpubSpine = {
-  spineItems?: EpubSpineItem[];
-  length?: number;
-};
-
-export type EpubBookLike = {
-  spine?: EpubSpine;
-};
-
 export type RenditionContent = {
   window?: Window;
   document?: Document;

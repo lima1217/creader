@@ -6,7 +6,7 @@ import { useProgressStore } from '../../stores/progressStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useUIStore } from '../../stores/uiStore';
 import type { Book, NavItem } from '../../types';
-import type { EpubBookLike, ReaderRendition } from '../../services/reader/epubAdapter';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { createLogger } from '../../utils/logger';
 import { findChapterLabelByHref, isTocItemActive } from './readerNavigation';
 import { useEpubProgressTracking } from './useEpubProgressTracking';
@@ -34,10 +34,9 @@ function searchIndexMessage(state: string, error?: string): string {
 export function useReadingChromeSession(params: {
   currentBook: Book | null;
   renditionRef: RefObject<ReaderRendition | null>;
-  bookLikeRef: RefObject<EpubBookLike | null>;
   renditionKey: number;
 }) {
-  const { currentBook, renditionRef, bookLikeRef, renditionKey } = params;
+  const { currentBook, renditionRef, renditionKey } = params;
   const updateBookSearchIndex = useLibraryStore((s) => s.updateBookSearchIndex);
   const updateBookProgress = useProgressStore((s) => s.updateBookProgress);
   const isSearchOpen = useUIStore((s) => s.isSearchOpen);
@@ -152,7 +151,6 @@ export function useReadingChromeSession(params: {
 
   useEpubProgressTracking({
     renditionRef,
-    bookLikeRef,
     renditionKey,
     bookId: currentBook?.id ?? null,
     updateBookProgress,

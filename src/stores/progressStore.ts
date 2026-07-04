@@ -26,16 +26,10 @@ export const useProgressStore = create<ProgressState>((set) => ({
   bookProgressById: getInitialBookProgressById(),
   updateBookProgress: (id, update) => {
     const lastReadAt = Date.now();
-    const progress: ReadingProgress = (() => {
-      switch (update.kind) {
-        case 'epub':
-        default:
-          return {
-            currentCfi: update.currentCfi,
-            percentage: update.percentage,
-          };
-      }
-    })();
+    const progress: ReadingProgress = {
+      currentCfi: update.currentCfi,
+      percentage: update.percentage,
+    };
     set((state) => ({
       bookProgressById: {
         ...state.bookProgressById,

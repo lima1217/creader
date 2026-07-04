@@ -1,9 +1,8 @@
 export function computeEpubPercentage(params: {
   location: any;
   cfi: string | null;
-  bookAny: any;
 }): number {
-  const { location, bookAny } = params;
+  const { location } = params;
 
   let percentage = 0;
 
@@ -15,11 +14,6 @@ export function computeEpubPercentage(params: {
 
   if (percentage === 0 && location?.atEnd) {
     percentage = 100;
-  }
-
-  if (percentage === 0 && location?.start?.index !== undefined && bookAny?.spine) {
-    const spineLength = bookAny.spine.length || bookAny.spine.spineItems?.length || 1;
-    percentage = ((location.start.index + 1) / spineLength) * 100;
   }
 
   return percentage;

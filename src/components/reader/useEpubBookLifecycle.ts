@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { RefObject } from 'react';
 import { readFile } from '@tauri-apps/plugin-fs';
 import type { Settings, Book, NavItem } from '../../types';
-import type { EpubBookLike, ReaderRendition } from '../../services/reader/epubAdapter';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { applyEpubTheme } from './epubTheme';
 import { foliateEngineAdapter } from '../../services/reader/foliateEngine';
 import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
@@ -22,26 +22,22 @@ export function useEpubBookLifecycle(params: {
   containerRef: RefObject<HTMLDivElement | null>;
   settings: Settings;
   renditionRef: RefObject<ReaderRendition | null>;
-  bookLikeRef: RefObject<EpubBookLike | null>;
   setToc: (toc: NavItem[]) => void;
   setIsLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setIsFileNotFound: (isNotFound: boolean) => void;
   onRenditionCreated?: (rendition: ReaderRendition) => void;
-  onLocationsResolved?: (available: boolean) => void;
 }) {
   const {
     currentBook,
     containerRef,
     settings,
     renditionRef,
-    bookLikeRef,
     setToc,
     setIsLoading,
     setError,
     setIsFileNotFound,
     onRenditionCreated,
-    onLocationsResolved,
   } = params;
 
   useEffect(() => {
@@ -65,7 +61,6 @@ export function useEpubBookLifecycle(params: {
         engineInstance = null;
       }
       renditionRef.current = null;
-      bookLikeRef.current = null;
 
       try {
         const fileData = await perfSpan('epub:readFile', async () => readFile(currentBook.filePath));
@@ -85,9 +80,8 @@ export function useEpubBookLifecycle(params: {
           return;
         }
 
-        const { rendition, bookLike, toc } = engineInstance;
+        const { rendition, toc } = engineInstance;
         renditionRef.current = rendition;
-        bookLikeRef.current = bookLike;
 
         setToc(toc);
         if (onRenditionCreated) onRenditionCreated(rendition);
@@ -103,7 +97,6 @@ export function useEpubBookLifecycle(params: {
         await perfSpan('epub:firstDisplay', async () => rendition.display(startTarget));
 
         setIsLoading(false);
-        onLocationsResolved?.(engineInstance.locationsAvailable);
       } catch (err) {
         logger.error('Failed to load book:', err);
         if (!cancelled) {
@@ -125,7 +118,6 @@ export function useEpubBookLifecycle(params: {
         engineInstance = null;
       }
       renditionRef.current = null;
-      bookLikeRef.current = null;
     };
   }, [currentBook?.id, currentBook?.filePath]);
 }

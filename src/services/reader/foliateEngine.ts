@@ -276,23 +276,11 @@ export const foliateEngineAdapter: ReadingEngineAdapter = {
     await view.open(file);
 
     const rendition = new FoliateRendition(view);
-    const sections = view.book?.sections ?? [];
-    const bookLike = {
-      spine: {
-        length: sections.length,
-        spineItems: sections.map((section, index) => ({
-          href: String(section.id ?? index),
-          idref: String(section.id ?? index),
-        })),
-      },
-    } as unknown as ReadingEngineInstance['bookLike'];
 
     return {
       name: 'foliate',
-      bookLike,
       rendition,
       toc: toNavItems(view.book?.toc),
-      locationsAvailable: true,
       destroy: () => rendition.destroy(),
     };
   },

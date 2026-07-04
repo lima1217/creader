@@ -1,5 +1,5 @@
 import type { Book as AppBook, NavItem } from '../../types';
-import type { EpubBookLike, ReaderRendition, RenditionContent } from './epubAdapter';
+import type { ReaderRendition, RenditionContent } from './epubAdapter';
 
 export type ReadingEngineName = 'foliate';
 
@@ -12,10 +12,8 @@ export interface ReadingEngineRendition extends ReaderRendition {
 
 export interface ReadingEngineInstance {
   name: ReadingEngineName;
-  bookLike: EpubBookLike;
   rendition: ReadingEngineRendition;
   toc: NavItem[];
-  locationsAvailable: boolean;
   destroy(): void;
 }
 

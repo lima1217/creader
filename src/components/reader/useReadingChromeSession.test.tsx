@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import type { Book, NavItem } from '../../types';
-import type { EpubBookLike, ReaderRendition } from '../../services/reader/epubAdapter';
+import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { useAIStore } from '../../stores/aiStore';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useProgressStore } from '../../stores/progressStore';
@@ -93,11 +93,9 @@ function Harness({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<ReaderRendition | null>(rendition);
-  const bookLikeRef = useRef<EpubBookLike | null>({} as EpubBookLike);
   const session = useReadingChromeSession({
     currentBook,
     renditionRef,
-    bookLikeRef,
     renditionKey: 1,
   });
   onSession(session);
@@ -240,13 +238,12 @@ describe('useReadingChromeSession', () => {
 
     const progressParams = hookMocks.progressParams as {
       bookId: string;
-      updateBookProgress: (id: string, update: { kind: 'epub'; currentCfi: string; percentage: number }) => void;
+      updateBookProgress: (id: string, update: { currentCfi: string; percentage: number }) => void;
       setCurrentChapterContent: (content: string) => void;
     };
 
     flushSync(() => {
       progressParams.updateBookProgress('book-1', {
-        kind: 'epub',
         currentCfi: 'epubcfi(/6/8)',
         percentage: 44,
       });
