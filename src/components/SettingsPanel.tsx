@@ -18,7 +18,7 @@ import { ensureReadingMemoryRepository } from '../services/ReadingMemory';
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
 import { useAIProviders } from './ai/hooks/useAIProviders';
-import type { AIProviderConfig } from '../types';
+import type { AIProviderConfig, AIProviderStatus } from '../types';
 import { CheckIcon, CloseIcon, PlusIcon } from './ai/icons';
 import {
     getMissingDefaultQuickActions,
@@ -64,6 +64,13 @@ function newProviderId() {
     return `prov_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Session-only UI state for an explicit AI Service connection test. Never
+// persisted into provider config, never fed into Console readiness.
+type ProviderTestState = {
+    status: 'loading' | 'success' | 'error';
+    message: string;
+};
+
 const contextWindowOptions = [
     { value: 5, label: '近 5 条', hint: '快' },
     { value: 20, label: '近 20 条', hint: '平衡' },
@@ -107,6 +114,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const [draftKey, setDraftKey] = useState('');
     const [providerError, setProviderError] = useState('');
 
+    // Per-provider connection-test state. Session-only: closing/reopening the
+    // console clears results. Never persisted, never feeds Console readiness.
+    const [providerTests, setProviderTests] = useState<Record<string, ProviderTestState>>({});
+
     useEffect(() => {
         if (!isOpen) return;
         // The console always opens on the actionable Overview first.
@@ -114,6 +125,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         setEditingProvider(null);
         setDraftKey('');
         setProviderError('');
+        // Connection test results do not survive a console reopen.
+        setProviderTests({});
         const loadedActions = loadQuickActionConfigs();
         setQuickActionConfigs(loadedActions);
         setEditingActionId(loadedActions[0]?.id || null);
@@ -162,6 +175,30 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             setProviderError(String(saveError instanceof Error ? saveError.message : saveError));
         }
     }, [aiProviders, editingProvider, draftKey]);
+
+    // Explicit per-provider connection test. Uses the saved provider record and
+    // its local key; never runs from the Overview. The result is session-only
+    // UI feedback and is not written back into provider config or readiness.
+    const runProviderTest = useCallback(async (provider: AIProviderStatus) => {
+        if (!isTauri) return;
+        setProviderTests(prev => ({
+            ...prev,
+            [provider.id]: { status: 'loading', message: '正在测试连接…' },
+        }));
+        try {
+            const message = await aiProviders.testProvider(provider.id);
+            setProviderTests(prev => ({
+                ...prev,
+                [provider.id]: { status: 'success', message },
+            }));
+        } catch (testError) {
+            const message = String(testError instanceof Error ? testError.message : testError);
+            setProviderTests(prev => ({
+                ...prev,
+                [provider.id]: { status: 'error', message },
+            }));
+        }
+    }, [aiProviders, isTauri]);
 
     const adjustAITextSize = (delta: number) => {
         const nextSize = clampAITextSize(settings.aiTextSize + delta);
@@ -486,7 +523,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                         )}
                                     >
                                         <ul className="settings-provider-list">
-                                            {aiProviders.providers.map(provider => (
+                                            {aiProviders.providers.map(provider => {
+                                                const test = providerTests[provider.id];
+                                                const isTestLoading = test?.status === 'loading';
+                                                return (
                                                 <li
                                                     key={provider.id}
                                                     className={`settings-provider-item ${provider.active ? 'active' : ''}`}
@@ -504,9 +544,28 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                                             </span>
                                                             <small>{provider.model} · {provider.hasKey ? 'Key 已设置' : '未设置 Key'}</small>
                                                             <small className="settings-provider-url">{provider.baseUrl}</small>
+                                                            {test && (
+                                                                <span
+                                                                    className="settings-provider-test"
+                                                                    data-test-status={test.status}
+                                                                    role="status"
+                                                                >
+                                                                    {test.status === 'success' && <CheckIcon />}
+                                                                    {test.status === 'error' && <CloseIcon />}
+                                                                    <span>{test.message}</span>
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     </button>
                                                     <div className="settings-provider-actions">
+                                                        <button
+                                                            className="settings-icon-btn"
+                                                            onClick={() => runProviderTest(provider)}
+                                                            disabled={isTestLoading || !isTauri}
+                                                            aria-label={`测试 ${provider.name} 的连接`}
+                                                        >
+                                                            {isTestLoading ? '测试中…' : '测试'}
+                                                        </button>
                                                         <button
                                                             className="settings-icon-btn"
                                                             onClick={() => startEditProvider(provider)}
@@ -521,7 +580,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                                         </button>
                                                     </div>
                                                 </li>
-                                            ))}
+                                                );
+                                            })}
                                         </ul>
                                     </Collapsible>
                                 )}

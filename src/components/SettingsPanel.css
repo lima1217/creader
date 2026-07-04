@@ -613,6 +613,41 @@
     white-space: nowrap;
 }
 
+/* Session-only connection-test feedback shown inline on a provider row. */
+.settings-provider-test {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-1, 4px);
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.35;
+}
+
+.settings-provider-test svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+}
+
+.settings-provider-test[data-test-status="loading"] {
+    color: var(--text-tertiary);
+}
+
+.settings-provider-test[data-test-status="success"] {
+    color: var(--success);
+}
+
+.settings-provider-test[data-test-status="error"] {
+    color: var(--error);
+}
+
+.settings-provider-test > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .settings-provider-actions {
     display: flex;
     flex-shrink: 0;

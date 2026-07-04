@@ -20,7 +20,15 @@ import { installDialogElementStub, installResizeObserverStub } from './testUtils
 
 // --- vi.hoisted: provider + invoke capture --------------------------------
 
-const { invokeCalls, resetInvokeCapture, setProviderList, getProviders } = vi.hoisted(() => {
+const {
+  invokeCalls,
+  resetInvokeCapture,
+  setProviderList,
+  getProviders,
+  getTestResult,
+  setTestResult,
+  clearTestResult,
+} = vi.hoisted(() => {
   const calls: Array<{ cmd: string; args: unknown }> = [];
   let providers: Array<{
     id: string;
@@ -30,6 +38,10 @@ const { invokeCalls, resetInvokeCapture, setProviderList, getProviders } = vi.ho
     active: boolean;
     hasKey: boolean;
   }> = [];
+  // Connection-test mock: the pending result that `test_ai_provider` resolves
+  // or rejects with. Cleared after each call so tests stay explicit.
+  type TestResult = { kind: 'resolve'; value: string } | { kind: 'reject'; message: string };
+  let testResult: TestResult | null = null;
   return {
     invokeCalls: calls,
     resetInvokeCapture: () => {
@@ -39,6 +51,13 @@ const { invokeCalls, resetInvokeCapture, setProviderList, getProviders } = vi.ho
       providers = next;
     },
     getProviders: () => providers,
+    getTestResult: () => testResult,
+    setTestResult: (next: TestResult) => {
+      testResult = next;
+    },
+    clearTestResult: () => {
+      testResult = null;
+    },
   };
 });
 
@@ -46,6 +65,15 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (cmd: string, args?: Record<string, unknown>) => {
     invokeCalls.push({ cmd, args });
     if (cmd === 'list_ai_providers') return getProviders();
+    if (cmd === 'test_ai_provider') {
+      // Defer to the next tick so the loading state is observable.
+      await new Promise((r) => setTimeout(r, 0));
+      const result = getTestResult();
+      clearTestResult();
+      if (!result) throw new Error('no test result configured');
+      if (result.kind === 'reject') throw new Error(result.message);
+      return result.value;
+    }
     return undefined;
   },
 }));
@@ -124,6 +152,15 @@ async function settle() {
   flushSync(() => {});
 }
 
+// Multi-round settle for async handlers whose post-await setState lands after
+// the first macrotask (e.g. the connection-test round trip through the mock).
+async function settleAsync() {
+  for (let i = 0; i < 4; i++) {
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync(() => {});
+  }
+}
+
 function activeAreaLabel(container: HTMLElement): string | null {
   // SideNavItem sets aria-current="page" on the selected item; the label text
   // renders directly inside the item element.
@@ -144,6 +181,7 @@ describe('SettingsPanel — AI Reading Console shell (#50)', () => {
     localStorage.clear();
     resetSettings();
     resetInvokeCapture();
+    clearTestResult();
     setProviderList(DEFAULT_PROVIDERS);
   });
 
@@ -272,6 +310,85 @@ describe('SettingsPanel — AI Reading Console shell (#50)', () => {
     );
     expect(forbidden).toEqual([]);
     expect(cmds).toContain('list_ai_providers');
+  });
+
+  // ---- Connection test (#51) -------------------------------------------
+
+  function goToAiService(container: HTMLElement) {
+    const aiItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
+      (el.textContent ?? '').includes('AI 服务'),
+    );
+    aiItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }
+
+  function providerTestButton(container: HTMLElement, name: string): HTMLButtonElement | null {
+    const item = Array.from(container.querySelectorAll('.settings-provider-item')).find((el) =>
+      (el.textContent ?? '').includes(name),
+    );
+    return item?.querySelector('.settings-provider-actions button') as HTMLButtonElement | null;
+  }
+
+  it('runs an explicit connection test and shows a success state inline', async () => {
+    setTestResult({ kind: 'resolve', value: '连接成功：ok' });
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToAiService(container);
+    await settle();
+
+    const testBtn = providerTestButton(container, 'DeepSeek');
+    expect(testBtn).not.toBeNull();
+    testBtn!.click();
+    await settleAsync();
+
+    // The test invoked test_ai_provider with the provider id.
+    const testCall = invokeCalls.find((c) => c.cmd === 'test_ai_provider');
+    expect(testCall).toBeTruthy();
+    expect((testCall!.args as { id?: string }).id).toBe('prov_1');
+
+    const feedback = container.querySelector('.settings-provider-test');
+    expect(feedback?.getAttribute('data-test-status')).toBe('success');
+    expect(feedback?.textContent ?? '').toContain('连接成功');
+  });
+
+  it('shows an error state inline when the connection test rejects', async () => {
+    setTestResult({ kind: 'reject', message: 'API error 401: unauthorized' });
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToAiService(container);
+    await settle();
+
+    providerTestButton(container, 'DeepSeek')!.click();
+    await settleAsync();
+
+    const feedback = container.querySelector('.settings-provider-test');
+    expect(feedback?.getAttribute('data-test-status')).toBe('error');
+    expect(feedback?.textContent ?? '').toContain('API error 401');
+  });
+
+  it('clears connection test results when the console is reopened', async () => {
+    setTestResult({ kind: 'resolve', value: '连接成功：ok' });
+    const first = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToAiService(first);
+    await settle();
+    providerTestButton(first, 'DeepSeek')!.click();
+    await settleAsync();
+    // The success state is present after the test.
+    expect(first.querySelector('.settings-provider-test')).not.toBeNull();
+
+    // Simulate closing and reopening the console: a fresh mount carries no
+    // session-only state from the previous instance.
+    unmountAll();
+    const reopened = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToAiService(reopened);
+    await settle();
+
+    // No connection-test feedback survives the reopen.
+    expect(reopened.querySelector('.settings-provider-test')).toBeNull();
+    // And the readiness chip is unaffected (still ready with the fixture).
+    expect(reopened.querySelector('.console-readiness-chip')?.getAttribute('data-readiness'))
+      .toBe('ready');
   });
 });
 

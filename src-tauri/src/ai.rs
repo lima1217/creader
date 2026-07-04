@@ -779,6 +779,52 @@ pub(crate) async fn chat_completion_oneshot_compat(
         .ok_or_else(|| "API response missing choices[0].message.content".to_string())
 }
 
+/// The probe message sent by an explicit AI Service connection test. Kept tiny
+/// and provider-agnostic so it works against any OpenAI-compatible endpoint.
+const PROVIDER_TEST_PROMPT: &str = "Reply with exactly: ok";
+
+/// Connection-test inner routine. Resolves the provider config and local key,
+/// failing locally without any network call when either is missing, then runs
+/// a one-shot completion against the saved provider. Returns a short success
+/// message on success or the underlying error string on failure.
+///
+/// Split out from the `test_ai_provider` Tauri command so the local-failure
+/// branches are unit-testable without an `AppHandle`.
+pub(crate) async fn test_provider_with(
+    config: Option<&AIProviderConfig>,
+    api_key: Option<&str>,
+) -> Result<String, String> {
+    let config = config.ok_or_else(|| {
+        "Provider not found. Save the provider before testing.".to_string()
+    })?;
+    let api_key = api_key.ok_or_else(|| {
+        "No API key set for this provider. Set a key before testing.".to_string()
+    })?;
+    let text = chat_completion_oneshot(PROVIDER_TEST_PROMPT, config, api_key).await?;
+    Ok(format!(
+        "连接成功：{}",
+        truncate_for_prompt(text.trim(), 80)
+    ))
+}
+
+/// Explicit AI Service connection test. Uses a saved provider and its local
+/// key; never runs automatically from the Overview. Test results are
+/// session-only UI state on the frontend and are not persisted into provider
+/// config.
+#[tauri::command]
+pub(crate) async fn test_ai_provider(
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<String, String> {
+    let store = load_provider_store(&app)?;
+    let config = store.providers.iter().find(|p| p.id == id).cloned();
+    let api_key = match config.as_ref() {
+        Some(c) => read_api_key(&app, &c.id),
+        None => None,
+    };
+    test_provider_with(config.as_ref(), api_key.as_deref()).await
+}
+
 #[tauri::command]
 pub(crate) fn cancel_ai_streaming() {
     AI_CANCEL_FLAG.store(true, Ordering::Relaxed);
@@ -1129,5 +1175,104 @@ mod tests {
             api_key_env_name("custom.provider-1"),
             "AI_API_KEY_CUSTOM_PROVIDER_1"
         );
+    }
+
+    /// Minimal one-shot (non-streaming) OpenAI-compatible server. Unlike
+    /// `spawn_chat_completion_server`, it replies with `application/json` so the
+    /// one-shot compatibility parser can deserialize the JSON body. Used only by
+    /// connection-test assertions.
+    fn spawn_oneshot_completion_server(
+        response_body: &'static str,
+    ) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = Vec::new();
+            let mut temp = [0_u8; 1024];
+            let mut header_end = None;
+            let mut content_length = 0_usize;
+
+            loop {
+                let read = stream.read(&mut temp).unwrap();
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&temp[..read]);
+                if header_end.is_none() {
+                    if let Some(pos) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+                        header_end = Some(pos + 4);
+                        let headers = String::from_utf8_lossy(&buffer[..pos]);
+                        content_length = headers
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().ok())
+                                    .flatten()
+                            })
+                            .unwrap_or(0);
+                    }
+                }
+                if let Some(end) = header_end {
+                    if buffer.len() >= end + content_length {
+                        break;
+                    }
+                }
+            }
+
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                response_body.as_bytes().len(),
+                response_body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        (base_url, handle)
+    }
+
+    #[tokio::test]
+    async fn test_provider_with_fails_locally_when_provider_missing() {
+        // No provider config and no key: the routine must reject before any
+        // network call. We assert a local error and the absence of a server.
+        let err = test_provider_with(None, None).await.unwrap_err();
+        assert!(err.contains("Provider not found"));
+    }
+
+    #[tokio::test]
+    async fn test_provider_with_fails_locally_when_key_missing() {
+        // Provider present but no key: still a local failure, no network call.
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: "https://example.invalid/v1".to_string(),
+            model: "reader-model".to_string(),
+        };
+        let err = test_provider_with(Some(&config), None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("No API key set"));
+    }
+
+    #[tokio::test]
+    async fn test_provider_with_success_returns_echoed_content() {
+        let _guard = AI_TEST_LOCK.lock().await;
+        AI_CANCEL_FLAG.store(false, Ordering::Relaxed);
+        let response_body = r#"{"id":"chatcmpl-test","object":"chat.completion","created":0,"model":"reader-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#;
+        let (base_url, server) = spawn_oneshot_completion_server(response_body);
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+
+        let message = test_provider_with(Some(&config), Some("secret-key"))
+            .await
+            .unwrap();
+
+        assert!(message.contains("连接成功"));
+        assert!(message.contains("ok"));
+        server.join().unwrap();
     }
 }

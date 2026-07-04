@@ -23,6 +23,7 @@ pub fn run() {
             ai::get_active_ai_provider,
             ai::set_ai_api_key,
             ai::has_ai_api_key,
+            ai::test_ai_provider,
             ai::cancel_ai_streaming,
             ai::reset_ai_cancel,
             book_files::import_book_to_library,
