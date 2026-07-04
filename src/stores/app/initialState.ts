@@ -1,5 +1,6 @@
-import type { Settings, Library, ChatMessage, ReadingProgress, BookFolder } from '../../types';
+import type { Settings, Library, ChatMessage, ReadingProgress } from '../../types';
 import { loadStored, STORAGE_KEYS } from '../../services/LocalStore';
+import { normalizeLibrary } from '../../domain/libraryNormalization';
 
 export type BookProgressById = Record<string, ReadingProgress & { lastReadAt: number }>;
 
@@ -41,72 +42,7 @@ function normalizeAIContextWindow(value: unknown, fallback: Settings['aiContextW
   return value === 5 || value === 20 || value === 40 ? value : fallback;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
-}
-
-function normalizeFolders(rawLibrary: unknown): BookFolder[] {
-  const library = asRecord(rawLibrary);
-  const rawFolders = Array.isArray(library.folders) ? library.folders : [];
-  if (rawFolders.length > 0) {
-    return rawFolders
-      .map((raw, index) => {
-        const folder = asRecord(raw);
-        const id = typeof folder.id === 'string' ? folder.id : '';
-        const name = typeof folder.name === 'string' ? folder.name : '';
-        if (!id || !name) return null;
-        return {
-          id,
-          name,
-          sortOrder: typeof folder.sortOrder === 'number' ? folder.sortOrder : index,
-          createdAt: typeof folder.createdAt === 'number' ? folder.createdAt : 0,
-        };
-      })
-      .filter((folder): folder is BookFolder => folder !== null);
-  }
-
-  const rawCategories = Array.isArray(library.categories) ? library.categories : [];
-  return rawCategories
-    .map((raw, index) => {
-      const category = asRecord(raw);
-      const id = typeof category.id === 'string' ? category.id : '';
-      const name = typeof category.name === 'string' ? category.name : '';
-      if (!id || !name) return null;
-      return {
-        id,
-        name,
-        sortOrder: index,
-        createdAt: typeof category.createdAt === 'number' ? category.createdAt : 0,
-      };
-    })
-    .filter((folder): folder is BookFolder => folder !== null);
-}
-
-export function normalizeLibrary(rawLibrary: unknown, now: () => number = Date.now): Library {
-  const library = asRecord(rawLibrary);
-  const folders = normalizeFolders(rawLibrary);
-  const folderIds = new Set(folders.map(folder => folder.id));
-  const rawBooks = Array.isArray(library.books) ? library.books : [];
-  const books = rawBooks.map(raw => {
-    const book = asRecord(raw);
-    const { categoryId: _categoryId, ...rest } = book;
-    const folderId = typeof book.folderId === 'string'
-      ? book.folderId
-      : typeof _categoryId === 'string'
-        ? _categoryId
-        : undefined;
-    return {
-      ...rest,
-      ...(folderId && folderIds.has(folderId) ? { folderId } : {}),
-    };
-  }) as Library['books'];
-
-  return {
-    books,
-    folders,
-    lastUpdated: typeof library.lastUpdated === 'number' ? library.lastUpdated : now(),
-  };
-}
+export { normalizeLibrary } from '../../domain/libraryNormalization';
 
 export function getInitialSettings(defaultSettings: Settings): Settings {
   const stored = loadStored(STORAGE_KEYS.settings, defaultSettings);

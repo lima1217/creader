@@ -338,6 +338,22 @@ describe('Sidebar contract — folder nav', () => {
     expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual(['folder1']);
   });
 
+  it('expands only the current book folder on first load when no persisted expansion exists', async () => {
+    const folderA = makeFolder({ id: 'folder-a', name: 'Theory', sortOrder: 0 });
+    const folderB = makeFolder({ id: 'folder-b', name: 'Practice', sortOrder: 1 });
+    const current = makeBook({ id: 'b1', title: 'Current Folder Book', folderId: 'folder-b' });
+    const other = makeBook({ id: 'b2', title: 'Other Book', folderId: 'folder-a' });
+    localStorage.removeItem('creader-library-organizer-expanded-folders');
+    seedLibrary({ books: [current, other], folders: [folderA, folderB], lastUpdated: 1 }, current);
+
+    const { container } = mountSidebar();
+    await settle();
+
+    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual(['folder-b']);
+    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).toContain('Current Folder Book');
+    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('Other Book');
+  });
+
   it('removes deleted folder ids from remembered expansion state', async () => {
     localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify(['deleted-folder']));
     seedLibrary({ books: [], folders: [], lastUpdated: 1 });

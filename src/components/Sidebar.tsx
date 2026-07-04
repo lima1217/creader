@@ -5,9 +5,16 @@ import { useUIStore } from '../stores/uiStore';
 import { useProgressStore } from '../stores/progressStore';
 import type { Book, BookFolder } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
-import { STORAGE_KEYS, loadStored, saveStored } from '../services/LocalStore';
 import { useAppDialog } from './AppDialog';
 import { openBookThroughLifecycle, removeBookThroughLifecycle } from '../appLifecycle';
+import { isDuplicateFolderName, normalizeFolderName } from '../domain/libraryFolders';
+import {
+    buildVisibleGroups,
+    groupBooksByFolder,
+    orderBooks,
+    type OrganizerView,
+} from '../domain/libraryOrganizer';
+import { useLibraryOrganizerExpandedFolders } from '../hooks/useLibraryOrganizerExpandedFolders';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
@@ -112,49 +119,15 @@ interface SidebarProps {
     onPreloadReader: () => Promise<unknown>;
 }
 
-interface EditBookState {
+type EditBookState = {
     id: string;
     title: string;
     author: string;
-}
-
-type OrganizerView = 'all' | 'unfiled' | string;
-
-interface BookGroup {
-    id: string;
-    label: string;
-    books: Book[];
-    isFolder: boolean;
-}
+};
 
 const BOOK_DRAG_TYPE = 'application/x-creader-book-id';
 const FOLDER_DRAG_TYPE = 'application/x-creader-folder-id';
 const FOLDER_AUTO_EXPAND_MS = 500;
-
-function getBookActivity(book: Book, bookProgressById: Record<string, { lastReadAt?: number }>): number {
-    return bookProgressById[book.id]?.lastReadAt ?? book.lastReadAt ?? 0;
-}
-
-function orderBooks(books: Book[], currentBook: Book | null, bookProgressById: Record<string, { lastReadAt?: number }>): Book[] {
-    const ordered = [...books].sort((a, b) => getBookActivity(b, bookProgressById) - getBookActivity(a, bookProgressById));
-    const currentBookIndex = currentBook ? ordered.findIndex(book => book.id === currentBook.id) : -1;
-    if (currentBookIndex <= 0) return ordered;
-
-    const nextBooks = [...ordered];
-    const [activeBook] = nextBooks.splice(currentBookIndex, 1);
-    return [activeBook, ...nextBooks];
-}
-
-function matchesBookSearch(book: Book, query: string): boolean {
-    const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return true;
-    return book.title.toLocaleLowerCase().includes(normalized)
-        || (book.author || '').toLocaleLowerCase().includes(normalized);
-}
-
-function loadExpandedFolderIds(): Set<string> {
-    return new Set(loadStored<string[]>(STORAGE_KEYS.libraryOrganizerExpandedFolders, []));
-}
 
 function getBookDragId(event: React.DragEvent): string {
     return event.dataTransfer.getData(BOOK_DRAG_TYPE);
@@ -239,26 +212,26 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const [selectedView, setSelectedView] = useState<OrganizerView>('all');
     const [showFolderModal, setShowFolderModal] = useState(false);
     const [editingFolder, setEditingFolder] = useState<BookFolder | null>(null);
-    const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(loadExpandedFolderIds);
     const [newFolderName, setNewFolderName] = useState('');
     const [folderNameError, setFolderNameError] = useState('');
     const [bookForFolder, setBookForFolder] = useState<string | null>(null);
     const [bookSearchQuery, setBookSearchQuery] = useState('');
-    const hasPrimedCurrentFolderRef = useRef(false);
     const autoExpandTimerRef = useRef<number | null>(null);
 
     const folders = useMemo(
         () => [...(library.folders || [])].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
         [library.folders],
     );
-    const folderIds = useMemo(() => new Set(folders.map(folder => folder.id)), [folders]);
+    const { expandedFolderIds, toggleFolder, expandFolder } = useLibraryOrganizerExpandedFolders({
+        folders,
+        books: library.books,
+        currentBook,
+        bookProgressById,
+    });
     const hasSearch = bookSearchQuery.trim().length > 0;
-    const trimmedFolderName = newFolderName.trim();
-    const isDuplicateFolderName = folders.some(folder =>
-        folder.id !== editingFolder?.id
-        && folder.name.toLocaleLowerCase() === trimmedFolderName.toLocaleLowerCase(),
-    );
-    const canSubmitFolder = trimmedFolderName.length > 0 && !isDuplicateFolderName;
+    const trimmedFolderName = normalizeFolderName(newFolderName);
+    const hasDuplicateFolderName = isDuplicateFolderName(trimmedFolderName, folders, editingFolder?.id);
+    const canSubmitFolder = trimmedFolderName.length > 0 && !hasDuplicateFolderName;
 
     const orderedBooks = useMemo(
         () => orderBooks(library.books, currentBook, bookProgressById),
@@ -267,100 +240,28 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
 
     const continueBook = currentBook ?? orderedBooks[0] ?? null;
 
-    const groupedBooks = useMemo(() => {
-        const groups: Record<string, Book[]> = {
-            unfiled: []
-        };
+    const groupedBooks = useMemo(
+        () => groupBooksByFolder(orderedBooks, folders),
+        [orderedBooks, folders],
+    );
 
-        folders.forEach(folder => {
-            groups[folder.id] = [];
-        });
-
-        orderedBooks.forEach(book => {
-            if (book.folderId && groups[book.folderId]) {
-                groups[book.folderId].push(book);
-            } else {
-                groups.unfiled.push(book);
-            }
-        });
-
-        return groups;
-    }, [orderedBooks, folders]);
-
-    const visibleGroups = useMemo<BookGroup[]>(() => {
-        const allGroups: BookGroup[] = [
-            { id: 'unfiled', label: '未归档', books: groupedBooks.unfiled || [], isFolder: false },
-            ...folders.map(folder => ({
-                id: folder.id,
-                label: folder.name,
-                books: groupedBooks[folder.id] || [],
-                isFolder: true,
-            })),
-        ];
-
-        const scopedGroups = selectedView === 'all'
-            ? allGroups
-            : allGroups.filter(group => group.id === selectedView);
-
-        if (!hasSearch) return scopedGroups;
-
-        return allGroups
-            .map(group => ({
-                ...group,
-                books: group.books.filter(book => matchesBookSearch(book, bookSearchQuery)),
-            }))
-            .filter(group => group.books.length > 0);
-    }, [bookSearchQuery, folders, groupedBooks, hasSearch, selectedView]);
+    const visibleGroups = useMemo(
+        () => buildVisibleGroups({
+            folders,
+            groupedBooks,
+            selectedView,
+            bookSearchQuery,
+        }),
+        [bookSearchQuery, folders, groupedBooks, selectedView],
+    );
 
     const visibleBookCount = visibleGroups.reduce((count, group) => count + group.books.length, 0);
-
-    useEffect(() => {
-        if (folders.length > 0 && localStorage.getItem(STORAGE_KEYS.libraryOrganizerExpandedFolders) === null) {
-            const next = new Set(folders.map(folder => folder.id));
-            setExpandedFolderIds(next);
-            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
-            return;
-        }
-
-        const currentFolderId = currentBook?.folderId;
-        if (hasPrimedCurrentFolderRef.current || !currentFolderId || !folderIds.has(currentFolderId)) return;
-        hasPrimedCurrentFolderRef.current = true;
-        setExpandedFolderIds((current) => {
-            if (current.has(currentFolderId)) return current;
-            const next = new Set(current);
-            next.add(currentFolderId);
-            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
-            return next;
-        });
-    }, [currentBook?.folderId, folderIds, folders]);
-
-    useEffect(() => {
-        setExpandedFolderIds((current) => {
-            const next = new Set(Array.from(current).filter(id => folderIds.has(id)));
-            if (next.size === current.size) return current;
-            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
-            return next;
-        });
-    }, [folderIds]);
 
     useEffect(() => () => {
         if (autoExpandTimerRef.current !== null) {
             window.clearTimeout(autoExpandTimerRef.current);
         }
     }, []);
-
-    const toggleFolder = (folderId: string) => {
-        setExpandedFolderIds((current) => {
-            const next = new Set(current);
-            if (next.has(folderId)) {
-                next.delete(folderId);
-            } else {
-                next.add(folderId);
-            }
-            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
-            return next;
-        });
-    };
 
     const handleBookClick = (book: Book) => {
         openBookThroughLifecycle({ book });
@@ -445,7 +346,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
             setFolderNameError('文件夹名称不能为空');
             return;
         }
-        if (isDuplicateFolderName) {
+        if (hasDuplicateFolderName) {
             setFolderNameError('已存在同名文件夹');
             return;
         }
@@ -480,14 +381,8 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         autoExpandTimerRef.current = null;
     };
 
-    const expandFolder = (folderId: string) => {
-        setExpandedFolderIds((current) => {
-            if (current.has(folderId)) return current;
-            const next = new Set(current);
-            next.add(folderId);
-            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
-            return next;
-        });
+    const expandFolderOnDrag = (folderId: string) => {
+        expandFolder(folderId);
     };
 
     const moveBookToFolder = (bookId: string, folderId: string | undefined) => {
@@ -513,7 +408,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
 
         if (!folderId || expandedFolderIds.has(folderId) || autoExpandTimerRef.current !== null) return;
         autoExpandTimerRef.current = window.setTimeout(() => {
-            expandFolder(folderId);
+            expandFolderOnDrag(folderId);
             autoExpandTimerRef.current = null;
         }, FOLDER_AUTO_EXPAND_MS);
     };

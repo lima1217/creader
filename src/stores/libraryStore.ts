@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { Book, BookFolder, Library, SearchIndexSummary } from '../types';
-import { getInitialLibrary, normalizeLibrary } from './app/initialState';
+import { normalizeLibrary } from '../domain/libraryNormalization';
+import { folderExists, validateFolderName } from '../domain/libraryFolders';
+import { getInitialLibrary } from './app/initialState';
 
 /**
  * Library + current book (issue #13), persisted via debounced localStorage.
@@ -35,7 +37,7 @@ type LibraryState = {
   updateBook: (id: string, updates: Partial<Pick<Book, 'title' | 'author' | 'folderId'>>) => void;
   updateBookFilePath: (id: string, newFilePath: string) => void;
   updateBookSearchIndex: (id: string, searchIndex: SearchIndexSummary) => void;
-  addFolder: (name: string) => BookFolder;
+  addFolder: (name: string) => BookFolder | null;
   removeFolder: (id: string) => void;
   updateFolder: (id: string, updates: Partial<Pick<BookFolder, 'name' | 'sortOrder'>>) => void;
   reorderFolder: (sourceId: string, targetId: string) => void;
@@ -127,13 +129,16 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   addFolder: (name) => {
+    const trimmedName = validateFolderName(name, latestLibrary.folders);
+    if (!trimmedName) return null;
+
     const sortOrder = latestLibrary.folders.reduce(
       (max, folder) => Math.max(max, folder.sortOrder),
       -1,
     ) + 1;
     const newFolder: BookFolder = {
       id: Date.now().toString(),
-      name,
+      name: trimmedName,
       sortOrder,
       createdAt: Date.now(),
     };
@@ -164,6 +169,16 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   updateFolder: (id, updates) => {
+    const existing = latestLibrary.folders.find(folder => folder.id === id);
+    if (!existing) return;
+
+    if (updates.name !== undefined) {
+      const trimmedName = validateFolderName(updates.name, latestLibrary.folders, id);
+      if (!trimmedName) return;
+      if (trimmedName.toLocaleLowerCase() === existing.name.toLocaleLowerCase()) return;
+      updates = { ...updates, name: trimmedName };
+    }
+
     const next: Library = {
       ...latestLibrary,
       folders: latestLibrary.folders.map((folder) => (folder.id === id ? { ...folder, ...updates } : folder)),
@@ -201,6 +216,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   setBookFolder: (bookId, folderId) => {
     const book = latestLibrary.books.find((b) => b.id === bookId);
     if (!book || book.folderId === folderId) return;
+    if (folderId !== undefined && !folderExists(folderId, latestLibrary.folders)) return;
 
     const next: Library = {
       ...latestLibrary,

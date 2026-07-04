@@ -150,11 +150,11 @@ describe('libraryStore pure state transitions', () => {
     expect(folder).toEqual({ id: `${now}`, name: 'Reading', sortOrder: 0, createdAt: now });
     expect(useLibraryStore.getState().library.categories).toBeUndefined();
 
-    useLibraryStore.getState().setBookFolder(book.id, folder.id);
-    expect(useLibraryStore.getState().library.books[0].folderId).toBe(folder.id);
+    useLibraryStore.getState().setBookFolder(book.id, folder!.id);
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe(folder!.id);
     expect(useLibraryStore.getState().library.books[0].categoryId).toBeUndefined();
 
-    useLibraryStore.getState().removeFolder(folder.id);
+    useLibraryStore.getState().removeFolder(folder!.id);
     expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
     expect(useLibraryStore.getState().library.folders).toHaveLength(0);
 
@@ -192,5 +192,88 @@ describe('libraryStore pure state transitions', () => {
       ['folder-b', 2],
     ]);
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder-b');
+  });
+
+  it('renames a folder with trimmed persisted name and lastUpdated', async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const folder = { id: 'folder1', name: 'Reading', sortOrder: 0, createdAt: 1 };
+    localStorage.setItem(
+      STORAGE_KEYS.library,
+      JSON.stringify({ v: 1, data: { books: [], folders: [folder], lastUpdated: 1 } }),
+    );
+
+    const { useLibraryStore } = await loadFreshStores();
+
+    useLibraryStore.getState().updateFolder('folder1', { name: '  Deep Work  ' });
+    expect(useLibraryStore.getState().library.folders[0]).toEqual({
+      id: 'folder1',
+      name: 'Deep Work',
+      sortOrder: 0,
+      createdAt: 1,
+    });
+    expect(useLibraryStore.getState().library.lastUpdated).toBe(now);
+
+    vi.restoreAllMocks();
+  });
+
+  it('rejects duplicate folder names and empty names at the store boundary', async () => {
+    const folder = { id: 'folder1', name: 'Reading', sortOrder: 0, createdAt: 1 };
+    localStorage.setItem(
+      STORAGE_KEYS.library,
+      JSON.stringify({ v: 1, data: { books: [], folders: [folder], lastUpdated: 1 } }),
+    );
+
+    const { useLibraryStore } = await loadFreshStores();
+
+    expect(useLibraryStore.getState().addFolder('reading')).toBeNull();
+    expect(useLibraryStore.getState().addFolder('   ')).toBeNull();
+    useLibraryStore.getState().updateFolder('folder1', { name: 'reading' });
+    expect(useLibraryStore.getState().library.folders[0].name).toBe('Reading');
+  });
+
+  it('syncs currentBook folderId when moving or deleting folders', async () => {
+    const book: Book = {
+      id: 'b1',
+      title: 'Book',
+      author: 'Author',
+      filePath: '/tmp/book.epub',
+      addedAt: 1,
+      progress: { currentCfi: '', percentage: 0 },
+    };
+    localStorage.setItem(
+      STORAGE_KEYS.library,
+      JSON.stringify({ v: 1, data: { books: [book], folders: [], lastUpdated: 1 } }),
+    );
+
+    const { useLibraryStore } = await loadFreshStores();
+    const folder = useLibraryStore.getState().addFolder('Reading');
+    expect(folder).not.toBeNull();
+    useLibraryStore.getState().setCurrentBook({ ...book, folderId: folder!.id });
+    useLibraryStore.getState().setBookFolder(book.id, folder!.id);
+
+    expect(useLibraryStore.getState().currentBook?.folderId).toBe(folder!.id);
+
+    useLibraryStore.getState().removeFolder(folder!.id);
+    expect(useLibraryStore.getState().currentBook?.folderId).toBeUndefined();
+  });
+
+  it('ignores setBookFolder when the target folder does not exist', async () => {
+    const book: Book = {
+      id: 'b1',
+      title: 'Book',
+      author: 'Author',
+      filePath: '/tmp/book.epub',
+      addedAt: 1,
+      progress: { currentCfi: '', percentage: 0 },
+    };
+    localStorage.setItem(
+      STORAGE_KEYS.library,
+      JSON.stringify({ v: 1, data: { books: [book], folders: [], lastUpdated: 1 } }),
+    );
+
+    const { useLibraryStore } = await loadFreshStores();
+    useLibraryStore.getState().setBookFolder(book.id, 'missing-folder');
+    expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
   });
 });
