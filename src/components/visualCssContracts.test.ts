@@ -14,20 +14,36 @@ describe('visual CSS contracts', () => {
     expect(aiPanelCss).toContain('line-height: 22px;');
   });
 
-  it('renders Settings tabs as centered pill targets instead of bottom indicators', () => {
-    expect(settingsPanelCss).toContain('.settings-dialog .astryx-tab-list');
-    expect(settingsPanelCss).toContain('.settings-dialog .astryx-tab > span[aria-hidden="true"]:first-child');
-    expect(settingsPanelCss).toContain('top: 50% !important;');
-    expect(settingsPanelCss).toContain('transform: translateY(-50%);');
-    expect(settingsPanelCss).toContain('.settings-dialog .astryx-tab > span:not([aria-hidden])');
-    expect(settingsPanelCss).toContain('display: inline-grid;');
-    expect(settingsPanelCss).toContain('height: 32px;');
-    expect(settingsPanelCss).toContain('place-items: center;');
-    expect(settingsPanelCss).toContain('z-index: 1;');
-    expect(settingsPanelCss).toContain('min-height: 32px;');
-    expect(settingsPanelCss).toContain('.settings-dialog .astryx-tab > span:not([aria-hidden]) > span');
-    expect(settingsPanelCss).toContain('line-height: 1;');
-    expect(settingsPanelCss).toContain('.settings-dialog .astryx-tab > span:not([aria-hidden]) > span:not([aria-hidden])');
-    expect(settingsPanelCss).toContain('transform: translateY(-1px);');
+  it('renders the AI Reading Console as a wide shell with side navigation', () => {
+    // The console shell replaces the legacy tab strip. Lock the wide layout,
+    // the side-nav column, and the overview status rows so a future refactor
+    // cannot silently regress back to the narrow tabbed settings form.
+    expect(settingsPanelCss).toContain('width: min(840px, calc(100vw - 32px)) !important;');
+    expect(settingsPanelCss).toContain('.console-content');
+    expect(settingsPanelCss).toContain('display: flex;');
+    expect(settingsPanelCss).toContain('.console-sidenav');
+    expect(settingsPanelCss).toContain('width: 196px;');
+    expect(settingsPanelCss).toContain('.console-nav-list');
+    expect(settingsPanelCss).toContain('.console-nav-item');
+    expect(settingsPanelCss).toContain('.console-status-row');
+    expect(settingsPanelCss).toContain('.console-readiness-dot');
+  });
+
+  it('maps readiness to color through one data-readiness attribute per surface', () => {
+    // One readiness→color mapping per surface (chip, hero, status row),
+    // driven by data-readiness so the three states stay in sync.
+    expect(settingsPanelCss).toContain('.console-readiness-chip[data-readiness="ready"]');
+    expect(settingsPanelCss).toContain('.console-readiness-chip[data-readiness="degraded"]');
+    expect(settingsPanelCss).toContain('.console-readiness-chip[data-readiness="missing"]');
+    expect(settingsPanelCss).toContain('.console-hero[data-readiness="ready"]');
+    expect(settingsPanelCss).toContain('.console-status-row[data-readiness="ready"]');
+    expect(settingsPanelCss).toContain('.console-status-row[data-readiness="missing"]');
+  });
+
+  it('falls back to a single-column layout on small viewports', () => {
+    expect(settingsPanelCss).toContain('@media (max-width: 720px)');
+    expect(settingsPanelCss).toContain('flex-direction: column;');
+    expect(settingsPanelCss).toContain('.console-nav-list');
+    expect(settingsPanelCss).toContain('flex-direction: row;');
   });
 });
