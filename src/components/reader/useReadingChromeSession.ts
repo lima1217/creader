@@ -175,7 +175,12 @@ export function useReadingChromeSession(params: {
 
   useReaderKeyboardShortcuts({
     enabled: Boolean(currentBook),
-    isEditableTarget: (target) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement,
+    isEditableTarget: (target) => {
+      if (!(target instanceof HTMLElement)) return false;
+      // Cover native inputs plus contentEditable surfaces (e.g. Astryx ChatComposerInput),
+      // including editable child nodes that report isContentEditable unreliably.
+      return !!target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]');
+    },
     onPrev: handlePrev,
     onNext: handleNext,
     onEscape: () => {
