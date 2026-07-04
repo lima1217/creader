@@ -52,6 +52,8 @@ type LibraryState = {
   setBookCategory: (bookId: string, categoryId: string | undefined) => void;
   currentBook: Book | null;
   setCurrentBook: (book: Book | null) => void;
+  /** Replace currentBook without open-book side effects. Internal startup seam. */
+  replaceCurrentBookSnapshot: (book: Book | null) => void;
 };
 
 function syncLibrary(next: Library) {
@@ -207,6 +209,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   currentBook: null,
+  replaceCurrentBookSnapshot: (book) => {
+    syncCurrentBook(book);
+    set({ currentBook: book });
+  },
   setCurrentBook: (book) => {
     if (!book) {
       syncCurrentBook(null);
