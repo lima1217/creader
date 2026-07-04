@@ -3,27 +3,30 @@
    ============================================ */
 
 .settings-dialog {
-    --settings-pad: var(--spacing-5, 20px);
-    --settings-control-pad-x: var(--spacing-4, 16px);
-    --settings-control-radius: 6px;
+    --settings-pad: var(--spacing-5);
+    --settings-control-pad-x: var(--spacing-4);
+    --settings-control-radius: var(--radius-inner);
+    --settings-container-radius: var(--radius-container);
+    --settings-sidenav-width: 12.25rem;
     --settings-surface: var(--color-background-popover, var(--bg-elevated));
     top: 50% !important;
     left: 50% !important;
     z-index: 1000 !important;
+    /* Fixed modal measurement: the console needs a stable desktop editing width. */
     width: min(840px, calc(100vw - 32px)) !important;
     max-height: min(86vh, calc(100vh - 32px)) !important;
     overflow: hidden;
     isolation: isolate;
     background: var(--settings-surface) !important;
     border-color: var(--border-secondary) !important;
-    border-radius: 12px !important;
+    border-radius: var(--settings-container-radius) !important;
     box-shadow: var(--shadow-popover) !important;
     transform: translate(-50%, -50%) !important;
 }
 
 .settings-dialog::backdrop {
-    background: rgba(31, 41, 51, 0.42);
-    backdrop-filter: blur(2px);
+    background: var(--color-overlay);
+    backdrop-filter: blur(var(--spacing-0-5));
 }
 
 .settings-dialog > * {
@@ -38,7 +41,7 @@
 
 .settings-dialog-header {
     flex-shrink: 0;
-    padding: var(--spacing-5, 20px) var(--spacing-5, 20px) var(--spacing-3, 12px) !important;
+    padding: var(--spacing-5) var(--spacing-5) var(--spacing-3) !important;
     background: var(--settings-surface) !important;
 }
 
@@ -55,13 +58,13 @@
 
 .settings-dialog-header > div {
     align-items: flex-start !important;
-    gap: var(--spacing-4, 16px) !important;
+    gap: var(--spacing-4) !important;
 }
 
 .settings-dialog-header h2 {
     margin: 0 !important;
     color: var(--text-primary) !important;
-    font-size: 22px !important;
+    font-size: var(--font-size-xl) !important;
     line-height: 1.18 !important;
     font-weight: 680 !important;
     letter-spacing: 0 !important;
@@ -77,8 +80,8 @@
 }
 
 .settings-dialog-header .astryx-button[data-icon-only] {
-    min-width: 36px !important;
-    min-height: 36px !important;
+    min-width: var(--size-element-lg) !important;
+    min-height: var(--size-element-lg) !important;
     color: var(--text-secondary) !important;
 }
 
@@ -87,19 +90,19 @@
 }
 
 .settings-dialog .astryx-button:not([data-icon-only]) {
-    min-height: 38px !important;
-    gap: 8px !important;
+    min-height: var(--spacing-9) !important;
+    gap: var(--spacing-2) !important;
     padding-inline: var(--settings-control-pad-x) !important;
 }
 
 .settings-dialog .astryx-button[data-size="sm"]:not([data-icon-only]) {
-    min-height: 34px !important;
-    padding-inline: 13px !important;
+    min-height: var(--spacing-8) !important;
+    padding-inline: var(--spacing-3) !important;
 }
 
 .settings-dialog .astryx-button[data-icon-only] {
-    min-width: 34px !important;
-    min-height: 34px !important;
+    min-width: var(--spacing-8) !important;
+    min-height: var(--spacing-8) !important;
 }
 
 /* ---- Console side navigation ---------------------------------------- */
@@ -108,10 +111,10 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    gap: var(--spacing-3, 12px);
-    width: 196px;
-    padding: var(--spacing-3, 12px) var(--spacing-2, 8px) var(--spacing-3, 12px) var(--spacing-4, 16px);
-    border-right: 1px solid var(--border-soft);
+    gap: var(--spacing-3);
+    width: var(--settings-sidenav-width);
+    padding: var(--spacing-3) var(--spacing-2) var(--spacing-3) var(--spacing-4);
+    border-right: var(--border-width) solid var(--border-soft);
     background: color-mix(in srgb, var(--bg-control) 50%, transparent);
     overflow-y: auto;
 }
@@ -119,10 +122,10 @@
 .console-readiness-chip {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--border-soft);
-    border-radius: 10px;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--radius-element);
     background: var(--settings-surface);
     color: var(--text-primary);
     text-align: left;
@@ -137,25 +140,25 @@
 .console-readiness-chip-copy {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: var(--spacing-0-5);
     min-width: 0;
 }
 
 .console-readiness-chip-copy strong {
-    font-size: 12.5px;
+    font-size: var(--font-size-sm);
     font-weight: 650;
     line-height: 1.3;
 }
 
 .console-readiness-chip-copy small {
     color: var(--text-tertiary);
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     line-height: 1.3;
 }
 
 .console-readiness-dot {
-    width: 9px;
-    height: 9px;
+    width: var(--spacing-2);
+    height: var(--spacing-2);
     flex-shrink: 0;
     background: var(--text-muted);
     border-radius: 50%;
@@ -182,11 +185,11 @@
 }
 
 .console-sidenav .astryx-side-nav-item {
-    min-height: 38px !important;
-    padding-inline: 12px !important;
+    min-height: var(--spacing-9) !important;
+    padding-inline: var(--spacing-3) !important;
     border-radius: var(--settings-control-radius) !important;
     color: var(--text-secondary) !important;
-    font-size: 13px !important;
+    font-size: var(--font-size-base) !important;
     font-weight: 570 !important;
 }
 
@@ -214,23 +217,23 @@
 }
 
 .console-section {
-    padding: 0 var(--settings-pad) var(--spacing-5, 20px);
+    padding: 0 var(--settings-pad) var(--spacing-5);
 }
 
 .console-overview {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-4, 16px);
-    padding: 0 var(--settings-pad) var(--spacing-5, 20px);
+    gap: var(--spacing-4);
+    padding: 0 var(--settings-pad) var(--spacing-5);
 }
 
 .console-hero {
     display: flex;
     align-items: flex-start;
-    gap: var(--spacing-3, 12px);
-    padding: var(--spacing-4, 16px);
-    border: 1px solid var(--border-soft);
-    border-radius: 12px;
+    gap: var(--spacing-3);
+    padding: var(--spacing-4);
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--settings-container-radius);
     background: var(--bg-control);
 }
 
@@ -241,21 +244,21 @@
 .console-hero-copy {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--spacing-1-5);
     min-width: 0;
 }
 
 .console-hero-status {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--spacing-2);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.02em;
 }
 
-.console-hero-status .console-readiness-dot { width: 8px; height: 8px; }
+.console-hero-status .console-readiness-dot { width: var(--spacing-2); height: var(--spacing-2); }
 
 .console-hero[data-readiness="ready"] .console-hero-status { color: var(--success); }
 .console-hero[data-readiness="ready"] .console-hero-status .console-readiness-dot { background: var(--success); }
@@ -267,7 +270,7 @@
 .console-hero-headline {
     margin: 0;
     color: var(--text-primary);
-    font-size: 15px;
+    font-size: var(--font-size-base);
     font-weight: 600;
     line-height: 1.5;
 }
@@ -275,14 +278,14 @@
 .console-hero-sub {
     margin: 0;
     color: var(--text-tertiary);
-    font-size: 12.5px;
+    font-size: var(--font-size-sm);
     line-height: 1.55;
 }
 
 .console-status-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--spacing-2);
     padding: 0;
     margin: 0;
     list-style: none;
@@ -292,10 +295,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-3, 12px);
-    padding: var(--spacing-3, 12px);
-    border: 1px solid var(--border-soft);
-    border-radius: 10px;
+    gap: var(--spacing-3);
+    padding: var(--spacing-3);
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--radius-element);
     background: var(--settings-surface);
 }
 
@@ -312,13 +315,13 @@
 .console-status-row-main {
     display: flex;
     align-items: center;
-    gap: var(--spacing-3, 12px);
+    gap: var(--spacing-3);
     min-width: 0;
 }
 
 .console-status-row-dot {
-    width: 8px;
-    height: 8px;
+    width: var(--spacing-2);
+    height: var(--spacing-2);
     flex-shrink: 0;
     background: var(--text-muted);
     border-radius: 50%;
@@ -331,33 +334,33 @@
 .console-status-row-copy {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--spacing-0-5);
     min-width: 0;
 }
 
 .console-status-row-title {
     color: var(--text-primary);
-    font-size: 13.5px;
+    font-size: var(--font-size-base);
     font-weight: 600;
     line-height: 1.35;
 }
 
 .console-status-row-detail {
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.45;
 }
 
 /* ---- Shared section/field styling (unchanged behavior) -------------- */
 
 .settings-section {
-    padding: 0 var(--settings-pad) var(--spacing-5, 20px);
+    padding: 0 var(--settings-pad) var(--spacing-5);
 }
 
 .settings-section-title {
-    margin-bottom: var(--spacing-3, 12px);
+    margin-bottom: var(--spacing-3);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     font-weight: 650;
     letter-spacing: 0;
 }
@@ -366,9 +369,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-4);
-    min-height: 48px;
-    margin-bottom: var(--spacing-5, 20px);
+    gap: var(--spacing-4);
+    min-height: var(--spacing-12);
+    margin-bottom: var(--spacing-5);
 }
 
 .settings-field:last-child {
@@ -382,19 +385,19 @@
 .settings-field-stacked {
     align-items: stretch;
     flex-direction: column;
-    gap: var(--spacing-3, 12px);
+    gap: var(--spacing-3);
 }
 
 .settings-field-label {
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--font-size-base);
     font-weight: 570;
 }
 
 .settings-field-hint {
-    margin-top: 2px;
+    margin-top: var(--spacing-0-5);
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.45;
 }
 
@@ -402,11 +405,11 @@
 .console-strategy {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    margin-bottom: var(--spacing-4, 16px);
-    padding: var(--spacing-3, 12px) var(--spacing-4, 16px);
-    border: 1px solid var(--border-soft);
-    border-radius: 10px;
+    gap: var(--spacing-1);
+    margin-bottom: var(--spacing-4);
+    padding: var(--spacing-3) var(--spacing-4);
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--radius-element);
     background: var(--bg-control);
 }
 
@@ -417,7 +420,7 @@
 
 .console-strategy-title {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     font-weight: 650;
     letter-spacing: 0;
 }
@@ -425,7 +428,7 @@
 .console-strategy-summary {
     margin: 0;
     color: var(--text-primary);
-    font-size: 13.5px;
+    font-size: var(--font-size-base);
     font-weight: 570;
     line-height: 1.45;
     word-break: break-word;
@@ -433,20 +436,20 @@
 
 .console-strategy-summary code,
 .console-strategy-path {
-    padding: 2px 6px;
+    padding: var(--spacing-0-5) var(--spacing-1-5);
     background: var(--settings-surface);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width) solid var(--border-soft);
     border-radius: var(--settings-control-radius);
     color: var(--text-secondary);
     font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     word-break: break-all;
 }
 
 .console-strategy-hint {
     margin: 0;
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.55;
 }
 
@@ -454,27 +457,27 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: var(--spacing-3);
 }
 
 .settings-inline-path {
     display: inline-flex;
     align-items: center;
     flex: 1 1 100%;
-    gap: 10px;
+    gap: var(--spacing-2);
     min-width: 0;
 }
 
 .settings-inline-path code {
-    max-width: min(100%, 390px);
-    padding: 8px 10px;
+    max-width: min(100%, 24.375rem);
+    padding: var(--spacing-2);
     overflow: hidden;
     background: var(--bg-control);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width) solid var(--border-soft);
     border-radius: var(--settings-control-radius);
     color: var(--text-secondary);
     font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -482,35 +485,35 @@
 .settings-provider-list {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-2, 8px);
+    gap: var(--spacing-2);
     padding: 0;
-    margin: var(--spacing-2, 8px) 0 0;
+    margin: var(--spacing-2) 0 0;
     list-style: none;
 }
 
 .settings-provider-summary {
     display: flex;
     align-items: center;
-    gap: var(--spacing-3, 12px);
-    min-height: 54px;
-    padding: var(--spacing-3, 12px);
+    gap: var(--spacing-3);
+    min-height: 3.375rem;
+    padding: var(--spacing-3);
     background: var(--bg-control);
-    border: 1px solid var(--border-soft);
-    border-radius: 10px;
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--radius-element);
 }
 
 .settings-provider-summary-copy {
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--spacing-0-5);
     min-width: 0;
 }
 
 .settings-provider-summary-copy strong {
     overflow: hidden;
     color: var(--text-primary);
-    font-size: 13.5px;
+    font-size: var(--font-size-base);
     font-weight: 650;
     line-height: 1.35;
     text-overflow: ellipsis;
@@ -520,41 +523,41 @@
 .settings-provider-summary-copy small {
     overflow: hidden;
     color: var(--text-tertiary);
-    font-size: 11.5px;
+    font-size: var(--font-size-sm);
     line-height: 1.35;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .settings-provider-collapsible {
-    margin-top: var(--spacing-2, 8px);
-    padding: var(--spacing-2, 8px) var(--spacing-3, 12px);
+    margin-top: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
     background: transparent;
-    border: 1px solid var(--border-soft);
-    border-radius: 10px;
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--radius-element);
 }
 
 .settings-provider-collapsible > button {
-    min-height: 34px !important;
+    min-height: var(--spacing-8) !important;
     color: var(--text-primary) !important;
-    font-size: 13px !important;
+    font-size: var(--font-size-base) !important;
     font-weight: 570 !important;
 }
 
 .settings-provider-collapsible > div {
-    padding-block-start: var(--spacing-2, 8px) !important;
+    padding-block-start: var(--spacing-2) !important;
 }
 
 .settings-provider-collapsible-trigger {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--spacing-0-5);
     min-width: 0;
 }
 
 .settings-provider-collapsible-trigger small {
     color: var(--text-tertiary);
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     font-weight: 400;
     line-height: 1.3;
 }
@@ -562,27 +565,27 @@
 .settings-provider-item {
     display: flex;
     align-items: center;
-    gap: var(--spacing-2, 8px);
-    min-height: 58px;
-    padding: var(--spacing-3, 12px);
+    gap: var(--spacing-2);
+    min-height: 3.625rem;
+    padding: var(--spacing-3);
     background: var(--settings-surface);
-    border: 1px solid var(--border-soft);
-    border-radius: 10px;
-    box-shadow: 0 1px 0 var(--border-soft);
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--radius-element);
+    box-shadow: none;
     transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .settings-provider-item.active {
     background: color-mix(in srgb, var(--accent-soft) 42%, var(--settings-surface));
     border-color: var(--border-accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-accent) 36%, transparent);
+    box-shadow: var(--shadow-inset-selected);
 }
 
 .settings-provider-main {
     display: flex;
     align-items: center;
     flex: 1;
-    gap: var(--spacing-2, 8px);
+    gap: var(--spacing-2);
     min-width: 0;
     padding: 0;
     background: transparent;
@@ -594,8 +597,8 @@
 }
 
 .settings-provider-dot {
-    width: 8px;
-    height: 8px;
+    width: var(--spacing-2);
+    height: var(--spacing-2);
     flex-shrink: 0;
     background: var(--text-muted);
     border-radius: 50%;
@@ -612,28 +615,28 @@
 .settings-provider-copy {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--spacing-0-5);
     min-width: 0;
 }
 
 .settings-provider-copy small {
     color: var(--text-tertiary);
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     line-height: 1.35;
 }
 
 .settings-provider-name {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-2, 8px);
-    font-size: 13.5px;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-base);
     font-weight: 600;
     line-height: 1.35;
 }
 
 .settings-provider-name svg {
-    width: 14px;
-    height: 14px;
+    width: var(--spacing-4);
+    height: var(--spacing-4);
     color: var(--accent);
 }
 
@@ -648,16 +651,16 @@
 .settings-provider-test {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-1, 4px);
-    margin-top: 2px;
-    font-size: 11px;
+    gap: var(--spacing-1);
+    margin-top: var(--spacing-0-5);
+    font-size: var(--font-size-sm);
     font-weight: 500;
     line-height: 1.35;
 }
 
 .settings-provider-test svg {
-    width: 12px;
-    height: 12px;
+    width: var(--spacing-3);
+    height: var(--spacing-3);
     flex-shrink: 0;
 }
 
@@ -682,66 +685,39 @@
 .settings-provider-actions {
     display: flex;
     flex-shrink: 0;
-    gap: var(--spacing-1, 4px);
-}
-
-.settings-icon-btn {
-    min-height: 30px;
-    padding-inline: var(--spacing-2, 8px);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--settings-control-radius);
-    color: var(--text-tertiary);
-    font: inherit;
-    font-size: 12px;
-    transition: background-color var(--transition-fast), color var(--transition-fast);
-}
-
-.settings-icon-btn:hover {
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-}
-
-.settings-danger-action {
-    color: var(--text-muted);
-}
-
-.settings-danger-action:hover {
-    background: var(--error-light);
-    border-color: color-mix(in srgb, var(--error) 24%, transparent);
-    color: var(--error);
+    gap: var(--spacing-1);
 }
 
 .settings-provider-editor {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-4, 16px);
+    gap: var(--spacing-4);
 }
 
 .settings-provider-templates {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 9px;
+    gap: var(--spacing-2);
 }
 
 .settings-provider-templates small {
-    margin-right: 4px;
+    margin-right: var(--spacing-1);
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
 }
 
 .settings-provider-edit-actions {
     display: flex;
     justify-content: flex-end;
-    gap: var(--spacing-3, 12px);
-    margin-top: var(--spacing-1, 4px);
+    gap: var(--spacing-3);
+    margin-top: var(--spacing-1);
 }
 
 .settings-quick-actions {
     display: grid;
     grid-template-columns: minmax(140px, 0.82fr) minmax(0, 1.18fr);
-    gap: 18px;
+    gap: var(--spacing-5);
 }
 
 .settings-quick-list,
@@ -753,25 +729,25 @@
 .settings-quick-list {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: var(--spacing-2);
 }
 
 .settings-quick-item {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--spacing-2);
 }
 
 .settings-quick-order {
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
-    gap: 2px;
+    gap: var(--spacing-0-5);
 }
 
 .settings-quick-order .astryx-button {
-    min-width: 28px;
-    min-height: 28px;
+    min-width: var(--size-element-sm);
+    min-height: var(--size-element-sm);
     color: var(--text-tertiary);
 }
 
@@ -781,12 +757,12 @@
 
 .settings-quick-direct {
     margin-left: auto;
-    padding: 1px 6px;
-    border: 1px solid var(--border-soft);
-    border-radius: 4px;
+    padding: var(--spacing-0-5) var(--spacing-1-5);
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--radius-inner);
     background: var(--settings-surface);
     color: var(--text-tertiary);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     line-height: 1.4;
     text-transform: none;
@@ -796,23 +772,23 @@
     display: flex;
     align-items: center;
     flex: 1;
-    gap: 8px;
+    gap: var(--spacing-2);
     min-width: 0;
-    min-height: 38px;
-    padding-inline: 12px;
+    min-height: var(--spacing-9);
+    padding-inline: var(--spacing-3);
     background: var(--bg-control);
-    border: 1px solid var(--border-soft);
+    border: var(--border-width) solid var(--border-soft);
     border-radius: var(--settings-control-radius);
     color: var(--text-secondary);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     text-align: left;
     transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .settings-quick-select svg {
-    width: 13px;
-    height: 13px;
+    width: var(--spacing-3);
+    height: var(--spacing-3);
     flex-shrink: 0;
 }
 
@@ -833,35 +809,35 @@
 .settings-quick-form {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--spacing-3);
 }
 
 .settings-quick-actions-row {
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
+    gap: var(--spacing-2);
 }
 
 .settings-quick-restore {
-    padding-top: var(--space-3);
-    margin-top: var(--space-2);
-    border-top: 1px solid var(--border-soft);
+    padding-top: var(--spacing-3);
+    margin-top: var(--spacing-2);
+    border-top: var(--border-width) solid var(--border-soft);
 }
 
 .settings-quick-restore .settings-section-title {
-    margin-bottom: 7px;
+    margin-bottom: var(--spacing-2);
 }
 
 .settings-quick-muted,
 .settings-quick-empty {
     align-items: center;
     justify-content: center;
-    min-height: 96px;
-    padding: 16px;
-    border: 1px dashed var(--border-soft);
-    border-radius: 8px;
+    min-height: 6rem;
+    padding: var(--spacing-4);
+    border: var(--border-width) dashed var(--border-soft);
+    border-radius: var(--radius-element);
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     line-height: 1.55;
     text-align: center;
 }
@@ -869,11 +845,11 @@
 .settings-quick-empty {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--spacing-2);
 }
 
 .settings-quick-help {
-    margin-top: var(--space-3);
+    margin-top: var(--spacing-3);
 }
 
 /* ---- Responsive fallback: narrow viewport collapses to a single column
@@ -881,7 +857,7 @@
 
 @media (max-width: 720px) {
     .settings-dialog {
-        --settings-pad: 16px;
+        --settings-pad: var(--spacing-4);
     }
 
     .console-content {
@@ -891,9 +867,9 @@
     .console-sidenav {
         width: auto;
         max-height: none;
-        padding: var(--spacing-2, 8px);
+        padding: var(--spacing-2);
         border-right: 0;
-        border-bottom: 1px solid var(--border-soft);
+        border-bottom: var(--border-width) solid var(--border-soft);
     }
 
     .console-readiness-chip {
@@ -906,12 +882,12 @@
         display: flex;
         flex-direction: row;
         flex-wrap: wrap;
-        gap: 6px;
+        gap: var(--spacing-1-5);
     }
 
     .console-sidenav .astryx-side-nav-item {
         flex: 1 1 auto;
-        min-height: 34px !important;
+        min-height: var(--spacing-8) !important;
         justify-content: center;
     }
 
@@ -922,7 +898,7 @@
     .settings-field {
         align-items: stretch;
         flex-direction: column;
-        gap: 10px;
+        gap: var(--spacing-2);
     }
 
     .settings-provider-item {

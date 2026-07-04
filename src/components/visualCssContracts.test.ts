@@ -23,12 +23,21 @@ describe('visual CSS contracts', () => {
     expect(settingsPanelCss).toContain('.console-content');
     expect(settingsPanelCss).toContain('display: flex;');
     expect(settingsPanelCss).toContain('.console-sidenav');
-    expect(settingsPanelCss).toContain('width: 196px;');
+    expect(settingsPanelCss).toContain('width: var(--settings-sidenav-width);');
     expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav');
     expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav-item');
     expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav-item[aria-current="page"]');
     expect(settingsPanelCss).toContain('.console-status-row');
     expect(settingsPanelCss).toContain('.console-readiness-dot');
+  });
+
+  it('keeps SettingsPanel cleanup free of legacy tabs and custom provider buttons', () => {
+    expect(settingsPanelCss).not.toMatch(/settings-tabs-row|settings-tab|settings-form/);
+    expect(settingsPanelCss).not.toContain('settings-icon-btn');
+    expect(settingsPanelCss).not.toContain('--space-');
+    expect(settingsPanelCss).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+    expect(settingsPanelCss).toContain('var(--spacing-');
+    expect(settingsPanelCss).toContain('var(--radius-');
   });
 
   it('maps readiness to color through one data-readiness attribute per surface', () => {

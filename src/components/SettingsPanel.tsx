@@ -581,26 +581,26 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                                         </span>
                                                     </button>
                                                     <div className="settings-provider-actions">
-                                                        <button
-                                                            className="settings-icon-btn"
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            label={isTestLoading ? '测试中…' : '测试'}
                                                             onClick={() => runProviderTest(provider)}
-                                                            disabled={isTestLoading || !isTauri}
+                                                            isDisabled={isTestLoading || !isTauri}
                                                             aria-label={`测试 ${provider.name} 的连接`}
-                                                        >
-                                                            {isTestLoading ? '测试中…' : '测试'}
-                                                        </button>
-                                                        <button
-                                                            className="settings-icon-btn"
+                                                        />
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            label="编辑"
                                                             onClick={() => startEditProvider(provider)}
-                                                        >
-                                                            编辑
-                                                        </button>
-                                                        <button
-                                                            className="settings-icon-btn settings-danger-action"
+                                                        />
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            label="删除"
                                                             onClick={() => aiProviders.deleteProvider(provider.id)}
-                                                        >
-                                                            删除
-                                                        </button>
+                                                        />
                                                     </div>
                                                 </li>
                                                 );
