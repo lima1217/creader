@@ -213,12 +213,23 @@ describe('SettingsPanel — 三项一级菜单 (#62-#65)', () => {
     expect(container.textContent ?? '').toContain('AI 服务');
     expect(container.textContent ?? '').toContain('对话行为');
     expect(container.querySelector('.settings-conversation-behavior')).not.toBeNull();
+    expect(container.querySelector('.settings-conversation-grid')).not.toBeNull();
     expect(container.textContent ?? '').toContain('自动压缩');
     expect(container.textContent ?? '').toContain('AI 文字大小');
+    expect(container.textContent ?? '').not.toContain('px');
+    expect(container.textContent ?? '').not.toContain('每次提问带上的最近记录');
+    expect(container.textContent ?? '').not.toContain('超过轮次后');
+    expect(container.textContent ?? '').not.toContain('调整旁注正文和输入框文字');
     expect(container.querySelector('#settings-context-window')).not.toBeNull();
     expect(container.querySelector('#settings-ai-text-size')).not.toBeNull();
     expect(container.querySelector('.astryx-number-input input')?.getAttribute('min')).toBe('13');
     expect(container.querySelector('.astryx-number-input input')?.getAttribute('max')).toBe('20');
+
+    const increaseTextSize = container.querySelector('button[aria-label="增大 AI 文字大小"]') as HTMLButtonElement;
+    expect(increaseTextSize).not.toBeNull();
+    increaseTextSize.click();
+    await settle();
+    expect(useSettingsStore.getState().settings.aiTextSize).toBe(15);
   });
 
   it('shows an attention dot only on the AI 设置 tab when no active keyed provider exists', async () => {

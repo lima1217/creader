@@ -279,6 +279,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         }
     }, []);
 
+    const adjustAITextSize = useCallback((delta: number) => {
+        setSettings({
+            ...settings,
+            aiTextSize: clampAITextSize(settings.aiTextSize + delta),
+        });
+    }, [settings, setSettings]);
+
     return (
         <Dialog
             isOpen={isOpen}
@@ -303,7 +310,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         value={activeTab}
                         onChange={switchTab}
                         size="sm"
-                        layout="hug"
+                        layout="fill"
                         hasDivider
                     >
                         <Tab
@@ -515,10 +522,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                 <div className="settings-section-title">对话行为</div>
                                 <div className="settings-conversation-behavior">
                                     <Field
-                                        className="settings-field settings-field-stacked settings-conversation-control"
+                                        className="settings-field settings-conversation-control settings-conversation-primary"
                                         inputID="settings-context-window"
                                         label="上下文轮次"
-                                        description="每次提问带上的最近记录，越多越连贯，也越慢。"
                                     >
                                         <div id="settings-context-window">
                                             <SegmentedControl
@@ -539,36 +545,55 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                         </div>
                                     </Field>
 
-                                    <div className="settings-conversation-control">
-                                        <Switch
-                                            label="自动压缩"
-                                            description="超过轮次后，将更早对话压成隐藏摘要继续带上（摘要不作为消息渲染）。"
-                                            value={settings.aiAutoSummarize}
-                                            onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
-                                        />
-                                    </div>
-
-                                    <Field
-                                        className="settings-field settings-field-stacked settings-conversation-control settings-text-size-field"
-                                        inputID="settings-ai-text-size"
-                                        label="AI 文字大小"
-                                        description="调整旁注正文和输入框文字（13–20px）。"
-                                    >
-                                        <div id="settings-ai-text-size">
-                                            <NumberInput
-                                                label="AI 文字大小"
-                                                isLabelHidden
-                                                value={settings.aiTextSize}
-                                                onChange={value => setSettings({ ...settings, aiTextSize: clampAITextSize(value) })}
-                                                min={AI_TEXT_SIZE_MIN}
-                                                max={AI_TEXT_SIZE_MAX}
-                                                step={1}
-                                                isIntegerOnly
-                                                units="px"
-                                                size="sm"
+                                    <div className="settings-conversation-grid">
+                                        <div className="settings-conversation-control settings-conversation-switch-control">
+                                            <Switch
+                                                label="自动压缩"
+                                                labelPosition="start"
+                                                labelSpacing="spread"
+                                                value={settings.aiAutoSummarize}
+                                                onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
                                             />
                                         </div>
-                                    </Field>
+
+                                        <Field
+                                            className="settings-field settings-conversation-control settings-text-size-field"
+                                            inputID="settings-ai-text-size"
+                                            label="AI 文字大小"
+                                        >
+                                            <div className="settings-text-size-control" id="settings-ai-text-size">
+                                                <Button
+                                                    className="settings-text-size-step"
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    label="A-"
+                                                    aria-label="减小 AI 文字大小"
+                                                    onClick={() => adjustAITextSize(-1)}
+                                                    isDisabled={settings.aiTextSize <= AI_TEXT_SIZE_MIN}
+                                                />
+                                                <NumberInput
+                                                    label="AI 文字大小"
+                                                    isLabelHidden
+                                                    value={settings.aiTextSize}
+                                                    onChange={value => setSettings({ ...settings, aiTextSize: clampAITextSize(value) })}
+                                                    min={AI_TEXT_SIZE_MIN}
+                                                    max={AI_TEXT_SIZE_MAX}
+                                                    step={1}
+                                                    isIntegerOnly
+                                                    size="sm"
+                                                />
+                                                <Button
+                                                    className="settings-text-size-step"
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    label="A+"
+                                                    aria-label="增大 AI 文字大小"
+                                                    onClick={() => adjustAITextSize(1)}
+                                                    isDisabled={settings.aiTextSize >= AI_TEXT_SIZE_MAX}
+                                                />
+                                            </div>
+                                        </Field>
+                                    </div>
                                 </div>
                             </section>
                         </div>
@@ -612,7 +637,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                                 onClick={openReadingMemory}
                                             />
                                             <Button
-                                                variant="ghost"
+                                                variant="secondary"
                                                 size="sm"
                                                 label="更换"
                                                 onClick={chooseReadingMemory}
@@ -632,6 +657,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             <Switch
                                 label="自动沉淀"
                                 description="AI 判断有长期价值时，自动写入本地仓库。关闭后此偏好仍被保留。"
+                                labelPosition="start"
+                                labelSpacing="spread"
                                 value={settings.readingMemoryAutoIngest}
                                 onChange={checked => setSettings({ ...settings, readingMemoryAutoIngest: checked })}
                             />

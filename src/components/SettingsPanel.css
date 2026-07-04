@@ -8,8 +8,13 @@
     --settings-control-radius: var(--radius-inner);
     --settings-container-radius: var(--radius-container);
     --settings-surface: var(--color-background-popover, var(--bg-elevated));
+    --settings-control-surface: var(--settings-surface);
+    --settings-control-border: color-mix(in srgb, var(--border-soft) 72%, var(--text-tertiary));
+    position: fixed !important;
+    inset: auto !important;
     top: 50% !important;
     left: 50% !important;
+    margin: 0 !important;
     z-index: 1000 !important;
     width: min(calc(var(--spacing-9) * 20), calc(100vw - var(--spacing-8))) !important;
     max-height: min(86vh, calc(100vh - var(--spacing-8))) !important;
@@ -54,6 +59,16 @@
     color: var(--text-secondary) !important;
 }
 
+.settings-dialog-header-close .astryx-button[data-icon-only]:focus,
+.settings-dialog-header-close .astryx-button[data-icon-only]:focus-visible,
+.settings-dialog-header-close .astryx-button[data-icon-only][data-focused],
+.settings-dialog-header-close .astryx-button[data-icon-only][data-focus-visible],
+.settings-dialog-header-close button:focus,
+.settings-dialog-header-close button:focus-visible {
+    outline: 0 !important;
+    box-shadow: none !important;
+}
+
 .settings-dialog .astryx-button {
     border-radius: var(--settings-control-radius) !important;
 }
@@ -76,12 +91,26 @@
 
 .settings-tabs-row {
     flex-shrink: 0;
-    padding: 0 var(--settings-pad);
+    padding: var(--spacing-2) var(--settings-pad) 0;
     background: var(--settings-surface);
 }
 
 .settings-tabs-row .astryx-tab-list {
     width: 100%;
+}
+
+.settings-tabs-row .astryx-tab {
+    justify-content: center;
+    min-height: var(--spacing-9);
+    padding-inline: var(--spacing-4) !important;
+    color: var(--text-secondary) !important;
+    font-size: var(--font-size-base) !important;
+    font-weight: 560 !important;
+}
+
+.settings-tabs-row .astryx-tab[data-selected] {
+    color: var(--text-primary) !important;
+    font-weight: 650 !important;
 }
 
 .settings-tab-attention {
@@ -93,6 +122,7 @@
 
 .settings-content {
     min-height: 0;
+    padding-bottom: var(--spacing-4);
     background: var(--settings-surface) !important;
 }
 
@@ -125,14 +155,17 @@
 .settings-conversation-behavior {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-4);
-    padding: var(--spacing-4);
-    background: var(--bg-control);
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+    background: var(--settings-surface);
     border: var(--border-width) solid var(--border-soft);
     border-radius: var(--radius-element);
 }
 
 .settings-conversation-control {
+    min-width: 0;
+    padding: var(--spacing-3) var(--spacing-4);
     margin-bottom: 0;
 }
 
@@ -140,9 +173,179 @@
     min-height: 0;
 }
 
+.settings-conversation-primary.settings-field {
+    align-items: center;
+    flex-direction: row;
+    gap: var(--spacing-4);
+    justify-content: space-between;
+    min-height: calc(var(--spacing-9) + var(--spacing-5));
+}
+
+.settings-conversation-primary.settings-field > .astryx-field-label {
+    flex: 0 0 auto;
+}
+
+.settings-conversation-primary.settings-field > div {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.settings-conversation-primary #settings-context-window {
+    flex: 1;
+    min-width: min(100%, calc(var(--spacing-9) * 8));
+}
+
+.settings-conversation-primary .astryx-segmented-control {
+    width: 100%;
+}
+
+.settings-conversation-primary .astryx-segmented-control-item span {
+    white-space: nowrap;
+}
+
+.settings-conversation-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(calc(var(--spacing-9) * 5), 1fr);
+    border-top: var(--border-width) solid var(--border-soft);
+}
+
+.settings-conversation-grid > .settings-conversation-control + .settings-conversation-control {
+    border-left: var(--border-width) solid var(--border-soft);
+}
+
+.settings-conversation-switch-control {
+    display: flex;
+    align-items: center;
+    min-height: calc(var(--spacing-9) + var(--spacing-3));
+}
+
+.settings-dialog .astryx-switch-field[data-label-spacing="spread"] {
+    width: 100%;
+    align-items: center;
+    gap: var(--spacing-4);
+}
+
+.settings-dialog .astryx-switch-field[data-label-spacing="spread"] .astryx-switch {
+    flex-shrink: 0;
+}
+
+.settings-dialog .astryx-switch {
+    background: var(--bg-control) !important;
+    border: var(--border-width) solid var(--settings-control-border) !important;
+}
+
+.settings-dialog .astryx-switch[data-checked] {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+}
+
+.settings-dialog .astryx-switch-thumb {
+    background: var(--settings-control-surface) !important;
+    box-shadow: var(--shadow-popover);
+}
+
+.settings-text-size-field {
+    align-items: center;
+    flex-direction: row;
+    gap: var(--spacing-3);
+    justify-content: space-between;
+    min-height: calc(var(--spacing-9) + var(--spacing-3));
+}
+
+.settings-text-size-field .astryx-field-label,
+.settings-text-size-field .astryx-field-copy,
+.settings-text-size-field .astryx-field-text {
+    min-width: 0;
+}
+
 .settings-text-size-field .astryx-number-input {
-    width: min(100%, calc(var(--spacing-9) * 5));
-    max-width: calc(var(--spacing-9) * 5);
+    display: inline-flex;
+    align-items: center;
+    width: calc(var(--spacing-9) * 1.8);
+    min-height: var(--spacing-8);
+    max-width: 100%;
+    background: var(--settings-control-surface) !important;
+    border: var(--border-width) solid var(--settings-control-border) !important;
+    border-radius: var(--settings-control-radius) !important;
+    box-shadow: var(--shadow-sm);
+}
+
+.settings-text-size-field .astryx-number-input:focus-within {
+    border-color: var(--border-accent) !important;
+    box-shadow: var(--shadow-inset-selected);
+}
+
+.settings-text-size-field .astryx-number-input input {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    color: var(--text-primary) !important;
+    font: inherit;
+    font-size: var(--font-size-base);
+    font-variant-numeric: tabular-nums;
+    font-weight: 560;
+    outline: 0 !important;
+    text-align: center;
+}
+
+.settings-text-size-field .astryx-number-input input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.settings-text-size-field .astryx-number-input input::-webkit-inner-spin-button,
+.settings-text-size-field .astryx-number-input input::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.settings-text-size-control {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: var(--spacing-1);
+    min-width: 0;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.settings-text-size-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--spacing-8);
+    min-height: var(--spacing-8);
+    padding: 0 var(--spacing-2);
+    background: var(--settings-control-surface);
+    border: var(--border-width) solid var(--settings-control-border);
+    border-radius: var(--settings-control-radius);
+    color: var(--text-primary);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-base);
+    font-weight: 650;
+    line-height: 1;
+    box-shadow: var(--shadow-sm);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.settings-text-size-step:hover:not(:disabled) {
+    background: var(--bg-control-hover);
+    border-color: var(--border-secondary);
+}
+
+.settings-text-size-step:focus-visible {
+    outline: var(--border-width) solid var(--border-accent);
+    outline-offset: var(--spacing-0-5);
+}
+
+.settings-text-size-step:disabled {
+    color: var(--text-muted);
+    cursor: not-allowed;
+    opacity: 0.55;
+    box-shadow: none;
 }
 
 .settings-section-title {
@@ -487,16 +690,26 @@
 }
 
 .settings-quick-form .astryx-text-input,
-.settings-quick-form .astryx-text-area {
-    background: var(--bg-control) !important;
-    border: var(--border-width) solid var(--border-soft) !important;
+.settings-quick-form .astryx-textarea {
+    background: var(--settings-control-surface) !important;
+    border: var(--border-width) solid var(--settings-control-border) !important;
     border-radius: var(--settings-control-radius) !important;
+    color: var(--text-primary) !important;
 }
 
 .settings-quick-form .astryx-text-input:focus-within,
-.settings-quick-form .astryx-text-area:focus-within {
-    border-color: var(--border-accent) !important;
-    box-shadow: var(--shadow-inset-selected);
+.settings-quick-form .astryx-textarea:focus-within {
+    border-color: var(--settings-control-border) !important;
+    box-shadow: none !important;
+}
+
+.settings-quick-form input[name="settings-quick-label"],
+.settings-quick-form textarea[name="settings-quick-prompt"] {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    color: var(--text-primary) !important;
+    outline: 0 !important;
 }
 
 .settings-quick-item {
@@ -617,6 +830,30 @@
     .settings-provider-item {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .settings-conversation-primary {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .settings-conversation-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-conversation-grid > .settings-conversation-control + .settings-conversation-control {
+        border-top: var(--border-width) solid var(--border-soft);
+        border-left: 0;
+    }
+
+    .settings-text-size-field {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .settings-text-size-control {
+        justify-content: flex-start;
+        width: 100%;
     }
 
     .settings-provider-actions {

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const componentsDir = join(process.cwd(), 'src/components');
 const aiPanelCss = readFileSync(join(componentsDir, 'AIPanel.css'), 'utf8');
+const aiPanelMarkdownCss = readFileSync(join(componentsDir, 'AIPanelMarkdown.css'), 'utf8');
 const settingsPanelCss = readFileSync(join(componentsDir, 'SettingsPanel.css'), 'utf8');
 
 describe('visual CSS contracts', () => {
@@ -15,6 +16,9 @@ describe('visual CSS contracts', () => {
   });
 
   it('renders SettingsPanel as a focused three-tab AI settings dialog', () => {
+    expect(settingsPanelCss).toContain('position: fixed !important;');
+    expect(settingsPanelCss).toContain('inset: auto !important;');
+    expect(settingsPanelCss).toContain('margin: 0 !important;');
     expect(settingsPanelCss).toContain('width: min(calc(var(--spacing-9) * 20), calc(100vw - var(--spacing-8))) !important;');
     expect(settingsPanelCss).toContain('.settings-tabs-row');
     expect(settingsPanelCss).toContain('.settings-tabs-row .astryx-tab-list');
@@ -46,9 +50,23 @@ describe('visual CSS contracts', () => {
   it('groups conversation behavior controls and styles quick prompt edit fields', () => {
     expect(settingsPanelCss).toContain('.settings-conversation-behavior');
     expect(settingsPanelCss).toContain('.settings-text-size-field');
+    expect(settingsPanelCss).toContain('.settings-text-size-step');
+    expect(settingsPanelCss).toContain('.settings-dialog .astryx-switch-field[data-label-spacing="spread"]');
     expect(settingsPanelCss).toContain('.settings-quick-form .astryx-text-input');
-    expect(settingsPanelCss).toContain('.settings-quick-form .astryx-text-area');
+    expect(settingsPanelCss).toContain('.settings-quick-form .astryx-textarea');
+    expect(settingsPanelCss).not.toContain('.astryx-text-area');
     expect(settingsPanelCss).toContain('.settings-dialog-header-close');
+  });
+
+  it('keeps AI answer markdown tied to the AI text-size setting', () => {
+    expect(aiPanelCss).toContain('--ai-text-size: 14px;');
+    expect(aiPanelCss).toContain('font-size: var(--ai-text-size);');
+    expect(aiPanelMarkdownCss).toContain('.ai-message-assistant .ai-message-content :where(p, blockquote, ul, ol, li, pre)');
+    expect(aiPanelMarkdownCss).toContain('.ai-message-assistant .ai-message-content :where(h1, h2, h3, h4)');
+    expect(aiPanelMarkdownCss).toContain('font-size: inherit;');
+    expect(aiPanelMarkdownCss).not.toContain('font-size: 13px;');
+    expect(aiPanelMarkdownCss).toContain('.ai-code-block code');
+    expect(aiPanelMarkdownCss).toContain('font-size: 0.94em;');
   });
 
   it('falls back to a single-column layout on small viewports', () => {

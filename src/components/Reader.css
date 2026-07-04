@@ -1,3 +1,33 @@
+.reader-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: var(--space-10);
+    overflow: hidden;
+    background: var(--bg-reader);
+    text-align: center;
+}
+
+.reader-empty-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    width: min(360px, 100%);
+    padding: var(--space-8);
+}
+
+.reader-empty-content svg {
+    width: 34px;
+    height: 34px;
+    margin-bottom: var(--space-1);
+    color: var(--text-muted);
+}
+
 .reader-empty-shelf {
     display: flex;
     align-items: flex-end;
