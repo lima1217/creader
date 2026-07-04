@@ -137,6 +137,33 @@ async function findOrganizerButton(container: HTMLElement, name: string): Promis
   return child!;
 }
 
+function makeDataTransfer() {
+  const values = new Map<string, string>();
+  return {
+    effectAllowed: 'all',
+    dropEffect: 'none',
+    setData: (type: string, value: string) => values.set(type, value),
+    getData: (type: string) => values.get(type) || '',
+  };
+}
+
+function dispatchDragEvent(element: Element, type: string, dataTransfer = makeDataTransfer()) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+  element.dispatchEvent(event);
+  return { event, dataTransfer };
+}
+
+async function clickBookAction(container: HTMLElement, bookTitle: string, actionLabel: string) {
+  click(container.querySelector(`[aria-label="${bookTitle} 操作"]`)!);
+  await settle();
+  const item = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+    (menuItem) => menuItem.textContent?.trim() === actionLabel,
+  )!;
+  click(item);
+  await settle();
+}
+
 // --- Setup ---------------------------------------------------------------
 
 beforeEach(() => {
@@ -224,8 +251,7 @@ describe('Sidebar contract — book interactions', () => {
     setNextConfirmResult(true);
     seedLibrary({ books: [makeBook({ id: 'b1', title: 'Delete Me' })], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    click(container.querySelector('.book-delete')!);
-    await settle();
+    await clickBookAction(container, 'Delete Me', '移除书籍');
     expect(useLibraryStore.getState().library.books).toHaveLength(0);
     expect(getConfirmCalls()).toHaveLength(1);
   });
@@ -234,8 +260,7 @@ describe('Sidebar contract — book interactions', () => {
     setNextConfirmResult(false);
     seedLibrary({ books: [makeBook({ id: 'b1', title: 'Keep Me' })], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    click(container.querySelector('.book-delete')!);
-    await settle();
+    await clickBookAction(container, 'Keep Me', '移除书籍');
     expect(useLibraryStore.getState().library.books).toHaveLength(1);
   });
 
@@ -350,6 +375,86 @@ describe('Sidebar contract — folder nav', () => {
     expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('Invisible Title');
     expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual([]);
   });
+
+  it('moves a dragged book into a real folder', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Unfiled' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    await settle();
+
+    const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
+    dispatchDragEvent(container.querySelector('.category-filter-group')!, 'dragover', dataTransfer);
+    dispatchDragEvent(container.querySelector('.category-filter-group')!, 'drop', dataTransfer);
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
+  });
+
+  it('does not accept a book drop on all books', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Unfiled' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    await settle();
+
+    const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
+    dispatchDragEvent(await findOrganizerButton(container, '全部书籍'), 'drop', dataTransfer);
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
+  });
+
+  it('leaves a book unchanged when dropped onto its current folder', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    await settle();
+
+    const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
+    dispatchDragEvent(container.querySelector('.category-filter-group')!, 'drop', dataTransfer);
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
+    expect(useLibraryStore.getState().library.lastUpdated).toBe(1);
+  });
+
+  it('moves a dragged book back to unfiled', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    await settle();
+
+    const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
+    dispatchDragEvent(await findOrganizerButton(container, '未归档'), 'drop', dataTransfer);
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
+  });
+
+  it('auto-expands a collapsed folder while a book is dragged over it', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
+    const unfiled = makeBook({ id: 'b2', title: 'Loose' });
+    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify([]));
+    seedLibrary({ books: [book, unfiled], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    await settle();
+    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('Filed');
+
+    vi.useFakeTimers();
+    const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
+    dispatchDragEvent(container.querySelector('.category-filter-group')!, 'dragover', dataTransfer);
+    vi.advanceTimersByTime(500);
+    await Promise.resolve();
+    vi.useRealTimers();
+    await settle();
+
+    expect(container.textContent).toContain('Filed');
+    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual(['folder1']);
+  });
 });
 
 describe('Sidebar contract — edit-book modal', () => {
@@ -359,8 +464,7 @@ describe('Sidebar contract — edit-book modal', () => {
     const { container } = mountSidebar();
     expect(container.querySelector('.modal-edit')).toBeNull();
 
-    click(container.querySelector('.book-edit')!);
-    await settle();
+    await clickBookAction(container, 'Old Title', '编辑书籍信息');
 
     const modal = container.querySelector('.modal-edit') as HTMLElement;
     const inputs = modal.querySelectorAll('input');
@@ -385,8 +489,7 @@ describe('Sidebar contract — edit-book modal', () => {
     const book = makeBook({ id: 'b1', title: 'Keep' });
     seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    click(container.querySelector('.book-edit')!);
-    await settle();
+    await clickBookAction(container, 'Keep', '编辑书籍信息');
 
     const modal = container.querySelector('.modal-edit') as HTMLElement;
     setInputValue(modal.querySelectorAll('input')[0], 'Changed');
@@ -401,8 +504,7 @@ describe('Sidebar contract — edit-book modal', () => {
     const book = makeBook({ id: 'b1', title: 'Keep' });
     seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    click(container.querySelector('.book-edit')!);
-    await settle();
+    await clickBookAction(container, 'Keep', '编辑书籍信息');
 
     const overlay = container.querySelector('.modal-overlay') as HTMLElement;
     click(overlay);
@@ -416,8 +518,7 @@ describe('Sidebar contract — edit-book modal', () => {
     const book = makeBook({ id: 'b1', title: 'Old' });
     seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    click(container.querySelector('.book-edit')!);
-    await settle();
+    await clickBookAction(container, 'Old', '编辑书籍信息');
 
     const modal = container.querySelector('.modal-edit') as HTMLElement;
     const titleInput = modal.querySelectorAll('input')[0];
@@ -448,7 +549,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     )!;
     expect(createBtn.disabled).toBe(true);
 
-    setInputValue(nameInput, 'Favorites');
+    setInputValue(nameInput, '  Favorites  ');
     expect(createBtn.disabled).toBe(false);
     click(createBtn);
     await settle();
@@ -457,6 +558,28 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     expect(folder.name).toBe('Favorites');
     expect('color' in folder).toBe(false);
     expect(container.querySelector('.modal-category')).toBeNull();
+  });
+
+  it('rejects duplicate folder names case-insensitively', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Favorites' });
+    seedLibrary({ books: [], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+
+    click(container.querySelector('[aria-label="新增文件夹"]')!);
+    await settle();
+
+    const modal = container.querySelector('.modal-category') as HTMLElement;
+    const nameInput = modal.querySelector('input') as HTMLInputElement;
+    const createBtn = Array.from(modal.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === '创建',
+    )!;
+
+    setInputValue(nameInput, 'favorites');
+    expect(createBtn.disabled).toBe(true);
+    click(createBtn);
+    await settle();
+
+    expect(useLibraryStore.getState().library.folders).toHaveLength(1);
   });
 
   it('opens the edit-folder modal pre-filled and commits the rename without adding color', async () => {
@@ -503,6 +626,47 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     expect(container.querySelector('.modal-category')).toBeNull();
     expect(useLibraryStore.getState().library.folders).toHaveLength(0);
   });
+
+  it('deletes a folder after confirmation and moves books to unfiled', async () => {
+    setNextConfirmResult(true);
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+
+    click(container.querySelector('[aria-label="Reading 操作"]')!);
+    await settle();
+    const deleteBtn = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+      (item) => item.textContent?.trim() === '删除文件夹',
+    )!;
+    click(deleteBtn);
+    await settle();
+
+    expect(useLibraryStore.getState().library.folders).toHaveLength(0);
+    expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
+    expect(getConfirmCalls()[0].title).toBe('删除文件夹');
+  });
+
+  it('persists manual folder reorder through sortOrder without moving books', async () => {
+    const folderA = makeFolder({ id: 'folder-a', name: 'Alpha', sortOrder: 0 });
+    const folderB = makeFolder({ id: 'folder-b', name: 'Beta', sortOrder: 1 });
+    const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder-a' });
+    seedLibrary({ books: [book], folders: [folderA, folderB], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    await settle();
+
+    const groups = container.querySelectorAll('.category-filter-group');
+    const { dataTransfer } = dispatchDragEvent(groups[1], 'dragstart');
+    dispatchDragEvent(groups[0], 'dragover', dataTransfer);
+    dispatchDragEvent(groups[0], 'drop', dataTransfer);
+    await settle();
+
+    expect(useLibraryStore.getState().library.folders.map(folder => [folder.id, folder.sortOrder])).toEqual([
+      ['folder-b', 0],
+      ['folder-a', 1],
+    ]);
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder-a');
+  });
 });
 
 describe('Sidebar contract — assign-folder modal', () => {
@@ -512,8 +676,7 @@ describe('Sidebar contract — assign-folder modal', () => {
     seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    click(container.querySelector('.book-action-btn')!);
-    await settle();
+    await clickBookAction(container, 'Unfiled', '移动到文件夹');
 
     const modal = container.querySelector('.modal-assign-category') as HTMLElement;
     const catOption = Array.from(modal.querySelectorAll('button')).find(
@@ -533,8 +696,7 @@ describe('Sidebar contract — assign-folder modal', () => {
     const { container } = mountSidebar();
     await settle();
 
-    click(container.querySelector('.book-action-btn')!);
-    await settle();
+    await clickBookAction(container, 'Filed', '移动到文件夹');
 
     const modal = container.querySelector('.modal-assign-category') as HTMLElement;
     const uncatOption = Array.from(modal.querySelectorAll('button')).find(
@@ -554,8 +716,7 @@ describe('Sidebar contract — assign-folder modal', () => {
     const { container } = mountSidebar();
     await settle();
 
-    click(container.querySelector('.book-action-btn')!);
-    await settle();
+    await clickBookAction(container, 'Original', '移动到文件夹');
 
     click(document.body.querySelector('.category-assign-dialog')!);
     await settle();

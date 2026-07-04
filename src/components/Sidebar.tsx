@@ -20,10 +20,8 @@ import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav
 import { TextInput } from '@astryxdesign/core/TextInput';
 import {
     CloseIcon,
-    EditIcon,
     SettingsIcon,
     SidebarBookIcon as BookIcon,
-    TrashIcon,
 } from './icons/icons';
 import './Sidebar.css';
 
@@ -129,6 +127,10 @@ interface BookGroup {
     isFolder: boolean;
 }
 
+const BOOK_DRAG_TYPE = 'application/x-creader-book-id';
+const FOLDER_DRAG_TYPE = 'application/x-creader-folder-id';
+const FOLDER_AUTO_EXPAND_MS = 500;
+
 function getBookActivity(book: Book, bookProgressById: Record<string, { lastReadAt?: number }>): number {
     return bookProgressById[book.id]?.lastReadAt ?? book.lastReadAt ?? 0;
 }
@@ -152,6 +154,14 @@ function matchesBookSearch(book: Book, query: string): boolean {
 
 function loadExpandedFolderIds(): Set<string> {
     return new Set(loadStored<string[]>(STORAGE_KEYS.libraryOrganizerExpandedFolders, []));
+}
+
+function getBookDragId(event: React.DragEvent): string {
+    return event.dataTransfer.getData(BOOK_DRAG_TYPE);
+}
+
+function getFolderDragId(event: React.DragEvent): string {
+    return event.dataTransfer.getData(FOLDER_DRAG_TYPE);
 }
 
 // Lazy loaded book cover component
@@ -219,6 +229,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const addFolder = useLibraryStore((s) => s.addFolder);
     const removeFolder = useLibraryStore((s) => s.removeFolder);
     const updateFolder = useLibraryStore((s) => s.updateFolder);
+    const reorderFolder = useLibraryStore((s) => s.reorderFolder);
     const setBookFolder = useLibraryStore((s) => s.setBookFolder);
     const bookProgressById = useProgressStore((s) => s.bookProgressById);
     const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
@@ -230,9 +241,11 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const [editingFolder, setEditingFolder] = useState<BookFolder | null>(null);
     const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(loadExpandedFolderIds);
     const [newFolderName, setNewFolderName] = useState('');
+    const [folderNameError, setFolderNameError] = useState('');
     const [bookForFolder, setBookForFolder] = useState<string | null>(null);
     const [bookSearchQuery, setBookSearchQuery] = useState('');
     const hasPrimedCurrentFolderRef = useRef(false);
+    const autoExpandTimerRef = useRef<number | null>(null);
 
     const folders = useMemo(
         () => [...(library.folders || [])].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
@@ -240,6 +253,12 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     );
     const folderIds = useMemo(() => new Set(folders.map(folder => folder.id)), [folders]);
     const hasSearch = bookSearchQuery.trim().length > 0;
+    const trimmedFolderName = newFolderName.trim();
+    const isDuplicateFolderName = folders.some(folder =>
+        folder.id !== editingFolder?.id
+        && folder.name.toLocaleLowerCase() === trimmedFolderName.toLocaleLowerCase(),
+    );
+    const canSubmitFolder = trimmedFolderName.length > 0 && !isDuplicateFolderName;
 
     const orderedBooks = useMemo(
         () => orderBooks(library.books, currentBook, bookProgressById),
@@ -324,6 +343,12 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         });
     }, [folderIds]);
 
+    useEffect(() => () => {
+        if (autoExpandTimerRef.current !== null) {
+            window.clearTimeout(autoExpandTimerRef.current);
+        }
+    }, []);
+
     const toggleFolder = (folderId: string) => {
         setExpandedFolderIds((current) => {
             const next = new Set(current);
@@ -341,9 +366,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         openBookThroughLifecycle({ book });
     };
 
-    const handleDeleteBook = async (e: React.MouseEvent, bookId: string) => {
-        e.stopPropagation();
-
+    const handleDeleteBookAction = async (bookId: string) => {
         const shouldDelete = await confirm({
             title: '移出书库',
             message: '从书库移除这本书？本地 EPUB 文件会保留在磁盘上。',
@@ -356,8 +379,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         }
     };
 
-    const handleEditBook = (e: React.MouseEvent, book: Book) => {
-        e.stopPropagation();
+    const handleEditBookAction = (book: Book) => {
         setBookToEdit({
             id: book.id,
             title: book.title,
@@ -391,12 +413,14 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const handleAddFolder = () => {
         setEditingFolder(null);
         setNewFolderName('');
+        setFolderNameError('');
         setShowFolderModal(true);
     };
 
     const openEditFolder = (folder: BookFolder) => {
         setEditingFolder(folder);
         setNewFolderName(folder.name);
+        setFolderNameError('');
         setShowFolderModal(true);
     };
 
@@ -417,22 +441,29 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     };
 
     const confirmFolderModal = () => {
-        if (!newFolderName.trim()) return;
+        if (!trimmedFolderName) {
+            setFolderNameError('文件夹名称不能为空');
+            return;
+        }
+        if (isDuplicateFolderName) {
+            setFolderNameError('已存在同名文件夹');
+            return;
+        }
 
         if (editingFolder) {
             updateFolder(editingFolder.id, {
-                name: newFolderName.trim(),
+                name: trimmedFolderName,
             });
         } else {
-            addFolder(newFolderName.trim());
+            addFolder(trimmedFolderName);
         }
         setShowFolderModal(false);
         setEditingFolder(null);
         setNewFolderName('');
+        setFolderNameError('');
     };
 
-    const handleSetBookFolder = (e: React.MouseEvent, bookId: string) => {
-        e.stopPropagation();
+    const handleSetBookFolder = (bookId: string) => {
         setBookForFolder(bookId);
     };
 
@@ -443,6 +474,75 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         }
     };
 
+    const clearAutoExpandTimer = () => {
+        if (autoExpandTimerRef.current === null) return;
+        window.clearTimeout(autoExpandTimerRef.current);
+        autoExpandTimerRef.current = null;
+    };
+
+    const expandFolder = (folderId: string) => {
+        setExpandedFolderIds((current) => {
+            if (current.has(folderId)) return current;
+            const next = new Set(current);
+            next.add(folderId);
+            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
+            return next;
+        });
+    };
+
+    const moveBookToFolder = (bookId: string, folderId: string | undefined) => {
+        const book = library.books.find(candidate => candidate.id === bookId);
+        if (!book || book.folderId === folderId) return;
+        setBookFolder(bookId, folderId);
+    };
+
+    const handleBookDragStart = (event: React.DragEvent, book: Book) => {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(BOOK_DRAG_TYPE, book.id);
+    };
+
+    const handleFolderDragStart = (event: React.DragEvent, folder: BookFolder) => {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(FOLDER_DRAG_TYPE, folder.id);
+    };
+
+    const handleFolderDropTargetDragOver = (event: React.DragEvent, folderId: string | undefined) => {
+        if (!getBookDragId(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+
+        if (!folderId || expandedFolderIds.has(folderId) || autoExpandTimerRef.current !== null) return;
+        autoExpandTimerRef.current = window.setTimeout(() => {
+            expandFolder(folderId);
+            autoExpandTimerRef.current = null;
+        }, FOLDER_AUTO_EXPAND_MS);
+    };
+
+    const handleFolderDropTargetDragLeave = () => {
+        clearAutoExpandTimer();
+    };
+
+    const handleFolderDropTargetDrop = (event: React.DragEvent, folderId: string | undefined) => {
+        const bookId = getBookDragId(event);
+        if (!bookId) return;
+        event.preventDefault();
+        clearAutoExpandTimer();
+        moveBookToFolder(bookId, folderId);
+    };
+
+    const handleFolderReorderDragOver = (event: React.DragEvent) => {
+        if (!getFolderDragId(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+    };
+
+    const handleFolderReorderDrop = (event: React.DragEvent, targetFolderId: string) => {
+        const sourceFolderId = getFolderDragId(event);
+        if (!sourceFolderId || sourceFolderId === targetFolderId) return;
+        event.preventDefault();
+        reorderFolder(sourceFolderId, targetFolderId);
+    };
+
     const renderBookItem = (book: Book) => {
         const percentage = bookProgressById[book.id]?.percentage ?? book.progress.percentage;
         return (
@@ -451,6 +551,8 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 className={`book-item ${currentBook?.id === book.id ? 'active' : ''}`}
                 onMouseEnter={() => void onPreloadReader()}
                 onClick={() => handleBookClick(book)}
+                draggable
+                onDragStart={(event) => handleBookDragStart(event, book)}
                 isSelected={currentBook?.id === book.id}
                 startContent={<LazyBookCover book={book} />}
                 label={
@@ -478,27 +580,15 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 }
                 endContent={
                     <span className="book-actions">
-                        <button
-                            className="btn btn-ghost btn-icon book-action-btn"
-                            onClick={(e) => handleSetBookFolder(e, book.id)}
-                            aria-label="设置文件夹"
-                        >
-                            <Icon icon={AstryxFolderIcon} size="sm" />
-                        </button>
-                        <button
-                            className="btn btn-ghost btn-icon book-edit"
-                            onClick={(e) => handleEditBook(e, book)}
-                            aria-label="编辑书籍信息"
-                        >
-                            <EditIcon />
-                        </button>
-                        <button
-                            className="btn btn-ghost btn-icon book-delete"
-                            onClick={(e) => handleDeleteBook(e, book.id)}
-                            aria-label="移除书籍"
-                        >
-                            <TrashIcon />
-                        </button>
+                        <MoreMenu
+                            label={`${book.title} 操作`}
+                            size="sm"
+                            items={[
+                                { label: '移动到文件夹', icon: AstryxFolderIcon, onClick: () => handleSetBookFolder(book.id) },
+                                { label: '编辑书籍信息', icon: AstryxEditIcon, onClick: () => handleEditBookAction(book) },
+                                { label: '移除书籍', icon: AstryxTrashIcon, onClick: () => void handleDeleteBookAction(book.id) },
+                            ]}
+                        />
                     </span>
                 }
             />
@@ -595,11 +685,15 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     id="category-name"
                                     label="名称"
                                     value={newFolderName}
-                                    onChange={setNewFolderName}
+                                    onChange={(value) => {
+                                        setNewFolderName(value);
+                                        setFolderNameError('');
+                                    }}
                                     onKeyDown={e => e.key === 'Enter' && confirmFolderModal()}
                                     placeholder="文件夹名称"
                                     hasAutoFocus
                                 />
+                                {folderNameError && <p className="folder-name-error" role="alert">{folderNameError}</p>}
                             </div>
                             <div className="modal-actions">
                                 <Button variant="secondary" label="取消" onClick={() => setShowFolderModal(false)} />
@@ -607,7 +701,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     variant="primary"
                                     label={editingFolder ? '保存' : '创建'}
                                     onClick={confirmFolderModal}
-                                    isDisabled={!newFolderName.trim()}
+                                    isDisabled={!canSubmitFolder}
                                 />
                             </div>
                         </LayoutContent>
@@ -739,15 +833,36 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                             onClick={() => setSelectedView('all')}
                             endContent={<span className="category-filter-count">{library.books.length}</span>}
                         />
-                        <SideNavItem
-                            label="未归档"
-                            icon={AstryxMutedDotIcon}
-                            isSelected={selectedView === 'unfiled'}
-                            onClick={() => setSelectedView('unfiled')}
-                            endContent={<span className="category-filter-count">{groupedBooks.unfiled.length}</span>}
-                        />
+                        <div
+                            className="category-drop-target"
+                            onDragOver={(event) => handleFolderDropTargetDragOver(event, undefined)}
+                            onDragLeave={handleFolderDropTargetDragLeave}
+                            onDrop={(event) => handleFolderDropTargetDrop(event, undefined)}
+                        >
+                            <SideNavItem
+                                label="未归档"
+                                icon={AstryxMutedDotIcon}
+                                isSelected={selectedView === 'unfiled'}
+                                onClick={() => setSelectedView('unfiled')}
+                                endContent={<span className="category-filter-count">{groupedBooks.unfiled.length}</span>}
+                            />
+                        </div>
                         {folders.map(folder => (
-                            <div key={folder.id} className="category-filter-group">
+                            <div
+                                key={folder.id}
+                                className="category-filter-group"
+                                draggable
+                                onDragStart={(event) => handleFolderDragStart(event, folder)}
+                                onDragOver={(event) => {
+                                    handleFolderDropTargetDragOver(event, folder.id);
+                                    handleFolderReorderDragOver(event);
+                                }}
+                                onDragLeave={handleFolderDropTargetDragLeave}
+                                onDrop={(event) => {
+                                    handleFolderDropTargetDrop(event, folder.id);
+                                    handleFolderReorderDrop(event, folder.id);
+                                }}
+                            >
                                 <SideNavItem
                                     label={folder.name}
                                     icon={AstryxFolderIcon}
@@ -811,6 +926,9 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                 <section key={group.id} className="organizer-group">
                                     <button
                                         className={`organizer-group-header ${isExpanded ? 'expanded' : ''}`}
+                                        onDragOver={(event) => handleFolderDropTargetDragOver(event, group.isFolder ? group.id : undefined)}
+                                        onDragLeave={handleFolderDropTargetDragLeave}
+                                        onDrop={(event) => handleFolderDropTargetDrop(event, group.isFolder ? group.id : undefined)}
                                         onClick={() => {
                                             if (group.isFolder && !hasSearch) {
                                                 toggleFolder(group.id);

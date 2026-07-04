@@ -177,6 +177,18 @@
     gap: 4px;
 }
 
+.category-filter-group[draggable="true"] {
+    cursor: grab;
+}
+
+.category-filter-group[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.category-drop-target {
+    border-radius: 6px;
+}
+
 .category-filter-group .category-actions {
     display: flex;
     align-items: center;
@@ -267,6 +279,13 @@
     color: var(--text-primary);
 }
 
+.organizer-group-header:focus-visible,
+.category-drop-target:focus-within,
+.category-filter-group:focus-within {
+    outline: 2px solid var(--border-accent);
+    outline-offset: 2px;
+}
+
 .organizer-group-header.expanded {
     color: var(--text-primary);
 }
@@ -301,6 +320,14 @@
     border: 1px solid transparent;
     border-radius: 8px;
     transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.book-item[draggable="true"] {
+    cursor: grab;
+}
+
+.book-item[draggable="true"]:active {
+    cursor: grabbing;
 }
 
 .book-item:hover {
@@ -442,39 +469,17 @@
     pointer-events: auto;
 }
 
-.book-actions button {
+.book-actions .astryx-button {
+    color: var(--text-secondary) !important;
+    background: color-mix(in srgb, var(--bg-elevated) 86%, transparent) !important;
+    border: 1px solid var(--border-soft) !important;
     pointer-events: auto;
 }
 
-.book-delete,
-.book-edit,
-.book-action-btn {
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    color: var(--text-secondary);
-    background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
-    border: 1px solid var(--border-soft);
-    border-radius: 6px;
-}
-
-.book-delete svg,
-.book-edit svg,
-.book-action-btn svg {
-    width: 14px;
-    height: 14px;
-}
-
-.book-delete:hover {
-    color: var(--error);
-    background: var(--bg-control-hover);
-}
-
-.book-edit:hover,
-.book-action-btn:hover {
-    color: var(--accent);
-    background: var(--bg-control-hover);
-    border-color: var(--border-primary);
+.book-actions .astryx-button:hover {
+    color: var(--accent) !important;
+    background: var(--bg-control-hover) !important;
+    border-color: var(--border-primary) !important;
 }
 
 dialog.sidebar-dialog {
@@ -556,6 +561,13 @@ dialog.sidebar-dialog::backdrop {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
+}
+
+.folder-name-error {
+    margin: calc(var(--spacing-1, 4px) * -1) 0 0;
+    color: var(--error);
+    font-size: var(--text-xs);
+    line-height: 1.3;
 }
 
 .sidebar-dialog .modal-actions {

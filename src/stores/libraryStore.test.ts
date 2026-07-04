@@ -160,4 +160,37 @@ describe('libraryStore pure state transitions', () => {
 
     vi.restoreAllMocks();
   });
+
+  it('reorders folders by rewriting persisted sortOrder only', async () => {
+    const folderA = { id: 'folder-a', name: 'Alpha', sortOrder: 0, createdAt: 1 };
+    const folderB = { id: 'folder-b', name: 'Beta', sortOrder: 1, createdAt: 2 };
+    const folderC = { id: 'folder-c', name: 'Gamma', sortOrder: 2, createdAt: 3 };
+    const book: Book = {
+      id: 'b1',
+      title: 'Book',
+      author: 'Author',
+      filePath: '/tmp/book.epub',
+      addedAt: 1,
+      progress: { currentCfi: '', percentage: 0 },
+      folderId: 'folder-b',
+    };
+    localStorage.setItem(
+      STORAGE_KEYS.library,
+      JSON.stringify({
+        v: 1,
+        data: { books: [book], folders: [folderA, folderB, folderC], lastUpdated: 1 },
+      }),
+    );
+
+    const { useLibraryStore } = await loadFreshStores();
+
+    useLibraryStore.getState().reorderFolder('folder-c', 'folder-a');
+
+    expect(useLibraryStore.getState().library.folders.map(folder => [folder.id, folder.sortOrder])).toEqual([
+      ['folder-c', 0],
+      ['folder-a', 1],
+      ['folder-b', 2],
+    ]);
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder-b');
+  });
 });

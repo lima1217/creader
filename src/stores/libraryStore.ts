@@ -38,6 +38,7 @@ type LibraryState = {
   addFolder: (name: string) => BookFolder;
   removeFolder: (id: string) => void;
   updateFolder: (id: string, updates: Partial<Pick<BookFolder, 'name' | 'sortOrder'>>) => void;
+  reorderFolder: (sourceId: string, targetId: string) => void;
   setBookFolder: (bookId: string, folderId: string | undefined) => void;
   currentBook: Book | null;
   /** Pure setter. User open-book flows should use App Lifecycle orchestration. */
@@ -172,7 +173,35 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     set({ library: next });
   },
 
+  reorderFolder: (sourceId, targetId) => {
+    if (sourceId === targetId) return;
+
+    const orderedFolders = [...latestLibrary.folders]
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+    const sourceIndex = orderedFolders.findIndex(folder => folder.id === sourceId);
+    const targetIndex = orderedFolders.findIndex(folder => folder.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+
+    const [source] = orderedFolders.splice(sourceIndex, 1);
+    orderedFolders.splice(targetIndex, 0, source);
+
+    const nextFolders = orderedFolders.map((folder, index) => ({
+      ...folder,
+      sortOrder: index,
+    }));
+    const next: Library = {
+      ...latestLibrary,
+      folders: nextFolders,
+      lastUpdated: Date.now(),
+    };
+    syncLibrary(next);
+    set({ library: next });
+  },
+
   setBookFolder: (bookId, folderId) => {
+    const book = latestLibrary.books.find((b) => b.id === bookId);
+    if (!book || book.folderId === folderId) return;
+
     const next: Library = {
       ...latestLibrary,
       books: latestLibrary.books.map((b) => (b.id === bookId ? { ...b, folderId } : b)),
