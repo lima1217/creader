@@ -38,16 +38,3 @@ export const CHAPTER_EXTRACT_INTERVAL_MS = 1000;
 
 /** Minimum percentage change to trigger progress update */
 export const PROGRESS_UPDATE_THRESHOLD_PERCENT = 1;
-
-// ============================================
-// Category Colors
-// ============================================
-
-/** Preset colors available for book categories */
-export const CATEGORY_COLORS = [
-    '#EF4444', '#F97316', '#F59E0B', '#84CC16', '#22C55E',
-    '#14B8A6', '#06B6D4', '#3B82F6', '#6366F1', '#A855F7',
-    '#EC4899', '#78716C'
-] as const;
-
-export type CategoryColor = typeof CATEGORY_COLORS[number];

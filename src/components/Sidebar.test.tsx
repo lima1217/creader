@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Book, BookCategory, Library } from '../types';
+import type { Book, BookFolder, Library } from '../types';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useProgressStore } from '../stores/progressStore';
 import { useUIStore } from '../stores/uiStore';
@@ -19,7 +19,7 @@ import {
  * These lock Sidebar's behavior against its CURRENT JSX before any Astryx
  * migration (slices #27–#30). The point of this slice is the safety net: when
  * a `List`/`SideNav`/`Dialog` swaps in, these tests must stay green because
- * they assert owned behavior (store interactions, modal open/close, category
+ * they assert owned behavior (store interactions, modal open/close, folder
  * filtering, click handlers, confirm gating), never Astryx internals.
  *
  * Test style follows the Phase 1 contract-mock precedent (`AppDialog.test.tsx`)
@@ -98,14 +98,14 @@ function makeBook(overrides: Partial<Book> = {}): Book {
   };
 }
 
-function makeCategory(overrides: Partial<BookCategory> = {}): BookCategory {
-  return { id: 'cat1', name: 'Reading', color: '#ff0000', createdAt: 1, ...overrides };
+function makeFolder(overrides: Partial<BookFolder> = {}): BookFolder {
+  return { id: 'folder1', name: 'Reading', sortOrder: 0, createdAt: 1, ...overrides };
 }
 
 /**
  * Seed the library via the store's own setLibrary path (not raw setState): the
  * library store keeps a module-level `latestLibrary` mirror (updated via
- * syncLibrary) that mutators like updateBook/setBookCategory read through
+ * syncLibrary) that mutators like updateBook/setBookFolder read through
  * getLatestLibrary(). setLibrary keeps both in sync; a raw setState would leave
  * latestLibrary stale and silently drop mutations.
  */
@@ -130,14 +130,14 @@ function mountSidebar(handlers: Handlers = {}) {
   );
 }
 
-// Expand the tags section so category children render, then return the child
+// Expand the folders section so folder children render, then return the child
 // node matching the given name. The click is async (React re-render), so the
 // caller awaits this and searches after the settle.
-async function expandTagsAndFindChild(container: HTMLElement, name: string): Promise<HTMLElement> {
-  const tagsToggle = Array.from(container.querySelectorAll('button')).find(
-    (el) => el.textContent?.includes('标签'),
+async function expandFoldersAndFindChild(container: HTMLElement, name: string): Promise<HTMLElement> {
+  const foldersToggle = Array.from(container.querySelectorAll('button')).find(
+    (el) => el.textContent?.includes('文件夹'),
   ) as HTMLElement;
-  click(tagsToggle);
+  click(foldersToggle);
   await settle();
   const child = Array.from(container.querySelectorAll('button')).find(
     (el) => el.textContent?.includes(name),
@@ -152,7 +152,7 @@ beforeEach(() => {
   installDialogElementStub();
   resetConfirmState();
   useLibraryStore.setState({
-    library: { books: [], categories: [], lastUpdated: 1 },
+    library: { books: [], folders: [], lastUpdated: 1 },
     currentBook: null,
   });
   useProgressStore.setState({ bookProgressById: {} });
@@ -169,7 +169,7 @@ describe('Sidebar contract — rendering', () => {
   });
 
   it('renders the empty state when the library has no books', () => {
-    seedLibrary({ books: [], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     expect(container.textContent).toContain('还没有书籍');
   });
@@ -177,7 +177,7 @@ describe('Sidebar contract — rendering', () => {
   it('renders the book list from the seeded library', () => {
     seedLibrary({
       books: [makeBook({ id: 'b1', title: 'Solitude' }), makeBook({ id: 'b2', title: 'Walden' })],
-      categories: [],
+      folders: [],
       lastUpdated: 1,
     });
     const { container } = mountSidebar();
@@ -189,7 +189,7 @@ describe('Sidebar contract — rendering', () => {
   it('marks the current book as active in the list', () => {
     const book = makeBook({ id: 'b1', title: 'Active' });
     const other = makeBook({ id: 'b2', title: 'Other' });
-    seedLibrary({ books: [book, other], categories: [], lastUpdated: 1 }, book);
+    seedLibrary({ books: [book, other], folders: [], lastUpdated: 1 }, book);
     const { container } = mountSidebar();
     const activeItem = container.querySelector('.book-item.active') as HTMLElement | null;
     expect(activeItem).not.toBeNull();
@@ -200,7 +200,7 @@ describe('Sidebar contract — rendering', () => {
 describe('Sidebar contract — book interactions', () => {
   it('calls setCurrentBook when a book item is clicked', async () => {
     const book = makeBook({ id: 'b1', title: 'Click Me' });
-    seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     expect(useLibraryStore.getState().currentBook).toBeNull();
     click(container.querySelector('.book-item')!);
@@ -210,7 +210,7 @@ describe('Sidebar contract — book interactions', () => {
 
   it('removes a book when the delete confirm is accepted', async () => {
     setNextConfirmResult(true);
-    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Delete Me' })], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Delete Me' })], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     click(container.querySelector('.book-delete')!);
     await settle();
@@ -220,7 +220,7 @@ describe('Sidebar contract — book interactions', () => {
 
   it('keeps the book when the delete confirm is cancelled', async () => {
     setNextConfirmResult(false);
-    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Keep Me' })], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Keep Me' })], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     click(container.querySelector('.book-delete')!);
     await settle();
@@ -229,7 +229,7 @@ describe('Sidebar contract — book interactions', () => {
 
   it('invokes onImportBook when the empty-state import button is clicked', () => {
     const onImportBook = vi.fn();
-    seedLibrary({ books: [], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar({ onImportBook });
     const importBtn = Array.from(container.querySelectorAll('button')).find(
       (b) => b.textContent?.includes('导入书籍'),
@@ -240,7 +240,7 @@ describe('Sidebar contract — book interactions', () => {
 
   it('invokes onImportBook when the header import button is clicked', () => {
     const onImportBook = vi.fn();
-    seedLibrary({ books: [makeBook()], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [makeBook()], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar({ onImportBook });
     const importBtn = container.querySelector('[aria-label="导入 EPUB"]') as HTMLButtonElement;
     click(importBtn);
@@ -249,7 +249,7 @@ describe('Sidebar contract — book interactions', () => {
 
   it('invokes onOpenSettings when the settings footer button is clicked', () => {
     const onOpenSettings = vi.fn();
-    seedLibrary({ books: [makeBook()], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [makeBook()], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar({ onOpenSettings });
     const settingsBtn = container.querySelector('.sidebar-settings-btn') as HTMLButtonElement;
     click(settingsBtn);
@@ -257,21 +257,21 @@ describe('Sidebar contract — book interactions', () => {
   });
 });
 
-describe('Sidebar contract — category nav', () => {
-  it('filters the book list when a category is selected', async () => {
-    const cat = makeCategory({ id: 'cat1', name: 'Reading' });
-    const inCat = makeBook({ id: 'b1', title: 'In Category', categoryId: 'cat1' });
-    const outCat = makeBook({ id: 'b2', title: 'Outside' });
-    seedLibrary({ books: [inCat, outCat], categories: [cat], lastUpdated: 1 });
+describe('Sidebar contract — folder nav', () => {
+  it('filters the book list when a folder is selected', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const inFolder = makeBook({ id: 'b1', title: 'In Folder', folderId: 'folder1' });
+    const outFolder = makeBook({ id: 'b2', title: 'Outside' });
+    seedLibrary({ books: [inFolder, outFolder], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
-    expect(container.textContent).toContain('In Category');
+    expect(container.textContent).toContain('In Folder');
     expect(container.textContent).toContain('Outside');
 
-    const readingChild = await expandTagsAndFindChild(container, 'Reading');
+    const readingChild = await expandFoldersAndFindChild(container, 'Reading');
     click(readingChild);
     await settle();
 
-    expect(container.textContent).toContain('In Category');
+    expect(container.textContent).toContain('In Folder');
     expect(container.textContent).not.toContain('Outside');
   });
 });
@@ -279,7 +279,7 @@ describe('Sidebar contract — category nav', () => {
 describe('Sidebar contract — edit-book modal', () => {
   it('opens from the edit action and commits the edited title/author on save', async () => {
     const book = makeBook({ id: 'b1', title: 'Old Title', author: 'Old Author' });
-    seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     expect(container.querySelector('.modal-edit')).toBeNull();
 
@@ -307,7 +307,7 @@ describe('Sidebar contract — edit-book modal', () => {
 
   it('closes without mutating the store when the cancel button is clicked', async () => {
     const book = makeBook({ id: 'b1', title: 'Keep' });
-    seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     click(container.querySelector('.book-edit')!);
     await settle();
@@ -323,7 +323,7 @@ describe('Sidebar contract — edit-book modal', () => {
 
   it('closes without mutating the store when the overlay is clicked', async () => {
     const book = makeBook({ id: 'b1', title: 'Keep' });
-    seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     click(container.querySelector('.book-edit')!);
     await settle();
@@ -338,7 +338,7 @@ describe('Sidebar contract — edit-book modal', () => {
 
   it('submits on Enter and cancels on Escape while focused in an input', async () => {
     const book = makeBook({ id: 'b1', title: 'Old' });
-    seedLibrary({ books: [book], categories: [], lastUpdated: 1 });
+    seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     click(container.querySelector('.book-edit')!);
     await settle();
@@ -356,13 +356,13 @@ describe('Sidebar contract — edit-book modal', () => {
   });
 });
 
-describe('Sidebar contract — category modal (add + edit)', () => {
-  it('disables the create button when the name is empty and creates (name + color) when filled', async () => {
-    seedLibrary({ books: [], categories: [], lastUpdated: 1 });
+describe('Sidebar contract — folder modal (add + edit)', () => {
+  it('disables the create button when the name is empty and creates a colorless folder when filled', async () => {
+    seedLibrary({ books: [], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     expect(container.querySelector('.modal-category')).toBeNull();
 
-    click(container.querySelector('[aria-label="新增标签"]')!);
+    click(container.querySelector('[aria-label="新增文件夹"]')!);
     await settle();
 
     const modal = container.querySelector('.modal-category') as HTMLElement;
@@ -374,33 +374,25 @@ describe('Sidebar contract — category modal (add + edit)', () => {
 
     setInputValue(nameInput, 'Favorites');
     expect(createBtn.disabled).toBe(false);
-    // Pick a specific color option so we can assert it landed in the store.
-    const colorOptions = modal.querySelectorAll('.color-option');
-    const chosen = colorOptions[1] as HTMLElement;
-    click(chosen);
-    const chosenColor = (chosen as HTMLElement).style.backgroundColor;
     click(createBtn);
     await settle();
 
-    const cat = useLibraryStore.getState().library.categories[0];
-    expect(cat.name).toBe('Favorites');
-    expect(cat.color).toBeDefined();
-    // The color-option buttons carry the chosen color as inline background.
-    expect(chosenColor).not.toBe('');
+    const folder = useLibraryStore.getState().library.folders[0];
+    expect(folder.name).toBe('Favorites');
+    expect('color' in folder).toBe(false);
     expect(container.querySelector('.modal-category')).toBeNull();
   });
 
-  it('opens the edit-category modal pre-filled and commits the rename', async () => {
-    const cat = makeCategory({ id: 'cat1', name: 'Old Name', color: '#00ff00' });
-    seedLibrary({ books: [], categories: [cat], lastUpdated: 1 });
+  it('opens the edit-folder modal pre-filled and commits the rename without adding color', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Old Name' });
+    seedLibrary({ books: [], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    // Expand tags, then open the category's MoreMenu edit action.
-    await expandTagsAndFindChild(container, 'Old Name');
+    await expandFoldersAndFindChild(container, 'Old Name');
     click(container.querySelector('[aria-label="Old Name 操作"]')!);
     await settle();
     const editBtn = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.trim() === '编辑分类',
+      (item) => item.textContent?.trim() === '编辑文件夹',
     )!;
     click(editBtn);
     await settle();
@@ -417,32 +409,31 @@ describe('Sidebar contract — category modal (add + edit)', () => {
     click(saveBtn);
     await settle();
 
-    const updated = useLibraryStore.getState().library.categories[0];
+    const updated = useLibraryStore.getState().library.folders[0];
     expect(updated.name).toBe('New Name');
-    // Color is preserved when only the name changed.
-    expect(updated.color).toBe('#00ff00');
+    expect('color' in updated).toBe(false);
     expect(container.querySelector('.modal-category')).toBeNull();
   });
 
-  it('closes when the overlay is clicked without creating a category', async () => {
-    seedLibrary({ books: [], categories: [], lastUpdated: 1 });
+  it('closes when the overlay is clicked without creating a folder', async () => {
+    seedLibrary({ books: [], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    click(container.querySelector('[aria-label="新增标签"]')!);
+    click(container.querySelector('[aria-label="新增文件夹"]')!);
     await settle();
 
     click(container.querySelector('.modal-overlay')!);
     await settle();
 
     expect(container.querySelector('.modal-category')).toBeNull();
-    expect(useLibraryStore.getState().library.categories).toHaveLength(0);
+    expect(useLibraryStore.getState().library.folders).toHaveLength(0);
   });
 });
 
-describe('Sidebar contract — assign-category modal', () => {
-  it('assigns a category to a book and closes', async () => {
-    const cat = makeCategory({ id: 'cat1', name: 'Reading' });
-    const book = makeBook({ id: 'b1', title: 'Uncategorized' });
-    seedLibrary({ books: [book], categories: [cat], lastUpdated: 1 });
+describe('Sidebar contract — assign-folder modal', () => {
+  it('assigns a folder to a book and closes', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Unfiled' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
     click(container.querySelector('.book-action-btn')!);
@@ -455,14 +446,14 @@ describe('Sidebar contract — assign-category modal', () => {
     click(catOption);
     await settle();
 
-    expect(useLibraryStore.getState().library.books[0].categoryId).toBe('cat1');
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
     expect(container.querySelector('.modal-assign-category')).toBeNull();
   });
 
-  it('clears the book category when "不分类" is selected', async () => {
-    const cat = makeCategory({ id: 'cat1', name: 'Reading' });
-    const book = makeBook({ id: 'b1', title: 'Categorized', categoryId: 'cat1' });
-    seedLibrary({ books: [book], categories: [cat], lastUpdated: 1 });
+  it('clears the book folder when "未归档" is selected', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
     click(container.querySelector('.book-action-btn')!);
@@ -470,19 +461,19 @@ describe('Sidebar contract — assign-category modal', () => {
 
     const modal = container.querySelector('.modal-assign-category') as HTMLElement;
     const uncatOption = Array.from(modal.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === '不分类',
+      (b) => b.textContent?.trim() === '未归档',
     )!;
     click(uncatOption);
     await settle();
 
-    expect(useLibraryStore.getState().library.books[0].categoryId).toBeUndefined();
+    expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
     expect(container.querySelector('.modal-assign-category')).toBeNull();
   });
 
   it('closes without changing the book when the overlay is clicked', async () => {
-    const cat = makeCategory({ id: 'cat1', name: 'Reading' });
-    const book = makeBook({ id: 'b1', title: 'Original', categoryId: 'cat1' });
-    seedLibrary({ books: [book], categories: [cat], lastUpdated: 1 });
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Original', folderId: 'folder1' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
     click(container.querySelector('.book-action-btn')!);
@@ -491,7 +482,7 @@ describe('Sidebar contract — assign-category modal', () => {
     click(document.body.querySelector('.category-assign-dialog')!);
     await settle();
 
-    expect(useLibraryStore.getState().library.books[0].categoryId).toBe('cat1');
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
     expect(container.querySelector('.modal-assign-category')).toBeNull();
   });
 });

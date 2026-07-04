@@ -3,9 +3,8 @@ import type { SVGProps } from 'react';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useUIStore } from '../stores/uiStore';
 import { useProgressStore } from '../stores/progressStore';
-import type { Book, BookCategory } from '../types';
+import type { Book, BookFolder } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
-import { CATEGORY_COLORS } from '../constants';
 import { useAppDialog } from './AppDialog';
 import { openBookThroughLifecycle, removeBookThroughLifecycle } from '../appLifecycle';
 import { Button } from '@astryxdesign/core/Button';
@@ -23,7 +22,6 @@ import {
     EditIcon,
     SettingsIcon,
     SidebarBookIcon as BookIcon,
-    TagIcon,
     TrashIcon,
 } from './icons/icons';
 import './Sidebar.css';
@@ -63,15 +61,6 @@ function AstryxBookIcon(props: SVGProps<SVGSVGElement>) {
     );
 }
 
-function AstryxTagIcon(props: SVGProps<SVGSVGElement>) {
-    return (
-        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3H4v5.59A2 2 0 0 0 4.59 10l9.58 9.59a2 2 0 0 0 2.83 0l3.59-3.59a2 2 0 0 0 0-2.83z" />
-            <circle cx="7.5" cy="6.5" r="1" />
-        </svg>
-    );
-}
-
 function AstryxEditIcon(props: SVGProps<SVGSVGElement>) {
     return (
         <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -99,16 +88,6 @@ function AstryxMutedDotIcon(props: SVGProps<SVGSVGElement>) {
             <circle cx="12" cy="12" r="5" />
         </svg>
     );
-}
-
-function makeCategoryDotIcon(color: string) {
-    return function AstryxCategoryDotIcon(props: SVGProps<SVGSVGElement>) {
-        return (
-            <svg {...props} viewBox="0 0 24 24" fill={color}>
-                <circle cx="12" cy="12" r="5" />
-            </svg>
-        );
-    };
 }
 
 interface SidebarProps {
@@ -185,59 +164,55 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const library = useLibraryStore((s) => s.library);
     const currentBook = useLibraryStore((s) => s.currentBook);
     const updateBook = useLibraryStore((s) => s.updateBook);
-    const addCategory = useLibraryStore((s) => s.addCategory);
-    const removeCategory = useLibraryStore((s) => s.removeCategory);
-    const updateCategory = useLibraryStore((s) => s.updateCategory);
-    const setBookCategory = useLibraryStore((s) => s.setBookCategory);
+    const addFolder = useLibraryStore((s) => s.addFolder);
+    const removeFolder = useLibraryStore((s) => s.removeFolder);
+    const updateFolder = useLibraryStore((s) => s.updateFolder);
+    const setBookFolder = useLibraryStore((s) => s.setBookFolder);
     const bookProgressById = useProgressStore((s) => s.bookProgressById);
     const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
     const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
     const [bookToEdit, setBookToEdit] = useState<EditBookState | null>(null);
-    const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-    const [showCategoryModal, setShowCategoryModal] = useState(false);
-    const [editingCategory, setEditingCategory] = useState<BookCategory | null>(null);
-    const [isTagsOpen, setTagsOpen] = useState(false);
-    const [newCategoryName, setNewCategoryName] = useState('');
-    const [newCategoryColor, setNewCategoryColor] = useState<string>(CATEGORY_COLORS[0]);
-    const [bookForCategory, setBookForCategory] = useState<string | null>(null);
+    const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+    const [showFolderModal, setShowFolderModal] = useState(false);
+    const [editingFolder, setEditingFolder] = useState<BookFolder | null>(null);
+    const [isFoldersOpen, setFoldersOpen] = useState(false);
+    const [newFolderName, setNewFolderName] = useState('');
+    const [bookForFolder, setBookForFolder] = useState<string | null>(null);
 
-    // Safely access categories with fallback
-    const categories = library.categories || [];
+    const folders = library.folders || [];
 
-    // Group books by category
+    // Group books by folder
     const groupedBooks = useMemo(() => {
         const groups: Record<string, Book[]> = {
-            uncategorized: []
+            unfiled: []
         };
 
-        // Initialize groups for each category
-        categories.forEach(cat => {
-            groups[cat.id] = [];
+        folders.forEach(folder => {
+            groups[folder.id] = [];
         });
 
-        // Distribute books
         library.books.forEach(book => {
-            if (book.categoryId && groups[book.categoryId]) {
-                groups[book.categoryId].push(book);
+            if (book.folderId && groups[book.folderId]) {
+                groups[book.folderId].push(book);
             } else {
-                groups.uncategorized.push(book);
+                groups.unfiled.push(book);
             }
         });
 
         return groups;
-    }, [library.books, categories]);
+    }, [library.books, folders]);
 
-    // Filter books based on selected category
+    // Filter books based on selected folder
     const filteredBooks = useMemo(() => {
         let books: Book[];
 
-        if (!selectedCategoryId || selectedCategoryId === 'all') {
+        if (!selectedFolderId || selectedFolderId === 'all') {
             books = library.books;
-        } else if (selectedCategoryId === 'uncategorized') {
-            books = library.books.filter(b => !b.categoryId);
+        } else if (selectedFolderId === 'unfiled') {
+            books = library.books.filter(b => !b.folderId);
         } else {
-            books = library.books.filter(b => b.categoryId === selectedCategoryId);
+            books = library.books.filter(b => b.folderId === selectedFolderId);
         }
 
         // Order by most-recently-read first. lastReadAt is bumped both when the
@@ -257,7 +232,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         const nextBooks = [...ordered];
         const [activeBook] = nextBooks.splice(currentBookIndex, 1);
         return [activeBook, ...nextBooks];
-    }, [currentBook, library.books, selectedCategoryId, bookProgressById]);
+    }, [currentBook, library.books, selectedFolderId, bookProgressById]);
 
     const handleBookClick = (book: Book) => {
         openBookThroughLifecycle({ book });
@@ -310,66 +285,63 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         }
     };
 
-    const handleAddCategory = () => {
-        setEditingCategory(null);
-        setNewCategoryName('');
-        setNewCategoryColor(CATEGORY_COLORS[Math.floor(Math.random() * CATEGORY_COLORS.length)]);
-        setShowCategoryModal(true);
+    const handleAddFolder = () => {
+        setEditingFolder(null);
+        setNewFolderName('');
+        setShowFolderModal(true);
     };
 
-    const openEditCategory = (category: BookCategory) => {
-        setEditingCategory(category);
-        setNewCategoryName(category.name);
-        setNewCategoryColor(category.color);
-        setShowCategoryModal(true);
+    const openEditFolder = (folder: BookFolder) => {
+        setEditingFolder(folder);
+        setNewFolderName(folder.name);
+        setShowFolderModal(true);
     };
 
-    const handleDeleteCategoryAction = async (categoryId: string) => {
+    const handleDeleteFolderAction = async (folderId: string) => {
         const shouldDelete = await confirm({
-            title: 'Delete category',
-            message: 'Books in this category will become uncategorized.',
-            confirmLabel: 'Delete',
+            title: '删除文件夹',
+            message: '这个文件夹里的书会回到未归档。',
+            confirmLabel: '删除',
             tone: 'danger',
         });
 
         if (shouldDelete) {
-            removeCategory(categoryId);
-            if (selectedCategoryId === categoryId) {
-                setSelectedCategoryId(null);
+            removeFolder(folderId);
+            if (selectedFolderId === folderId) {
+                setSelectedFolderId(null);
             }
         }
     };
 
-    const confirmCategoryModal = () => {
-        if (!newCategoryName.trim()) return;
+    const confirmFolderModal = () => {
+        if (!newFolderName.trim()) return;
 
-        if (editingCategory) {
-            updateCategory(editingCategory.id, {
-                name: newCategoryName.trim(),
-                color: newCategoryColor
+        if (editingFolder) {
+            updateFolder(editingFolder.id, {
+                name: newFolderName.trim(),
             });
         } else {
-            addCategory(newCategoryName.trim(), newCategoryColor);
+            addFolder(newFolderName.trim());
         }
-        setShowCategoryModal(false);
-        setEditingCategory(null);
-        setNewCategoryName('');
+        setShowFolderModal(false);
+        setEditingFolder(null);
+        setNewFolderName('');
     };
 
-    const handleSetBookCategory = (e: React.MouseEvent, bookId: string) => {
+    const handleSetBookFolder = (e: React.MouseEvent, bookId: string) => {
         e.stopPropagation();
-        setBookForCategory(bookId);
+        setBookForFolder(bookId);
     };
 
-    const confirmBookCategory = (categoryId: string | undefined) => {
-        if (bookForCategory) {
-            setBookCategory(bookForCategory, categoryId);
-            setBookForCategory(null);
+    const confirmBookFolder = (folderId: string | undefined) => {
+        if (bookForFolder) {
+            setBookFolder(bookForFolder, folderId);
+            setBookForFolder(null);
         }
     };
 
-    const bookForCategoryRecord = bookForCategory ? library.books.find(book => book.id === bookForCategory) : null;
-    const assignedCategoryId = bookForCategoryRecord?.categoryId;
+    const bookForFolderRecord = bookForFolder ? library.books.find(book => book.id === bookForFolder) : null;
+    const assignedFolderId = bookForFolderRecord?.folderId;
 
     if (!isSidebarOpen) return null;
 
@@ -428,11 +400,11 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 </Dialog>
             )}
 
-            {/* Category Modal */}
-            {showCategoryModal && (
+            {/* Folder Modal */}
+            {showFolderModal && (
                 <Dialog
-                    isOpen={showCategoryModal}
-                    onOpenChange={(open) => { if (!open) setShowCategoryModal(false); }}
+                    isOpen={showFolderModal}
+                    onOpenChange={(open) => { if (!open) setShowFolderModal(false); }}
                     width={450}
                     purpose="info"
                     className="modal-overlay sidebar-dialog"
@@ -440,7 +412,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     <Layout height="auto" className="sidebar-dialog-layout modal-category">
                         <DialogHeader
                             className="sidebar-dialog-header"
-                            title={editingCategory ? '编辑分类' : '新建分类'}
+                            title={editingFolder ? '编辑文件夹' : '新建文件夹'}
                             hasDivider={false}
                             endContent={(
                                 <Button
@@ -448,7 +420,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     label="关闭"
                                     isIconOnly
                                     icon={<CloseIcon />}
-                                    onClick={() => setShowCategoryModal(false)}
+                                    onClick={() => setShowFolderModal(false)}
                                 />
                             )}
                         />
@@ -457,34 +429,20 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                 <TextInput
                                     id="category-name"
                                     label="名称"
-                                    value={newCategoryName}
-                                    onChange={setNewCategoryName}
-                                    onKeyDown={e => e.key === 'Enter' && confirmCategoryModal()}
-                                    placeholder="分类名称"
+                                    value={newFolderName}
+                                    onChange={setNewFolderName}
+                                    onKeyDown={e => e.key === 'Enter' && confirmFolderModal()}
+                                    placeholder="文件夹名称"
                                     hasAutoFocus
                                 />
-                                <div className="form-group">
-                                    <label>颜色</label>
-                                    <div className="color-picker">
-                                        {CATEGORY_COLORS.map(color => (
-                                            <button
-                                                key={color}
-                                                className={`color-option ${newCategoryColor === color ? 'selected' : ''}`}
-                                                style={{ backgroundColor: color }}
-                                                onClick={() => setNewCategoryColor(color)}
-                                                type="button"
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
                             </div>
                             <div className="modal-actions">
-                                <Button variant="secondary" label="取消" onClick={() => setShowCategoryModal(false)} />
+                                <Button variant="secondary" label="取消" onClick={() => setShowFolderModal(false)} />
                                 <Button
                                     variant="primary"
-                                    label={editingCategory ? '保存' : '创建'}
-                                    onClick={confirmCategoryModal}
-                                    isDisabled={!newCategoryName.trim()}
+                                    label={editingFolder ? '保存' : '创建'}
+                                    onClick={confirmFolderModal}
+                                    isDisabled={!newFolderName.trim()}
                                 />
                             </div>
                         </LayoutContent>
@@ -492,11 +450,11 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 </Dialog>
             )}
 
-            {/* Assign Category Modal */}
-            {bookForCategory && (
+            {/* Assign Folder Modal */}
+            {bookForFolder && (
                 <Dialog
-                    isOpen={bookForCategory !== null}
-                    onOpenChange={(open) => { if (!open) setBookForCategory(null); }}
+                    isOpen={bookForFolder !== null}
+                    onOpenChange={(open) => { if (!open) setBookForFolder(null); }}
                     width={340}
                     purpose="info"
                     className="category-assign-dialog sidebar-dialog"
@@ -504,7 +462,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     <Layout height="auto" className="sidebar-dialog-layout modal-assign-category">
                         <DialogHeader
                             className="sidebar-dialog-header"
-                            title="设置分类"
+                            title="设置文件夹"
                             hasDivider={false}
                             endContent={(
                                 <Button
@@ -512,36 +470,36 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     label="关闭"
                                     isIconOnly
                                     icon={<CloseIcon />}
-                                    onClick={() => setBookForCategory(null)}
+                                    onClick={() => setBookForFolder(null)}
                                 />
                             )}
                         />
                         <LayoutContent className="sidebar-dialog-content">
-                            <div className="category-assign-list" role="listbox" aria-label="设置书籍分类">
+                            <div className="category-assign-list" role="listbox" aria-label="设置书籍文件夹">
                                 <button
-                                    className={`category-assign-item ${!assignedCategoryId ? 'selected' : ''}`}
-                                    onClick={() => confirmBookCategory(undefined)}
-                                    aria-pressed={!assignedCategoryId}
+                                    className={`category-assign-item ${!assignedFolderId ? 'selected' : ''}`}
+                                    onClick={() => confirmBookFolder(undefined)}
+                                    aria-pressed={!assignedFolderId}
                                 >
                                     <span className="category-color muted" />
-                                    <span className="category-assign-name">不分类</span>
-                                    {!assignedCategoryId && <span className="category-assign-current">当前</span>}
+                                    <span className="category-assign-name">未归档</span>
+                                    {!assignedFolderId && <span className="category-assign-current">当前</span>}
                                 </button>
-                                {categories.map(cat => (
+                                {folders.map(folder => (
                                     <button
-                                        key={cat.id}
-                                        className={`category-assign-item ${assignedCategoryId === cat.id ? 'selected' : ''}`}
-                                        onClick={() => confirmBookCategory(cat.id)}
-                                        aria-pressed={assignedCategoryId === cat.id}
+                                        key={folder.id}
+                                        className={`category-assign-item ${assignedFolderId === folder.id ? 'selected' : ''}`}
+                                        onClick={() => confirmBookFolder(folder.id)}
+                                        aria-pressed={assignedFolderId === folder.id}
                                     >
-                                        <span className="category-color" style={{ backgroundColor: cat.color }} />
-                                        <span className="category-assign-name">{cat.name}</span>
-                                        {assignedCategoryId === cat.id && <span className="category-assign-current">当前</span>}
+                                        <Icon icon={AstryxFolderIcon} size="sm" />
+                                        <span className="category-assign-name">{folder.name}</span>
+                                        {assignedFolderId === folder.id && <span className="category-assign-current">当前</span>}
                                     </button>
                                 ))}
                             </div>
                             <div className="modal-actions">
-                                <Button variant="secondary" label="取消" onClick={() => setBookForCategory(null)} />
+                                <Button variant="secondary" label="取消" onClick={() => setBookForFolder(null)} />
                             </div>
                         </LayoutContent>
                     </Layout>
@@ -560,9 +518,9 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     <IconButton
                         variant="ghost"
                         size="sm"
-                        label="新增标签"
+                        label="新增文件夹"
                         icon={<Icon icon={AstryxFolderIcon} size="sm" />}
-                        onClick={handleAddCategory}
+                        onClick={handleAddFolder}
                     />
                     <IconButton
                         variant="ghost"
@@ -574,52 +532,52 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 </div>
             </div>
 
-            {/* Category Filter */}
+            {/* Folder Filter */}
             <div className="sidebar-categories">
                 <SideNav>
-                    <SideNavSection title="书库分类" isHeaderHidden>
+                    <SideNavSection title="书库文件夹" isHeaderHidden>
                         <SideNavItem
                             label="全部书籍"
                             icon={AstryxBookIcon}
-                            isSelected={!selectedCategoryId || selectedCategoryId === 'all'}
-                            onClick={() => setSelectedCategoryId(null)}
+                            isSelected={!selectedFolderId || selectedFolderId === 'all'}
+                            onClick={() => setSelectedFolderId(null)}
                             endContent={<span className="category-filter-count">{library.books.length}</span>}
                         />
                         <SideNavItem
-                            label="标签"
-                            icon={AstryxTagIcon}
-                            endContent={<span className="category-filter-count">{categories.length}</span>}
+                            label="文件夹"
+                            icon={AstryxFolderIcon}
+                            endContent={<span className="category-filter-count">{folders.length}</span>}
                             collapsible={{
-                                isCollapsed: !isTagsOpen,
-                                onCollapsedChange: collapsed => setTagsOpen(!collapsed),
+                                isCollapsed: !isFoldersOpen,
+                                onCollapsedChange: collapsed => setFoldersOpen(!collapsed),
                             }}
                         >
-                            {groupedBooks.uncategorized.length > 0 && (
+                            {groupedBooks.unfiled.length > 0 && (
                                 <SideNavItem
-                                    label="未分类"
+                                    label="未归档"
                                     icon={AstryxMutedDotIcon}
-                                    isSelected={selectedCategoryId === 'uncategorized'}
-                                    onClick={() => setSelectedCategoryId('uncategorized')}
-                                    endContent={<span className="category-filter-count">{groupedBooks.uncategorized.length}</span>}
+                                    isSelected={selectedFolderId === 'unfiled'}
+                                    onClick={() => setSelectedFolderId('unfiled')}
+                                    endContent={<span className="category-filter-count">{groupedBooks.unfiled.length}</span>}
                                 />
                             )}
 
-                            {categories.map(category => (
-                                <div key={category.id} className="category-filter-group">
+                            {folders.map(folder => (
+                                <div key={folder.id} className="category-filter-group">
                                     <SideNavItem
-                                        label={category.name}
-                                        icon={makeCategoryDotIcon(category.color)}
-                                        isSelected={selectedCategoryId === category.id}
-                                        onClick={() => setSelectedCategoryId(category.id)}
-                                        endContent={<span className="category-filter-count">{groupedBooks[category.id]?.length || 0}</span>}
+                                        label={folder.name}
+                                        icon={AstryxFolderIcon}
+                                        isSelected={selectedFolderId === folder.id}
+                                        onClick={() => setSelectedFolderId(folder.id)}
+                                        endContent={<span className="category-filter-count">{groupedBooks[folder.id]?.length || 0}</span>}
                                     />
                                     <div className="category-actions">
                                         <MoreMenu
-                                            label={`${category.name} 操作`}
+                                            label={`${folder.name} 操作`}
                                             size="sm"
                                             items={[
-                                                { label: '编辑分类', icon: AstryxEditIcon, onClick: () => openEditCategory(category) },
-                                                { label: '删除分类', icon: AstryxTrashIcon, onClick: () => void handleDeleteCategoryAction(category.id) },
+                                                { label: '编辑文件夹', icon: AstryxEditIcon, onClick: () => openEditFolder(folder) },
+                                                { label: '删除文件夹', icon: AstryxTrashIcon, onClick: () => void handleDeleteFolderAction(folder.id) },
                                             ]}
                                         />
                                     </div>
@@ -669,15 +627,11 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     description={
                                         <span className="book-info">
                                         <span className="book-author">{book.author || 'Unknown'}</span>
-                                        {book.categoryId && (
+                                        {book.folderId && (
                                             <span
                                                 className="book-category-badge"
-                                                style={{
-                                                    backgroundColor: categories.find(c => c.id === book.categoryId)?.color || 'var(--text-muted)',
-                                                    opacity: 0.8
-                                                }}
                                             >
-                                                {categories.find(c => c.id === book.categoryId)?.name || ''}
+                                                {folders.find(folder => folder.id === book.folderId)?.name || ''}
                                             </span>
                                         )}
                                         {percentage > 0 && (
@@ -694,10 +648,10 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                         <span className="book-actions">
                                         <button
                                             className="btn btn-ghost btn-icon book-action-btn"
-                                            onClick={(e) => handleSetBookCategory(e, book.id)}
-                                            aria-label="设置分类"
+                                            onClick={(e) => handleSetBookFolder(e, book.id)}
+                                            aria-label="设置文件夹"
                                         >
-                                            <TagIcon />
+                                            <Icon icon={AstryxFolderIcon} size="sm" />
                                         </button>
                                         <button
                                             className="btn btn-ghost btn-icon book-edit"

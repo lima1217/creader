@@ -182,7 +182,7 @@ beforeEach(() => {
     accumulatedTexts: [],
   });
   useLibraryStore.setState({
-    library: { books: [], categories: [], lastUpdated: 1 },
+    library: { books: [], folders: [], lastUpdated: 1 },
     currentBook: null,
   });
   useProgressStore.setState({ bookProgressById: {} });
@@ -420,7 +420,7 @@ describe('AIPanel — Reading Memory ingestion gating', () => {
       progress: { currentCfi: '', percentage: 0 },
     };
     useLibraryStore.getState().setLibrary({
-      books: [book], categories: [], lastUpdated: 1,
+      books: [book], folders: [], lastUpdated: 1,
     });
     useLibraryStore.getState().setCurrentBook(book as never);
     useSettingsStore.setState({

@@ -36,7 +36,7 @@ describe('libraryStore pure state transitions', () => {
       progress: { currentCfi: '', percentage: 0 },
     };
 
-    const library: Library = { books: [book], categories: [], lastUpdated: 1 };
+    const library: Library = { books: [book], folders: [], lastUpdated: 1 };
     localStorage.setItem(STORAGE_KEYS.library, JSON.stringify({ v: 1, data: library }));
     localStorage.setItem(
       STORAGE_KEYS.progress,
@@ -73,7 +73,7 @@ describe('libraryStore pure state transitions', () => {
       progress: { currentCfi: '', percentage: 0 },
     };
 
-    const library: Library = { books: [book], categories: [], lastUpdated: 1 };
+    const library: Library = { books: [book], folders: [], lastUpdated: 1 };
     localStorage.setItem(STORAGE_KEYS.library, JSON.stringify({ v: 1, data: library }));
 
     const { useLibraryStore, useProgressStore } = await loadFreshStores();
@@ -84,6 +84,79 @@ describe('libraryStore pure state transitions', () => {
     useProgressStore.getState().setEntry(book.id, { currentCfi: '', percentage: 0, lastReadAt: 1 });
     useLibraryStore.getState().removeBook(book.id);
     expect(useProgressStore.getState().bookProgressById[book.id]?.lastReadAt).toBe(1);
+
+    vi.restoreAllMocks();
+  });
+
+  it('hydrates old categories as folders and migrates book membership without colors', async () => {
+    const legacyBook: Book = {
+      id: 'b1',
+      title: 'Legacy Book',
+      author: 'Author',
+      filePath: '/tmp/book.epub',
+      addedAt: 1,
+      progress: { currentCfi: '', percentage: 0 },
+      categoryId: 'cat1',
+    };
+    localStorage.setItem(
+      STORAGE_KEYS.library,
+      JSON.stringify({
+        v: 1,
+        data: {
+          books: [legacyBook],
+          categories: [{ id: 'cat1', name: 'Reading', color: '#ff0000', createdAt: 2 }],
+          lastUpdated: 3,
+        },
+      }),
+    );
+
+    const { useLibraryStore } = await loadFreshStores();
+
+    expect(useLibraryStore.getState().library).toEqual({
+      books: [{
+        id: 'b1',
+        title: 'Legacy Book',
+        author: 'Author',
+        filePath: '/tmp/book.epub',
+        addedAt: 1,
+        progress: { currentCfi: '', percentage: 0 },
+        folderId: 'cat1',
+      }],
+      folders: [{ id: 'cat1', name: 'Reading', sortOrder: 0, createdAt: 2 }],
+      lastUpdated: 3,
+    });
+    expect('color' in useLibraryStore.getState().library.folders[0]).toBe(false);
+  });
+
+  it('creates folder membership and clears books to unfiled when a folder is deleted', async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const book: Book = {
+      id: 'b1',
+      title: 'Book',
+      author: 'Author',
+      filePath: '/tmp/book.epub',
+      addedAt: 1,
+      progress: { currentCfi: '', percentage: 0 },
+    };
+    localStorage.setItem(
+      STORAGE_KEYS.library,
+      JSON.stringify({ v: 1, data: { books: [book], folders: [], lastUpdated: 1 } }),
+    );
+
+    const { useLibraryStore } = await loadFreshStores();
+
+    const folder = useLibraryStore.getState().addFolder('Reading');
+    expect(folder).toEqual({ id: `${now}`, name: 'Reading', sortOrder: 0, createdAt: now });
+    expect(useLibraryStore.getState().library.categories).toBeUndefined();
+
+    useLibraryStore.getState().setBookFolder(book.id, folder.id);
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe(folder.id);
+    expect(useLibraryStore.getState().library.books[0].categoryId).toBeUndefined();
+
+    useLibraryStore.getState().removeFolder(folder.id);
+    expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
+    expect(useLibraryStore.getState().library.folders).toHaveLength(0);
 
     vi.restoreAllMocks();
   });

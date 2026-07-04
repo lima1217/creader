@@ -1,8 +1,16 @@
-// Book category
-export interface BookCategory {
+// Legacy category records are read only for local-library migration.
+export interface LegacyBookCategory {
   id: string;
   name: string;
-  color: string; // Hex color for visual identification
+  color?: string;
+  createdAt: number;
+}
+
+// Flat, single-owner library folder.
+export interface BookFolder {
+  id: string;
+  name: string;
+  sortOrder: number;
   createdAt: number;
 }
 
@@ -21,7 +29,9 @@ export interface Book {
   addedAt: number;
   lastReadAt?: number;
   progress: ReadingProgress;
-  categoryId?: string; // Optional category assignment
+  folderId?: string; // Optional Book Folder assignment
+  /** @deprecated Old local-library field. Hydration migrates this to folderId. */
+  categoryId?: string;
   searchIndex?: SearchIndexSummary;
 }
 
@@ -48,7 +58,9 @@ export interface BookProgressUpdate {
 // Library state
 export interface Library {
   books: Book[];
-  categories: BookCategory[];
+  folders: BookFolder[];
+  /** @deprecated Old local-library field. Hydration migrates this to folders. */
+  categories?: LegacyBookCategory[];
   lastUpdated: number;
 }
 

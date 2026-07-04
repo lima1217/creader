@@ -118,7 +118,7 @@ describe('useReadingChromeSession', () => {
     hookMocks.search.searchResults = [];
     hookMocks.search.searchError = null;
     useLibraryStore.setState({
-      library: { books: [book], categories: [], lastUpdated: 0 },
+      library: { books: [book], folders: [], lastUpdated: 0 },
       currentBook: book,
     });
     useUIStore.setState({ isSidebarOpen: true, isAIPanelOpen: false, isSearchOpen: false });

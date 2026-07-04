@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Book, BookCategory, Library, SearchIndexSummary } from '../types';
-import { getInitialLibrary } from './app/initialState';
+import type { Book, BookFolder, Library, SearchIndexSummary } from '../types';
+import { getInitialLibrary, normalizeLibrary } from './app/initialState';
 
 /**
  * Library + current book (issue #13), persisted via debounced localStorage.
@@ -32,13 +32,13 @@ type LibraryState = {
   setLibrary: (library: Library) => void;
   addBook: (book: Book) => void;
   removeBook: (id: string) => void;
-  updateBook: (id: string, updates: Partial<Pick<Book, 'title' | 'author' | 'categoryId'>>) => void;
+  updateBook: (id: string, updates: Partial<Pick<Book, 'title' | 'author' | 'folderId'>>) => void;
   updateBookFilePath: (id: string, newFilePath: string) => void;
   updateBookSearchIndex: (id: string, searchIndex: SearchIndexSummary) => void;
-  addCategory: (name: string, color: string) => BookCategory;
-  removeCategory: (id: string) => void;
-  updateCategory: (id: string, updates: Partial<Pick<BookCategory, 'name' | 'color'>>) => void;
-  setBookCategory: (bookId: string, categoryId: string | undefined) => void;
+  addFolder: (name: string) => BookFolder;
+  removeFolder: (id: string) => void;
+  updateFolder: (id: string, updates: Partial<Pick<BookFolder, 'name' | 'sortOrder'>>) => void;
+  setBookFolder: (bookId: string, folderId: string | undefined) => void;
   currentBook: Book | null;
   /** Pure setter. User open-book flows should use App Lifecycle orchestration. */
   setCurrentBook: (book: Book | null) => void;
@@ -57,8 +57,9 @@ function syncCurrentBook(next: Book | null) {
 export const useLibraryStore = create<LibraryState>((set) => ({
   library: latestLibrary,
   setLibrary: (library) => {
-    syncLibrary(library);
-    set({ library });
+    const next = normalizeLibrary(library);
+    syncLibrary(next);
+    set({ library: next });
   },
 
   addBook: (book) => {
@@ -124,55 +125,64 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     set({ library: next, currentBook });
   },
 
-  addCategory: (name, color) => {
-    const newCategory: BookCategory = {
+  addFolder: (name) => {
+    const sortOrder = latestLibrary.folders.reduce(
+      (max, folder) => Math.max(max, folder.sortOrder),
+      -1,
+    ) + 1;
+    const newFolder: BookFolder = {
       id: Date.now().toString(),
       name,
-      color,
+      sortOrder,
       createdAt: Date.now(),
     };
     const next: Library = {
       ...latestLibrary,
-      categories: [...(latestLibrary.categories || []), newCategory],
+      folders: [...latestLibrary.folders, newFolder],
       lastUpdated: Date.now(),
     };
     syncLibrary(next);
     set({ library: next });
-    return newCategory;
+    return newFolder;
   },
 
-  removeCategory: (id) => {
+  removeFolder: (id) => {
     const next: Library = {
       ...latestLibrary,
-      categories: (latestLibrary.categories || []).filter((c) => c.id !== id),
-      // Also remove category assignment from books
+      folders: latestLibrary.folders.filter((folder) => folder.id !== id),
       books: latestLibrary.books.map((b) =>
-        b.categoryId === id ? { ...b, categoryId: undefined } : b,
+        b.folderId === id ? { ...b, folderId: undefined } : b,
       ),
       lastUpdated: Date.now(),
     };
     syncLibrary(next);
-    set({ library: next });
+    const currentBook =
+      latestCurrentBook?.folderId === id ? { ...latestCurrentBook, folderId: undefined } : latestCurrentBook;
+    syncCurrentBook(currentBook);
+    set({ library: next, currentBook });
   },
 
-  updateCategory: (id, updates) => {
+  updateFolder: (id, updates) => {
     const next: Library = {
       ...latestLibrary,
-      categories: (latestLibrary.categories || []).map((c) => (c.id === id ? { ...c, ...updates } : c)),
+      folders: latestLibrary.folders.map((folder) => (folder.id === id ? { ...folder, ...updates } : folder)),
       lastUpdated: Date.now(),
     };
     syncLibrary(next);
     set({ library: next });
   },
 
-  setBookCategory: (bookId, categoryId) => {
+  setBookFolder: (bookId, folderId) => {
     const next: Library = {
       ...latestLibrary,
-      books: latestLibrary.books.map((b) => (b.id === bookId ? { ...b, categoryId } : b)),
+      books: latestLibrary.books.map((b) => (b.id === bookId ? { ...b, folderId } : b)),
       lastUpdated: Date.now(),
     };
     syncLibrary(next);
-    set({ library: next });
+    const currentBook =
+      latestCurrentBook?.id === bookId ? { ...latestCurrentBook, folderId } : latestCurrentBook;
+    syncCurrentBook(currentBook);
+    set({ library: next, currentBook });
   },
 
   currentBook: null,

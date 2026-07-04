@@ -146,7 +146,7 @@ describe('App Lifecycle contract', () => {
 
   it('persists settings, library, and progress through the lifecycle seam with skip-initial debounce', () => {
     vi.useFakeTimers();
-    const libraryA: Library = { books: [], categories: [], lastUpdated: 1 };
+    const libraryA: Library = { books: [], folders: [], lastUpdated: 1 };
     const progressA: BookProgressById = {};
     const root = mount(<PersistenceHarness settings={settings()} library={libraryA} bookProgressById={progressA} />);
 
@@ -155,7 +155,7 @@ describe('App Lifecycle contract', () => {
     expect(localStorage.getItem(STORAGE_KEYS.library)).toBeNull();
     expect(localStorage.getItem(STORAGE_KEYS.progress)).toBeNull();
 
-    const libraryB: Library = { books: [book()], categories: [], lastUpdated: 2 };
+    const libraryB: Library = { books: [book()], folders: [], lastUpdated: 2 };
     const progressB: BookProgressById = { 'book-1': { currentCfi: 'epubcfi(/6/2)', percentage: 42, lastReadAt: 3 } };
 
     flushSync(() => {
@@ -298,7 +298,7 @@ describe('App Lifecycle contract', () => {
         book({ id: 'cover-book', cover: 'data:image/png;base64,abc' }),
         book({ id: 'existing-cover', cover: 'data:image/png;base64,abc', coverKey: 'existing-cover' }),
       ],
-      categories: [],
+      folders: [],
       lastUpdated: 1,
     };
     let nextLibrary = library;
@@ -330,8 +330,8 @@ describe('App Lifecycle contract', () => {
   });
 
   it('validates startup book paths once without clobbering a changed library', async () => {
-    const initial: Library = { books: [book({ filePath: '/old.epub' })], categories: [], lastUpdated: 1 };
-    const updated: Library = { books: [book({ filePath: '/fixed.epub' })], categories: [], lastUpdated: 2 };
+    const initial: Library = { books: [book({ filePath: '/old.epub' })], folders: [], lastUpdated: 1 };
+    const updated: Library = { books: [book({ filePath: '/fixed.epub' })], folders: [], lastUpdated: 2 };
     const setLibrary = vi.fn();
 
     await validateStartupBookPaths({
@@ -351,9 +351,9 @@ describe('App Lifecycle contract', () => {
 
   it('updates the open current book when path validation fixes its file path', async () => {
     const current = book({ id: 'book-1', filePath: '/old.epub' });
-    const initial: Library = { books: [current], categories: [], lastUpdated: 1 };
+    const initial: Library = { books: [current], folders: [], lastUpdated: 1 };
     const updatedBook = book({ id: 'book-1', filePath: '/fixed.epub' });
-    const updated: Library = { books: [updatedBook], categories: [], lastUpdated: 2 };
+    const updated: Library = { books: [updatedBook], folders: [], lastUpdated: 2 };
     const setCurrentBook = vi.fn();
     const setLibrary = vi.fn();
 
