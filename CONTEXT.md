@@ -84,6 +84,14 @@ _Avoid_: markdown string concatenation, unrestricted file write
 The OKF-compatible root repository plus one sub-package per book, where current-book notes are written under the sanitized book slug.
 _Avoid_: flat app export folder, cross-book scratch directory
 
+**Book Folder**:
+A flat, single-owner grouping inside the local library. A book can belong to at most one Book Folder at a time; moving a book between folders changes its library grouping, not the EPUB file's disk location.
+_Avoid_: tag, category, collection, nested folder
+
+**Library Organizer**:
+The left-side library surface for continuing reading, seeing Book Folders, and moving books between folders. It is a book organization surface, not merely a filter sidebar.
+_Avoid_: bookmark bar, category filter, tag sidebar, file tree
+
 **Reading Chrome**:
 The React-tree UI around the rendered book body — toolbar, TOC drawer, search overlay, progress bar, selection toolbar — as distinct from the book content the Reading Engine renders into its own content tree. Astryx components own chrome; they do not own the engine's rendered body.
 _Avoid_: "the reader" used to mean both the chrome and the book body interchangeably
