@@ -1,12 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
-import { useUIStore } from '../stores/uiStore';
-import { useProgressStore } from '../stores/progressStore';
-import { useAIStore } from '../stores/aiStore';
-import { useSelectionStore } from '../stores/selectionStore';
-import type { Book, NavItem } from '../types';
+import type { NavItem } from '../types';
 import type { EpubBookLike, ReaderRendition } from '../services/reader/epubAdapter';
 import { tryCopyBookToLibrary } from '../services/BookImportService';
 import { rebuildSearchIndexQuietly, toSearchIndexSummary } from '../services/reader/searchIndex';
@@ -14,11 +10,7 @@ import { createLogger } from '../utils/logger';
 import { applyEpubTheme } from './reader/epubTheme';
 import { SelectionToolbar } from './reader/SelectionToolbar';
 import { useEpubBookLifecycle } from './reader/useEpubBookLifecycle';
-import { useEpubProgressTracking } from './reader/useEpubProgressTracking';
-import { useEpubSelectionTracking } from './reader/useEpubSelectionTracking';
-import { useEpubSearch } from './reader/useEpubSearch';
-import { useReaderKeyboardShortcuts } from './reader/useReaderKeyboardShortcuts';
-import { findChapterLabelByHref, isTocItemActive } from './reader/readerNavigation';
+import { useReadingChromeSession } from './reader/useReadingChromeSession';
 import './EPUBReader.css';
 import './SelectionToolbar.css';
 import { AILogoIcon, CheckIcon, CopyIcon, PlusIcon as SelectionPlusIcon } from './ai/icons';
@@ -26,86 +18,31 @@ import { BookOpenIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, EpubTocIcon
 
 const logger = createLogger('EPUBReader');
 
-function searchIndexMessage(state: string, error?: string): string {
-    switch (state) {
-        case 'pending':
-            return '搜索索引正在构建，稍后即可搜索。';
-        case 'failed':
-            return error || '搜索索引构建失败，可以重试。';
-        case 'stale':
-            return '书籍文件已变化，需要重建搜索索引。';
-        case 'missing':
-            return '这本书还没有搜索索引。';
-        default:
-            return '';
-    }
-}
-
 export function EPUBReader() {
     const currentBook = useLibraryStore((s) => s.currentBook);
     const updateBookFilePath = useLibraryStore((s) => s.updateBookFilePath);
     const updateBookSearchIndex = useLibraryStore((s) => s.updateBookSearchIndex);
-    const updateBookProgress = useProgressStore((s) => s.updateBookProgress);
     const settings = useSettingsStore((s) => s.settings);
-    const isSearchOpen = useUIStore((s) => s.isSearchOpen);
-    const setSearchOpen = useUIStore((s) => s.setSearchOpen);
-    const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
-    const currentChapterContent = useAIStore((s) => s.currentChapterContent);
-    const setCurrentChapterContent = useAIStore((s) => s.setCurrentChapterContent);
-    const setSelectedText = useSelectionStore((s) => s.setSelectedText);
-    const selectedText = useSelectionStore((s) => s.selectedText);
-    const setSelectedCfiRange = useSelectionStore((s) => s.setSelectedCfiRange);
-    const addToAccumulatedTexts = useSelectionStore((s) => s.addToAccumulatedTexts);
-    const accumulatedTexts = useSelectionStore((s) => s.accumulatedTexts);
     const containerRef = useRef<HTMLDivElement>(null);
     const bookRef = useRef<EpubBookLike | null>(null);
     const renditionRef = useRef<ReaderRendition | null>(null);
     const bookLikeRef = useRef<EpubBookLike | null>(null);
     const lastMousePosRef = useRef({ x: 0, y: 0 });
     const [renditionKey, setRenditionKey] = useState(0);
-    const [toc, setToc] = useState<NavItem[]>([]);
-    const [showToc, setShowToc] = useState(false);
-    // Active TOC href for "you are here" highlighting. Updated whenever the
-    // reader relocates, derived from the rendition's current location start.
-    const [currentTocHref, setCurrentTocHref] = useState<string>('');
-
-    const resolveChapterLabel = useCallback((result: { section?: string; cfi?: string }) => {
-        // Prefer resolving via the result's href (carried on `cfi` in the slow
-        // path); fall back to the existing `section` if it is already a title.
-        const href = (result.cfi || '').split('#')[0].trim();
-        const viaHref = href ? findChapterLabelByHref(toc, href) : undefined;
-        if (viaHref) return viaHref;
-        const section = result.section || '';
-        // Heuristic: `section` can be a spine idref (e.g. "id123") or a
-        // filename ("x.xhtml") when no label exists. Only show it when it looks
-        // like a real title rather than a raw id/filename.
-        if (section && !/^(id\d+|.*\.(x?html|htm|xhtml))$/i.test(section)) return section;
-        return '';
-    }, [toc]);
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isFileNotFound, setIsFileNotFound] = useState(false);
     const [isRelocating, setIsRelocating] = useState(false);
 
-    // Search state
-    const searchInputRef = useRef<HTMLInputElement>(null);
-    const handleSearchIndexStatus = useCallback((status: NonNullable<Book['searchIndex']>) => {
-        if (currentBook) updateBookSearchIndex(currentBook.id, status);
-    }, [currentBook, updateBookSearchIndex]);
-
-    // Selection toolbar state
-    const [selectionToolbarPos, setSelectionToolbarPos] = useState<{ x: number; y: number } | null>(null);
-    const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
-    const [showSelectionHint, setShowSelectionHint] = useState(false);
-    const [chapterCopied, setChapterCopied] = useState(false);
-    // Accumulated-texts preview: toggled by click so it works on touch devices,
-    // while hover still reveals it on desktop.
-    const [accumulatedPreviewOpen, setAccumulatedPreviewOpen] = useState(false);
-
-    useEffect(() => {
-        setChapterCopied(false);
-    }, [currentChapterContent]);
+    const chrome = useReadingChromeSession({
+        currentBook,
+        containerRef,
+        renditionRef,
+        bookLikeRef,
+        renditionKey,
+        lastMousePosRef,
+    });
 
     useEpubBookLifecycle({
         currentBook,
@@ -114,95 +51,11 @@ export function EPUBReader() {
         bookRef,
         renditionRef,
         bookLikeRef,
-        setToc,
+        setToc: chrome.setToc,
         setIsLoading,
         setError,
         setIsFileNotFound,
         onRenditionCreated: () => setRenditionKey(k => k + 1),
-    });
-
-    useEpubProgressTracking({
-        renditionRef,
-        bookLikeRef,
-        renditionKey,
-        bookId: currentBook?.id ?? null,
-        updateBookProgress,
-        setCurrentChapterContent,
-    });
-
-    useEpubSelectionTracking({
-        renditionRef,
-        renditionKey,
-        containerRef,
-        lastMousePosRef,
-        setSelectedText,
-        setSelectedCfiRange,
-        setSelectionToolbarPos,
-        setShowSelectionToolbar,
-        setShowSelectionHint,
-    });
-
-    // Track the active TOC href so the table of contents can highlight the
-    // chapter the reader is currently on.
-    useEffect(() => {
-        const rendition = renditionRef.current;
-        if (!rendition) return;
-
-        const updateHref = () => {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const loc = (rendition as any).currentLocation?.();
-                const href = loc?.start?.href;
-                if (typeof href === 'string') setCurrentTocHref(href);
-            } catch {
-                // currentLocation can throw before the book is fully laid out.
-            }
-        };
-
-        updateHref();
-        rendition.on('relocated', updateHref);
-        rendition.on('locationChanged', updateHref);
-        return () => {
-            rendition.off('relocated', updateHref);
-            rendition.off('locationChanged', updateHref);
-        };
-    }, [renditionKey]);
-
-    const {
-        searchQuery,
-        setSearchQuery,
-        searchResults,
-        isSearching,
-        isRebuildingIndex,
-        searchError,
-        handleSearch,
-        refreshIndexStatus,
-        rebuildCurrentIndex,
-        cancelSearch,
-        handleSearchResultClick,
-    } = useEpubSearch({
-        renditionRef,
-        currentBook,
-        onSearchIndexStatus: handleSearchIndexStatus,
-        onCloseSearch: () => setSearchOpen(false),
-    });
-
-    useReaderKeyboardShortcuts({
-        enabled: Boolean(currentBook),
-        isEditableTarget: (target) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement,
-        onPrev: () => renditionRef.current?.prev(),
-        onNext: () => renditionRef.current?.next(),
-        onEscape: () => {
-            cancelSearch();
-            setSearchOpen(false);
-            setShowToc(false);
-            setShowSelectionToolbar(false);
-        },
-        onKey: (e) => {
-            if (e.key === 'a' || e.key === 'A') {
-                if (selectedText) setAIPanelOpen(true);
-            }
-        },
     });
 
     // Update styles when settings change (including theme)
@@ -225,54 +78,14 @@ export function EPUBReader() {
         }
     }, [settings.fontSize, settings.fontFamily, settings.lineHeight, settings.theme]);
 
-    // Focus search input when search panel opens
-    useEffect(() => {
-        if (isSearchOpen) {
-            setTimeout(() => searchInputRef.current?.focus(), 50);
-            void refreshIndexStatus().catch(err => logger.warn('Failed to refresh search index status:', err));
-        }
-    }, [isSearchOpen, refreshIndexStatus]);
-
-    const handlePrev = () => {
-        renditionRef.current?.prev();
-        // Hide selection toolbar when navigating
-        setShowSelectionToolbar(false);
-    };
-
-    const handleNext = () => {
-        renditionRef.current?.next();
-        // Hide selection toolbar when navigating
-        setShowSelectionToolbar(false);
-    };
-
-    const handleCopyChapter = async () => {
-        if (!currentChapterContent) return;
-
-        try {
-            await navigator.clipboard.writeText(currentChapterContent);
-            setChapterCopied(true);
-            setTimeout(() => setChapterCopied(false), 2000);
-        } catch {
-            logger.warn('Failed to copy chapter content');
-        }
-    };
-
-    const handleTocClick = (href: string) => {
-        if (!href) return;
-        const displayResult = renditionRef.current?.display(href);
-        void Promise.resolve(displayResult).catch((err: unknown) => logger.warn('TOC navigation failed:', err));
-        setShowToc(false);
-        setShowSelectionToolbar(false);
-    };
-
     const renderTocItems = (items: NavItem[], depth = 0) => items.map(item => {
-        const isActive = isTocItemActive(item.href, currentTocHref);
+        const isActive = chrome.isTocItemCurrent(item.href);
         const isSubitem = depth > 0;
         return (
             <li key={item.id}>
                 <button
                     className={`reader-toc-item ${isSubitem ? 'reader-toc-subitem' : ''} ${isActive ? 'current' : ''}`}
-                    onClick={() => handleTocClick(item.href)}
+                    onClick={() => chrome.handleTocClick(item.href)}
                 >
                     {item.label}
                 </button>
@@ -376,12 +189,8 @@ export function EPUBReader() {
         );
     }
 
-    const searchIndexState = currentBook.searchIndex?.state || 'missing';
-    const searchIndexNeedsRebuild = searchIndexState === 'missing' || searchIndexState === 'failed' || searchIndexState === 'stale';
-    const searchStatusText = searchError || searchIndexMessage(searchIndexState, currentBook.searchIndex?.error);
-
     return (
-        <div className={`reader ${showToc ? 'toc-open' : ''}`}>
+        <div className={`reader ${chrome.showToc ? 'toc-open' : ''}`}>
             {/* Loading indicator */}
             {isLoading && (
                 <div className="reader-loading">
@@ -391,19 +200,19 @@ export function EPUBReader() {
             )}
 
             {/* TOC Panel */}
-            {showToc && (
+            {chrome.showToc && (
                 <div className="reader-toc">
                     <div className="reader-toc-header">
                         <h3>目录</h3>
-                        <button className="btn btn-ghost btn-icon" onClick={() => setShowToc(false)} aria-label="关闭目录">
+                        <button className="btn btn-ghost btn-icon" onClick={() => chrome.setShowToc(false)} aria-label="关闭目录">
                             <CloseIcon />
                         </button>
                     </div>
                     <ul className="reader-toc-list">
-                        {toc.length === 0 ? (
+                        {chrome.toc.length === 0 ? (
                             <li className="reader-toc-empty">没有可用章节</li>
                         ) : (
-                            renderTocItems(toc)
+                            renderTocItems(chrome.toc)
                         )}
                     </ul>
                 </div>
@@ -412,14 +221,14 @@ export function EPUBReader() {
             {/* TOC Toggle */}
             <button
                 className="reader-chrome-control reader-toc-toggle btn btn-ghost btn-icon"
-                onClick={() => setShowToc(!showToc)}
+                onClick={chrome.toggleToc}
                 aria-label="目录"
             >
                 <EpubTocIcon size={18} />
             </button>
 
             {/* Navigation */}
-            <button className="reader-chrome-control reader-nav reader-nav-prev" onClick={handlePrev} aria-label="上一页">
+            <button className="reader-chrome-control reader-nav reader-nav-prev" onClick={chrome.handlePrev} aria-label="上一页">
                 <ChevronLeftIcon />
             </button>
 
@@ -427,52 +236,40 @@ export function EPUBReader() {
             <div ref={containerRef} className="reader-content" />
 
             <SelectionToolbar
-                visible={showSelectionToolbar}
-                selectedText={selectedText}
-                position={selectionToolbarPos}
-                accumulatedCount={accumulatedTexts.length}
+                visible={chrome.selectionToolbar.visible}
+                selectedText={chrome.selectionToolbar.selectedText}
+                position={chrome.selectionToolbar.position}
+                accumulatedCount={chrome.selectionToolbar.accumulatedCount}
                 addIcon={<SelectionPlusIcon />}
                 askIcon={<AILogoIcon size={14} />}
                 closeIcon={<CloseIcon />}
-                onAdd={() => {
-                    addToAccumulatedTexts(selectedText);
-                }}
-                onAsk={() => {
-                    setAIPanelOpen(true);
-                    setShowSelectionToolbar(false);
-                }}
-                onClose={() => {
-                    setShowSelectionToolbar(false);
-                    setSelectionToolbarPos(null);
-                    setSelectedText('');
-                }}
-                showHint={showSelectionHint}
+                onAdd={chrome.selectionToolbar.onAdd}
+                onAsk={chrome.selectionToolbar.onAsk}
+                onClose={chrome.selectionToolbar.onClose}
+                showHint={chrome.selectionToolbar.showHint}
             />
 
             {/* Accumulated Texts Indicator */}
-            {accumulatedTexts.length > 0 && (
+            {chrome.accumulatedTexts.length > 0 && (
                 <div className="reader-accumulated-indicator">
                     <button
                         className="reader-chrome-control reader-accumulated-btn"
-                        onClick={() => {
-                            setAccumulatedPreviewOpen(open => !open);
-                            setAIPanelOpen(true);
-                        }}
-                        aria-label={`${accumulatedTexts.length} 段选文，发送给 AI`}
-                        aria-expanded={accumulatedPreviewOpen}
+                        onClick={chrome.onAccumulatedTextsClick}
+                        aria-label={`${chrome.accumulatedTexts.length} 段选文，发送给 AI`}
+                        aria-expanded={chrome.accumulatedPreviewOpen}
                     >
                         <LayersIcon />
-                        <span>{accumulatedTexts.length} 段选文</span>
+                        <span>{chrome.accumulatedTexts.length} 段选文</span>
                     </button>
-                    <div className={`reader-accumulated-preview ${accumulatedPreviewOpen ? 'preview-open' : ''}`}>
-                        {accumulatedTexts.slice(-3).map((text, idx) => (
+                    <div className={`reader-accumulated-preview ${chrome.accumulatedPreviewOpen ? 'preview-open' : ''}`}>
+                        {chrome.accumulatedTexts.slice(-3).map((text, idx) => (
                             <div key={idx} className="reader-accumulated-preview-item">
                                 {text.slice(0, 60)}{text.length > 60 ? '...' : ''}
                             </div>
                         ))}
-                        {accumulatedTexts.length > 3 && (
+                        {chrome.accumulatedTexts.length > 3 && (
                             <div className="reader-accumulated-preview-more">
-                                另有 {accumulatedTexts.length - 3} 段
+                                另有 {chrome.accumulatedTexts.length - 3} 段
                             </div>
                         )}
                     </div>
@@ -480,80 +277,77 @@ export function EPUBReader() {
             )}
 
             {/* Use Chapter Button - for translating entire chapters */}
-            {currentChapterContent && currentChapterContent.length > 100 && (
+            {chrome.currentChapterContent && chrome.currentChapterContent.length > 100 && (
                 <div className="reader-chapter-action">
                     <button
                         className="reader-chrome-control reader-chapter-btn"
-                        onClick={() => {
-                            addToAccumulatedTexts(currentChapterContent);
-                            setAIPanelOpen(true);
-                        }}
+                        onClick={chrome.onUseChapter}
                     >
                         <BookOpenIcon size={18} strokeWidth={2} />
-                        <span>使用本章（约 {Math.round(currentChapterContent.length / 1000)}k 字）</span>
+                        <span>使用本章（约 {Math.round(chrome.currentChapterContent.length / 1000)}k 字）</span>
                     </button>
                     <button
-                        className={`reader-chrome-control reader-chapter-btn reader-chapter-copy ${chapterCopied ? 'copied' : ''}`}
-                        onClick={handleCopyChapter}
+                        className={`reader-chrome-control reader-chapter-btn reader-chapter-copy ${chrome.chapterCopied ? 'copied' : ''}`}
+                        onClick={chrome.onCopyChapter}
                     >
-                        {chapterCopied ? <CheckIcon /> : <CopyIcon />}
-                        <span>{chapterCopied ? '已复制' : '复制章节'}</span>
+                        {chrome.chapterCopied ? <CheckIcon /> : <CopyIcon />}
+                        <span>{chrome.chapterCopied ? '已复制' : '复制章节'}</span>
                     </button>
                 </div>
             )}
 
-            <button className="reader-chrome-control reader-nav reader-nav-next" onClick={handleNext} aria-label="下一页">
+            <button className="reader-chrome-control reader-nav reader-nav-next" onClick={chrome.handleNext} aria-label="下一页">
                 <ChevronRightIcon />
             </button>
 
             {/* Search Panel */}
-            {isSearchOpen && (
+            {chrome.search.isOpen && (
                 <div className="reader-search">
                     <div className="reader-search-header">
                         <div className="reader-search-input-wrapper">
                             <SearchIcon />
                             <input
-                                ref={searchInputRef}
+                                ref={chrome.search.inputRef}
                                 type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                value={chrome.search.searchQuery}
+                                onChange={(e) => chrome.search.setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && chrome.search.handleSearch()}
                                 placeholder="在书中搜索"
                                 className="reader-search-input"
                             />
                         </div>
-                        <button className="btn btn-ghost btn-icon" onClick={() => { cancelSearch(); setSearchOpen(false); }}>
+                        <button className="btn btn-ghost btn-icon" onClick={chrome.search.close}>
                             <CloseIcon />
                         </button>
                     </div>
                     <div className="reader-search-results">
-                        {isSearching ? (
+                        {chrome.search.isSearching ? (
                             <div className="reader-search-status">正在搜索...</div>
-                        ) : isRebuildingIndex ? (
+                        ) : chrome.search.isRebuildingIndex ? (
                             <div className="reader-search-status">正在重建搜索索引...</div>
-                        ) : searchStatusText && (Boolean(searchError) || searchIndexState !== 'ready') ? (
+                        ) : chrome.search.statusText && (Boolean(chrome.search.searchError) || chrome.search.indexState !== 'ready') ? (
                             <div className="reader-search-status">
-                                <span>{searchStatusText}</span>
-                                {searchIndexNeedsRebuild && (
-                                    <button className="btn btn-secondary reader-search-action" onClick={rebuildCurrentIndex}>
-                                        {searchIndexState === 'failed' ? '重试索引' : '重建索引'}
+                                <span>{chrome.search.statusText}</span>
+                                {chrome.search.indexNeedsRebuild && (
+                                    <button className="btn btn-secondary reader-search-action" onClick={chrome.search.rebuildCurrentIndex}>
+                                        {chrome.search.indexState === 'failed' ? '重试索引' : '重建索引'}
                                     </button>
                                 )}
                             </div>
-                        ) : searchResults.length === 0 && searchQuery ? (
+                        ) : chrome.search.searchResults.length === 0 && chrome.search.searchQuery ? (
                             <div className="reader-search-status">没有找到结果</div>
                         ) : (
                             <>
-                                {searchResults.length > 0 && (
-                                    <div className="reader-search-meta">共 {searchResults.length} 个结果</div>
+                                {chrome.search.searchResults.length > 0 && (
+                                    <div className="reader-search-meta">共 {chrome.search.searchResults.length} 个结果</div>
                                 )}
-                                {searchResults.map((result, index) => {
-                                    const chapterLabel = resolveChapterLabel(result);
+                                {chrome.search.searchResults.map((result, index) => {
+                                    const chapterLabel = chrome.search.resolveChapterLabel(result);
                                     return (
                                     <button
                                         key={index}
                                         className="reader-search-result"
-                                        onClick={() => handleSearchResultClick(result)}
+                                        onClick={() => chrome.search.handleSearchResultClick(result)}
                                     >
                                         {chapterLabel && (
                                             <span className="reader-search-chapter">{chapterLabel}</span>
