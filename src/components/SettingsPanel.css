@@ -398,25 +398,56 @@
     line-height: 1.45;
 }
 
-.settings-stepper-value {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 52px;
-    padding: 0 var(--spacing-2, 8px);
-    color: var(--text-primary);
-    font-size: 13px;
-    font-variant-numeric: tabular-nums;
+/* ---- Strategy-first banner shared by Conversation / Reading Memory / Quick Prompts */
+.console-strategy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: var(--spacing-4, 16px);
+    padding: var(--spacing-3, 12px) var(--spacing-4, 16px);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    background: var(--bg-control);
 }
 
-.settings-segmented {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--spacing-1, 4px);
-    padding: var(--spacing-1, 4px);
-    background: var(--bg-control);
-    border: 1px solid var(--border-secondary);
-    border-radius: 8px;
+.console-strategy[data-degraded="true"] {
+    border-color: color-mix(in srgb, var(--warning) 38%, var(--border-soft));
+    background: color-mix(in srgb, var(--warning) 6%, var(--bg-control));
+}
+
+.console-strategy-title {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0;
+}
+
+.console-strategy-summary {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 13.5px;
+    font-weight: 570;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.console-strategy-summary code,
+.console-strategy-path {
+    padding: 2px 6px;
+    background: var(--settings-surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--settings-control-radius);
+    color: var(--text-secondary);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.console-strategy-hint {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: 12px;
+    line-height: 1.55;
 }
 
 .settings-memory-picker {
@@ -729,6 +760,36 @@
     display: flex;
     align-items: center;
     gap: 7px;
+}
+
+.settings-quick-order {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 2px;
+}
+
+.settings-quick-order .astryx-button {
+    min-width: 28px;
+    min-height: 28px;
+    color: var(--text-tertiary);
+}
+
+.settings-quick-order .astryx-button:hover:not(:disabled) {
+    color: var(--text-primary);
+}
+
+.settings-quick-direct {
+    margin-left: auto;
+    padding: 1px 6px;
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    background: var(--settings-surface);
+    color: var(--text-tertiary);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    text-transform: none;
 }
 
 .settings-quick-select {

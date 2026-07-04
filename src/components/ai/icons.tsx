@@ -84,6 +84,12 @@ export const ChevronDownIcon = () => (
     </svg>
 );
 
+export const ChevronUpIcon = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="6 15 12 9 18 15" />
+    </svg>
+);
+
 export const StopIcon = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
         <rect x="6" y="6" width="12" height="12" rx="2" />

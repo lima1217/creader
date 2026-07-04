@@ -392,5 +392,230 @@ describe('SettingsPanel — AI Reading Console shell (#50)', () => {
   });
 });
 
+describe('SettingsPanel — Conversation Behavior strategy + Astryx controls (#52)', () => {
+  beforeEach(() => {
+    installDialogElementStub();
+    installResizeObserverStub();
+    localStorage.clear();
+    resetSettings();
+    resetInvokeCapture();
+    clearTestResult();
+    setProviderList(DEFAULT_PROVIDERS);
+  });
+
+  afterEach(() => {
+    unmountAll();
+  });
+
+  function goToConversation(container: HTMLElement) {
+    const item = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
+      (el.textContent ?? '').includes('对话行为'),
+    );
+    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }
+
+  it('shows the current conversation strategy before the controls', async () => {
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToConversation(container);
+    await settle();
+
+    const strategy = container.querySelector('.console-strategy');
+    expect(strategy).not.toBeNull();
+    // Default fixture: context 20, auto-summarize on, AI text 14px.
+    expect(strategy?.textContent ?? '').toContain('上下文 20 条');
+    expect(strategy?.textContent ?? '').toContain('自动压缩已开启');
+    expect(strategy?.textContent ?? '').toContain('14px');
+  });
+
+  it('renders the context window as an Astryx segmented radiogroup', async () => {
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToConversation(container);
+    await settle();
+
+    const group = container.querySelector('#settings-context-window [role="radiogroup"]');
+    expect(group).not.toBeNull();
+    const radios = container.querySelectorAll('#settings-context-window [role="radio"]');
+    // Three context-window choices: 5 / 20 / 40.
+    expect(radios.length).toBe(3);
+  });
+
+  it('renders the AI text size as a number input in the 13–20 range', async () => {
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToConversation(container);
+    await settle();
+
+    const numberInput = container.querySelector('.astryx-number-input input') as HTMLInputElement | null;
+    expect(numberInput).not.toBeNull();
+    expect(numberInput?.value).toBe('14');
+    expect(numberInput?.min).toBe('13');
+    expect(numberInput?.max).toBe('20');
+  });
+});
+
+describe('SettingsPanel — Reading Memory strategy and disconnect (#53)', () => {
+  beforeEach(() => {
+    installDialogElementStub();
+    installResizeObserverStub();
+    localStorage.clear();
+    resetSettings();
+    resetInvokeCapture();
+    clearTestResult();
+    setProviderList(DEFAULT_PROVIDERS);
+  });
+
+  afterEach(() => {
+    unmountAll();
+  });
+
+  function goToReadingMemory(container: HTMLElement) {
+    const item = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
+      (el.textContent ?? '').includes('阅读记忆'),
+    );
+    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }
+
+  it('shows the connected repository path in the strategy banner', async () => {
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToReadingMemory(container);
+    await settle();
+
+    const strategy = container.querySelector('.console-strategy');
+    expect(strategy?.getAttribute('data-degraded')).toBe('false');
+    expect(strategy?.textContent ?? '').toContain('/mem/root');
+  });
+
+  it('disconnect clears only the path and keeps auto-ingest preference', async () => {
+    useSettingsStore.setState({
+      settings: {
+        ...useSettingsStore.getState().settings,
+        readingMemoryPath: '/mem/root',
+        readingMemoryAutoIngest: true,
+      },
+    });
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToReadingMemory(container);
+    await settle();
+
+    const disconnectBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      (b.textContent ?? '').includes('断开仓库'),
+    ) as HTMLButtonElement | undefined;
+    expect(disconnectBtn).toBeTruthy();
+    disconnectBtn!.click();
+    await settle();
+
+    const after = useSettingsStore.getState().settings;
+    expect(after.readingMemoryPath).toBeUndefined();
+    // Auto-ingest preference is preserved, not reset.
+    expect(after.readingMemoryAutoIngest).toBe(true);
+    // Strategy banner now reports a missing repository.
+    const strategy = container.querySelector('.console-strategy');
+    expect(strategy?.getAttribute('data-degraded')).toBe('true');
+  });
+
+  it('overall readiness is degraded (not missing) when AI is ready but repository is missing', async () => {
+    useSettingsStore.setState({
+      settings: {
+        ...useSettingsStore.getState().settings,
+        readingMemoryPath: undefined,
+        readingMemoryAutoIngest: true,
+      },
+    });
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+
+    expect(container.querySelector('.console-readiness-chip')?.getAttribute('data-readiness'))
+      .toBe('degraded');
+  });
+});
+
+describe('SettingsPanel — Quick Prompt ordering (#54)', () => {
+  beforeEach(() => {
+    installDialogElementStub();
+    installResizeObserverStub();
+    localStorage.clear();
+    resetSettings();
+    resetInvokeCapture();
+    clearTestResult();
+    setProviderList(DEFAULT_PROVIDERS);
+  });
+
+  afterEach(() => {
+    unmountAll();
+  });
+
+  function goToQuickPrompts(container: HTMLElement) {
+    const item = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
+      (el.textContent ?? '').includes('快捷提示词'),
+    );
+    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }
+
+  function seedOrderedActions(labels: string[]) {
+    const actions = labels.map((label, i) => ({
+      id: `qa-${i}`,
+      label,
+      prompt: `prompt ${i}`,
+      icon: 'explain' as const,
+    }));
+    localStorage.setItem('creader-quick-actions', JSON.stringify({ v: 1, data: actions }));
+  }
+
+  it('shows the enabled count and first-six summary in the strategy banner', async () => {
+    seedOrderedActions(['一', '二', '三']);
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToQuickPrompts(container);
+    await settle();
+
+    const strategy = container.querySelector('.console-strategy');
+    expect(strategy?.textContent ?? '').toContain('已启用 3 个');
+    expect(strategy?.getAttribute('data-degraded')).toBe('false');
+  });
+
+  it('reorders prompts with move up/down and changes the persisted order', async () => {
+    seedOrderedActions(['一', '二', '三']);
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToQuickPrompts(container);
+    await settle();
+
+    // Each row exposes a settings-quick-order group; the first button is up.
+    const rows = container.querySelectorAll('.settings-quick-item');
+    expect(rows.length).toBe(3);
+    const secondRow = rows[1] as HTMLElement;
+    const upBtn = secondRow.querySelector('.settings-quick-order button') as HTMLButtonElement;
+    upBtn.click();
+    await settle();
+
+    // saveStored writes the raw array (loadStored tolerates either envelope or raw).
+    const raw = JSON.parse(localStorage.getItem('creader-quick-actions') ?? 'null');
+    const actions = Array.isArray(raw) ? raw : raw?.data;
+    const labels = actions.map((a: { label: string }) => a.label);
+    // Moving the second item up puts it first.
+    expect(labels).toEqual(['二', '一', '三']);
+  });
+
+  it('disables move-up on the first row and move-down on the last row', async () => {
+    seedOrderedActions(['一', '二']);
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    goToQuickPrompts(container);
+    await settle();
+
+    const rows = container.querySelectorAll('.settings-quick-item');
+    const firstRowOrder = rows[0].querySelector('.settings-quick-order');
+    const lastRowOrder = rows[1].querySelector('.settings-quick-order');
+    const firstUp = firstRowOrder?.querySelectorAll('button')[0] as HTMLButtonElement;
+    const lastDown = lastRowOrder?.querySelectorAll('button')[1] as HTMLButtonElement;
+    expect(firstUp.disabled).toBe(true);
+    expect(lastDown.disabled).toBe(true);
+  });
+});
+
 // afterEach is hoisted by vitest; declared here for clarity but referenced above.
 import { afterEach } from 'vitest';

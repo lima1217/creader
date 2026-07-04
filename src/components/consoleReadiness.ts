@@ -211,14 +211,25 @@ const READINESS_RANK: Record<ConsoleReadiness, number> = {
 };
 
 /**
- * Compute the overall Console Readiness from the per-area statuses. Missing
- * AI Service dominates (the reading conversation cannot run); any other
- * degraded/missing area downgrades an otherwise-ready console to degraded.
+ * Compute the overall Console Readiness from the per-area statuses.
+ *
+ * The reading conversation can only run when AI Service is configured with an
+ * active, keyed provider, so an AI Service `missing` state is the only thing
+ * that makes the whole console `missing` (the conversation cannot run at all).
+ * A `missing` state in any other area (e.g. Reading Memory repository not
+ * chosen, Quick Prompts empty) only downgrades the console to `degraded`: the
+ * conversation can still run, but an adjacent capability is unavailable.
  */
 export function computeOverallReadiness(statuses: AreaStatus[]): ConsoleReadiness {
   if (statuses.length === 0) return 'ready';
-  const worst = statuses.reduce((acc, s) => {
-    return READINESS_RANK[s.readiness] > READINESS_RANK[acc] ? s.readiness : acc;
+  const aiService = statuses.find((s) => s.area === 'ai-service');
+  if (aiService?.readiness === 'missing') return 'missing';
+  const worst = statuses.reduce<ConsoleReadiness>((acc, s) => {
+    // Only AI Service can drive the overall console to `missing`; a missing
+    // adjacent capability is treated as `degraded` at the console level.
+    const effective: ConsoleReadiness =
+      s.area !== 'ai-service' && s.readiness === 'missing' ? 'degraded' : s.readiness;
+    return READINESS_RANK[effective] > READINESS_RANK[acc] ? effective : acc;
   }, statuses[0].readiness);
   return worst;
 }

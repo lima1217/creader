@@ -1,4 +1,4 @@
-import type { AIProviderConfig } from '../types';
+import type { AIProviderConfig, Settings } from '../types';
 import {
   defaultQuickActions,
   getMissingDefaultQuickActions,
@@ -14,6 +14,25 @@ export const AI_TEXT_SIZE_MAX = 20;
  */
 export function clampAITextSize(size: number): number {
   return Math.min(AI_TEXT_SIZE_MAX, Math.max(AI_TEXT_SIZE_MIN, size));
+}
+
+/**
+ * Format the current Conversation Behavior strategy into a single summary line
+ * shown at the top of the Conversation Behavior page, before its controls.
+ * Pure.
+ */
+export function formatConversationStrategy(settings: Pick<Settings, 'aiContextWindow' | 'aiAutoSummarize' | 'aiTextSize'>): string {
+  const summarize = settings.aiAutoSummarize ? '自动压缩已开启' : '自动压缩已关闭';
+  return `上下文 ${settings.aiContextWindow} 条 · ${summarize} · AI 文字 ${settings.aiTextSize}px`;
+}
+
+/**
+ * Clear the configured Reading Memory repository path while leaving the user's
+ * auto-ingest preference intact. Disconnect never deletes local Markdown
+ * files — it is a pure settings change. Pure.
+ */
+export function clearReadingMemoryPath<T extends Settings>(settings: T): T {
+  return { ...settings, readingMemoryPath: undefined };
 }
 
 /**
@@ -99,6 +118,61 @@ export function addQuickAction(
   action: QuickActionConfig,
 ): { actions: QuickActionConfig[]; editingId: string } {
   return { actions: [...actions, action], editingId: action.id };
+}
+
+/**
+ * Move a quick action one step earlier in the list. No-op (returns a shallow
+ * copy) when the id is unknown or already first. The first six entries are the
+ * direct AI-panel buttons, so moving an item up can promote it into that set.
+ * Pure.
+ */
+export function moveQuickActionUp(
+  actions: QuickActionConfig[],
+  actionId: string,
+): QuickActionConfig[] {
+  const index = actions.findIndex((action) => action.id === actionId);
+  if (index <= 0) return actions.slice();
+  const next = actions.slice();
+  [next[index - 1], next[index]] = [next[index], next[index - 1]];
+  return next;
+}
+
+/**
+ * Move a quick action one step later in the list. No-op (returns a shallow
+ * copy) when the id is unknown or already last. Pure.
+ */
+export function moveQuickActionDown(
+  actions: QuickActionConfig[],
+  actionId: string,
+): QuickActionConfig[] {
+  const index = actions.findIndex((action) => action.id === actionId);
+  if (index < 0 || index >= actions.length - 1) return actions.slice();
+  const next = actions.slice();
+  [next[index + 1], next[index]] = [next[index], next[index + 1]];
+  return next;
+}
+
+/** Number of quick prompts shown as direct AI-panel buttons before overflow. */
+export const QUICK_PROMPT_DIRECT_BUTTON_COUNT = 6;
+
+/**
+ * Summarize the current Quick Prompt set for the Quick Prompts page header:
+ * enabled count, and the first-six-vs-overflow behavior. Marked degraded when
+ * the set is empty (the AI panel bottom-bar would have no buttons). Pure.
+ */
+export function formatQuickPromptStatus(
+  actions: QuickActionConfig[],
+): { summary: string; isDegraded: boolean } {
+  if (actions.length === 0) {
+    return { summary: '没有可用的快捷提示词按钮', isDegraded: true };
+  }
+  const directCount = Math.min(actions.length, QUICK_PROMPT_DIRECT_BUTTON_COUNT);
+  const overflowCount = Math.max(0, actions.length - QUICK_PROMPT_DIRECT_BUTTON_COUNT);
+  const summary =
+    overflowCount > 0
+      ? `已启用 ${actions.length} 个 · 前 ${directCount} 个直接显示，其余 ${overflowCount} 个进入「更多」`
+      : `已启用 ${actions.length} 个 · 全部直接显示`;
+  return { summary, isDegraded: false };
 }
 
 /**

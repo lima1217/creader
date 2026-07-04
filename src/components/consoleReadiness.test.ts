@@ -223,6 +223,16 @@ describe('consoleReadiness', () => {
       ).toBe('missing');
     });
 
+    it('is degraded (not missing) when AI Service is ready but Reading Memory has no repository', () => {
+      // The conversation can still run, so a missing adjacent capability
+      // (Reading Memory repository) downgrades the console to degraded.
+      expect(
+        computeOverallReadiness(
+          computeAreaStatuses({ ...baseInput, readingMemoryPath: undefined }),
+        ),
+      ).toBe('degraded');
+    });
+
     it('is degraded when AI Service is ready but an adjacent capability is off', () => {
       expect(
         computeOverallReadiness(

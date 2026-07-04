@@ -1,16 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import type { AIProviderConfig } from '../types';
+import type { AIProviderConfig, Settings } from '../types';
 import type { QuickActionConfig } from './ai/quickActions';
 import { defaultQuickActions } from './ai/quickActions';
 import {
   AI_TEXT_SIZE_MAX,
   AI_TEXT_SIZE_MIN,
+  QUICK_PROMPT_DIRECT_BUTTON_COUNT,
   addQuickAction,
   applyProviderTemplate,
   clampAITextSize,
+  clearReadingMemoryPath,
   commitQuickActionDraft,
   createCustomQuickAction,
+  formatConversationStrategy,
+  formatQuickPromptStatus,
   hideQuickAction,
+  moveQuickActionDown,
+  moveQuickActionUp,
   resetQuickActions,
   restoreQuickAction,
   validateProviderDraft,
@@ -22,6 +28,21 @@ function createDraft(overrides: Partial<AIProviderConfig> = {}): AIProviderConfi
 
 function createAction(overrides: Partial<QuickActionConfig> = {}): QuickActionConfig {
   return { id: 'explain', label: '解释', prompt: '解释选中的内容。', icon: 'explain', ...overrides };
+}
+
+function createSettings(overrides: Partial<Settings> = {}): Settings {
+  return {
+    theme: 'light',
+    fontSize: 16,
+    fontFamily: 'Georgia',
+    lineHeight: 1.6,
+    readingMemoryPath: '/mem/root',
+    readingMemoryAutoIngest: true,
+    aiTextSize: 14,
+    aiContextWindow: 20,
+    aiAutoSummarize: true,
+    ...overrides,
+  };
 }
 
 describe('settingsPanelLogic', () => {
@@ -174,5 +195,116 @@ describe('settingsPanelLogic', () => {
       expect(actions).toEqual(defaultQuickActions);
       expect(editingId).toBe(defaultQuickActions[0]?.id ?? null);
     });
+  });
+
+  describe('formatConversationStrategy', () => {
+    it('summarizes context window, summarization, and AI text size', () => {
+      expect(formatConversationStrategy(createSettings())).toBe(
+        '上下文 20 条 · 自动压缩已开启 · AI 文字 14px',
+      );
+    });
+
+    it('reflects a closed auto-summarization and different values', () => {
+      const summary = formatConversationStrategy(
+        createSettings({ aiContextWindow: 5, aiAutoSummarize: false, aiTextSize: 18 }),
+      );
+      expect(summary).toBe('上下文 5 条 · 自动压缩已关闭 · AI 文字 18px');
+    });
+  });
+
+  describe('clearReadingMemoryPath', () => {
+    it('removes the repository path and keeps auto-ingest preference intact', () => {
+      const before = createSettings({ readingMemoryPath: '/mem/root', readingMemoryAutoIngest: false });
+      const after = clearReadingMemoryPath(before);
+      expect(after.readingMemoryPath).toBeUndefined();
+      expect(after.readingMemoryAutoIngest).toBe(false);
+    });
+
+    it('does not mutate the original settings object', () => {
+      const before = createSettings({ readingMemoryPath: '/mem/root' });
+      clearReadingMemoryPath(before);
+      expect(before.readingMemoryPath).toBe('/mem/root');
+    });
+
+    it('preserves every other field unchanged', () => {
+      const before = createSettings();
+      const after = clearReadingMemoryPath(before);
+      const { readingMemoryPath: _ignored, ...restBefore } = before;
+      void _ignored;
+      const { readingMemoryPath: _ignored2, ...restAfter } = after;
+      void _ignored2;
+      expect(restAfter).toEqual(restBefore);
+    });
+  });
+
+  describe('moveQuickActionUp / moveQuickActionDown', () => {
+    function list(...ids: string[]): QuickActionConfig[] {
+      return ids.map((id) => createAction({ id }));
+    }
+
+    it('moveQuickActionUp swaps the action with the one before it', () => {
+      const next = moveQuickActionUp(list('a', 'b', 'c'), 'b');
+      expect(next.map((a) => a.id)).toEqual(['b', 'a', 'c']);
+    });
+
+    it('moveQuickActionUp is a no-op when the id is already first', () => {
+      const before = list('a', 'b');
+      const next = moveQuickActionUp(before, 'a');
+      expect(next.map((a) => a.id)).toEqual(['a', 'b']);
+    });
+
+    it('moveQuickActionUp is a no-op when the id is unknown', () => {
+      const before = list('a', 'b');
+      const next = moveQuickActionUp(before, 'zzz');
+      expect(next.map((a) => a.id)).toEqual(['a', 'b']);
+    });
+
+    it('moveQuickActionDown swaps the action with the one after it', () => {
+      const next = moveQuickActionDown(list('a', 'b', 'c'), 'b');
+      expect(next.map((a) => a.id)).toEqual(['a', 'c', 'b']);
+    });
+
+    it('moveQuickActionDown is a no-op when the id is already last', () => {
+      const before = list('a', 'b');
+      const next = moveQuickActionDown(before, 'b');
+      expect(next.map((a) => a.id)).toEqual(['a', 'b']);
+    });
+
+    it('neither helper mutates the input array', () => {
+      const before = list('a', 'b', 'c');
+      moveQuickActionUp(before, 'b');
+      moveQuickActionDown(before, 'b');
+      expect(before.map((a) => a.id)).toEqual(['a', 'b', 'c']);
+    });
+  });
+
+  describe('formatQuickPromptStatus', () => {
+    it('is degraded with a descriptive summary when the set is empty', () => {
+      const status = formatQuickPromptStatus([]);
+      expect(status.isDegraded).toBe(true);
+      expect(status.summary.length).toBeGreaterThan(0);
+    });
+
+    it('reports all-direct when count is within the direct-button set', () => {
+      const status = formatQuickPromptStatus(list('a', 'b'));
+      expect(status.isDegraded).toBe(false);
+      expect(status.summary).toContain('已启用 2 个');
+      expect(status.summary).toContain('全部直接显示');
+    });
+
+    it('reports overflow copy when count exceeds the direct-button set', () => {
+      const many = Array.from(
+        { length: QUICK_PROMPT_DIRECT_BUTTON_COUNT + 2 },
+        (_, i) => createAction({ id: `qa-${i}` }),
+      );
+      const status = formatQuickPromptStatus(many);
+      expect(status.isDegraded).toBe(false);
+      expect(status.summary).toContain('已启用 8 个');
+      expect(status.summary).toContain('更多');
+    });
+
+    function list(...ids: string[]): QuickActionConfig[] {
+      return ids.map((id) => createAction({ id }));
+    }
   });
 });

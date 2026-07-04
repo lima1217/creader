@@ -13,13 +13,15 @@ import { ButtonGroup } from '@astryxdesign/core/ButtonGroup';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Badge } from '@astryxdesign/core/Badge';
 import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
+import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
+import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { useSettingsStore } from '../stores/settingsStore';
 import { ensureReadingMemoryRepository } from '../services/ReadingMemory';
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
 import { useAIProviders } from './ai/hooks/useAIProviders';
-import type { AIProviderConfig, AIProviderStatus } from '../types';
-import { CheckIcon, CloseIcon, PlusIcon } from './ai/icons';
+import type { AIProviderConfig, AIProviderStatus, Settings } from '../types';
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, PlusIcon } from './ai/icons';
 import {
     getMissingDefaultQuickActions,
     loadQuickActionConfigs,
@@ -28,12 +30,19 @@ import {
 } from './ai/quickActions';
 import type { QuickActionConfig } from './ai/quickActions';
 import {
+    AI_TEXT_SIZE_MAX,
+    AI_TEXT_SIZE_MIN,
     addQuickAction,
     applyProviderTemplate,
     clampAITextSize,
+    clearReadingMemoryPath,
     commitQuickActionDraft,
     createCustomQuickAction,
+    formatConversationStrategy,
+    formatQuickPromptStatus,
     hideQuickAction,
+    moveQuickActionDown,
+    moveQuickActionUp,
     resetQuickActions,
     restoreQuickAction,
     validateProviderDraft,
@@ -200,11 +209,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         }
     }, [aiProviders, isTauri]);
 
-    const adjustAITextSize = (delta: number) => {
-        const nextSize = clampAITextSize(settings.aiTextSize + delta);
-        setSettings({ ...settings, aiTextSize: nextSize });
-    };
-
     const chooseReadingMemory = async () => {
         if (!isTauri || isMemoryBusy) return;
         setMemoryBusy(true);
@@ -237,6 +241,14 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         }
     };
 
+    // Disconnect the Reading Memory repository: clear the configured path only.
+    // Auto-ingest preference is preserved; local Markdown files are never
+    // deleted (this is a pure settings change with no FS call).
+    const disconnectReadingMemory = () => {
+        if (!settings.readingMemoryPath) return;
+        setSettings(clearReadingMemoryPath(settings));
+    };
+
     const persistQuickActions = (actions: QuickActionConfig[]) => {
         setQuickActionConfigs(actions);
         saveQuickActionConfigs(actions);
@@ -266,6 +278,16 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         setEditingActionId(editingId);
     };
 
+    // Reordering moves an action up/down in the persisted array, which directly
+    // reshuffles the first-six direct-button set the AI panel renders.
+    const moveQuickActionUpHandler = (actionId: string) => {
+        persistQuickActions(moveQuickActionUp(quickActionConfigs, actionId));
+    };
+
+    const moveQuickActionDownHandler = (actionId: string) => {
+        persistQuickActions(moveQuickActionDown(quickActionConfigs, actionId));
+    };
+
     const resetQuickActionsHandler = () => {
         const { actions, editingId } = resetQuickActions();
         persistQuickActions(actions);
@@ -273,6 +295,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     };
 
     const missingDefaultQuickActions = getMissingDefaultQuickActions(quickActionConfigs);
+    const quickPromptStatus = formatQuickPromptStatus(quickActionConfigs);
 
     // ---- Console readiness (local configuration only — never calls a provider) ----
     const areaStatuses = useMemo(
@@ -593,36 +616,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     {activeSection === 'conversation' && (
                         <div className="settings-section">
                             <div className="settings-section-title">对话行为</div>
-                            <div className="settings-field">
-                                <div className="settings-field-copy">
-                                    <div className="settings-field-label">AI 文字大小</div>
-                                    <div className="settings-field-hint">调整旁注正文和输入框文字。</div>
-                                </div>
-                                <ButtonGroup label="AI 文字大小" size="sm">
-                                    <Button
-                                        label="减小 AI 文字"
-                                        isIconOnly
-                                        icon={<span aria-hidden="true">−</span>}
-                                        onClick={() => adjustAITextSize(-1)}
-                                        isDisabled={settings.aiTextSize <= 13}
-                                    />
-                                    <span className="settings-stepper-value" aria-live="polite">{settings.aiTextSize}px</span>
-                                    <Button
-                                        label="增大 AI 文字"
-                                        isIconOnly
-                                        icon={<span aria-hidden="true">+</span>}
-                                        onClick={() => adjustAITextSize(1)}
-                                        isDisabled={settings.aiTextSize >= 20}
-                                    />
-                                </ButtonGroup>
+                            <div className="console-strategy" data-degraded={false}>
+                                <div className="console-strategy-title">当前对话策略</div>
+                                <p className="console-strategy-summary">{formatConversationStrategy(settings)}</p>
+                                <p className="console-strategy-hint">
+                                    调整上下文长度、隐藏摘要与旁注文字大小。这些偏好只影响对话运行方式，不会泄露给服务商选择。
+                                </p>
                             </div>
-
-                            <Switch
-                                label="自动压缩"
-                                description="超过轮次后，将更早对话压成隐藏摘要继续带上。"
-                                value={settings.aiAutoSummarize}
-                                onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
-                            />
 
                             <Field
                                 className="settings-field settings-field-stacked"
@@ -630,24 +630,74 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                 label="上下文轮次"
                                 description="每次提问带上的最近记录，越多越连贯，也越慢。"
                             >
-                                <div className="settings-segmented" aria-label="AI 上下文轮次" id="settings-context-window">
-                                    {contextWindowOptions.map(option => (
-                                        <Button
-                                            key={option.value}
-                                            variant={settings.aiContextWindow === option.value ? 'primary' : 'secondary'}
-                                            size="sm"
-                                            label={option.label}
-                                            onClick={() => setSettings({ ...settings, aiContextWindow: option.value })}
-                                        />
-                                    ))}
+                                <div id="settings-context-window">
+                                    <SegmentedControl
+                                        label="AI 上下文轮次"
+                                        size="sm"
+                                        layout="fill"
+                                        value={String(settings.aiContextWindow)}
+                                        onChange={value => setSettings({ ...settings, aiContextWindow: Number(value) as Settings['aiContextWindow'] })}
+                                    >
+                                        {contextWindowOptions.map(option => (
+                                            <SegmentedControlItem
+                                                key={option.value}
+                                                value={String(option.value)}
+                                                label={option.label}
+                                            />
+                                        ))}
+                                    </SegmentedControl>
                                 </div>
                             </Field>
+
+                            <Switch
+                                label="自动压缩"
+                                description="超过轮次后，将更早对话压成隐藏摘要继续带上（摘要不作为消息渲染）。"
+                                value={settings.aiAutoSummarize}
+                                onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
+                            />
+
+                            <NumberInput
+                                label="AI 文字大小"
+                                isLabelHidden
+                                description="调整旁注正文和输入框文字（13–20px）。"
+                                value={settings.aiTextSize}
+                                onChange={value => setSettings({ ...settings, aiTextSize: clampAITextSize(value) })}
+                                min={AI_TEXT_SIZE_MIN}
+                                max={AI_TEXT_SIZE_MAX}
+                                step={1}
+                                isIntegerOnly
+                                units="px"
+                                size="sm"
+                            />
                         </div>
                     )}
 
                     {activeSection === 'reading-memory' && (
                         <div className="settings-section">
                             <div className="settings-section-title">阅读记忆</div>
+                            <div className="console-strategy" data-degraded={!settings.readingMemoryPath}>
+                                <div className="console-strategy-title">仓库状态</div>
+                                {settings.readingMemoryPath ? (
+                                    <>
+                                        <p className="console-strategy-summary">
+                                            已连接：<code className="console-strategy-path">{settings.readingMemoryPath}</code>
+                                        </p>
+                                        <p className="console-strategy-hint">
+                                            {settings.readingMemoryAutoIngest
+                                                ? '自动沉淀已开启，AI 判断有长期价值时写入当前书的 books/<book-slug>/ 目录。'
+                                                : '自动沉淀已关闭；保留此偏好，重新连接仓库后即可恢复写入。'}
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="console-strategy-summary">未连接仓库</p>
+                                        <p className="console-strategy-hint">
+                                            选择本地 Markdown 仓库后，AI 才能写入值得保留的笔记。断开仓库只会清除已配置路径，不会删除本地 Markdown 文件。
+                                        </p>
+                                    </>
+                                )}
+                            </div>
+
                             <Field
                                 inputID="settings-memory-path"
                                 label="Markdown 仓库"
@@ -669,13 +719,20 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                                 label="打开"
                                                 onClick={openReadingMemory}
                                             />
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                label="断开仓库"
+                                                className="settings-danger-action"
+                                                onClick={disconnectReadingMemory}
+                                            />
                                         </span>
                                     )}
                                 </div>
                             </Field>
                             <Switch
                                 label="自动沉淀"
-                                description="AI 判断有长期价值时，自动写入本地仓库。"
+                                description="AI 判断有长期价值时，自动写入本地仓库。关闭后此偏好仍被保留。"
                                 value={settings.readingMemoryAutoIngest}
                                 onChange={checked => setSettings({ ...settings, readingMemoryAutoIngest: checked })}
                             />
@@ -685,6 +742,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     {activeSection === 'quick-prompts' && (
                         <div className="settings-section">
                             <div className="settings-section-title">快捷提示词</div>
+                            <div className="console-strategy" data-degraded={quickPromptStatus.isDegraded}>
+                                <div className="console-strategy-title">AI 面板按钮</div>
+                                <p className="console-strategy-summary">{quickPromptStatus.summary}</p>
+                                <p className="console-strategy-hint">
+                                    顺序决定旁注面板底部哪些按钮直接显示（最多前 6 个），其余进入「更多」。用上移/下移调整顺序。
+                                </p>
+                            </div>
                             <div className="settings-quick-actions">
                                 <div className="settings-quick-list">
                                     <Button
@@ -695,7 +759,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                         onClick={addQuickActionHandler}
                                     />
                                     {quickActionConfigs.length > 0 ? (
-                                        quickActionConfigs.map(action => (
+                                        quickActionConfigs.map((action, index) => (
                                             <div
                                                 key={action.id}
                                                 className={`settings-quick-item ${editingActionId === action.id ? 'active' : ''}`}
@@ -706,15 +770,38 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                                 >
                                                     {renderQuickActionIcon(action.icon)}
                                                     <span>{action.label}</span>
+                                                    {index < 6 && (
+                                                        <small className="settings-quick-direct" aria-hidden="true">直接</small>
+                                                    )}
                                                 </button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    isIconOnly
-                                                    label={`隐藏 ${action.label}`}
-                                                    icon={<CloseIcon />}
-                                                    onClick={() => hideQuickActionHandler(action.id)}
-                                                />
+                                                <div className="settings-quick-order">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        isIconOnly
+                                                        label={`上移 ${action.label}`}
+                                                        icon={<ChevronUpIcon />}
+                                                        onClick={() => moveQuickActionUpHandler(action.id)}
+                                                        isDisabled={index === 0}
+                                                    />
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        isIconOnly
+                                                        label={`下移 ${action.label}`}
+                                                        icon={<ChevronDownIcon />}
+                                                        onClick={() => moveQuickActionDownHandler(action.id)}
+                                                        isDisabled={index === quickActionConfigs.length - 1}
+                                                    />
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        isIconOnly
+                                                        label={`隐藏 ${action.label}`}
+                                                        icon={<CloseIcon />}
+                                                        onClick={() => hideQuickActionHandler(action.id)}
+                                                    />
+                                                </div>
                                             </div>
                                         ))
                                     ) : (
