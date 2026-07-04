@@ -14,48 +14,38 @@ describe('visual CSS contracts', () => {
     expect(aiPanelCss).toContain('line-height: 22px;');
   });
 
-  it('renders the AI Reading Console as a wide shell with Astryx side navigation', () => {
-    // The console shell replaces the legacy tab strip. Lock the wide layout,
-    // the side-nav column wrapping an Astryx SideNav, and the overview status
-    // rows so a future refactor cannot regress to a hand-rolled nav or the
-    // narrow tabbed settings form.
-    expect(settingsPanelCss).toContain('width: min(840px, calc(100vw - 32px)) !important;');
-    expect(settingsPanelCss).toContain('.console-content');
-    expect(settingsPanelCss).toContain('display: flex;');
-    expect(settingsPanelCss).toContain('.console-sidenav');
-    expect(settingsPanelCss).toContain('width: var(--settings-sidenav-width);');
-    expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav');
-    expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav-item');
-    expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav-item[aria-current="page"]');
-    expect(settingsPanelCss).toContain('.console-status-row');
-    expect(settingsPanelCss).toContain('.console-readiness-dot');
+  it('renders SettingsPanel as a focused three-tab AI settings dialog', () => {
+    expect(settingsPanelCss).toContain('width: min(calc(var(--spacing-9) * 20), calc(100vw - var(--spacing-8))) !important;');
+    expect(settingsPanelCss).toContain('.settings-tabs-row');
+    expect(settingsPanelCss).toContain('.settings-tabs-row .astryx-tab-list');
+    expect(settingsPanelCss).toContain('.settings-tab-attention');
+    expect(settingsPanelCss).toContain('.settings-subsection-separated');
+    expect(settingsPanelCss).toContain('border-top: var(--border-width) solid var(--border-soft);');
   });
 
-  it('keeps SettingsPanel cleanup free of legacy tabs and custom provider buttons', () => {
-    expect(settingsPanelCss).not.toMatch(/settings-tabs-row|settings-tab|settings-form/);
+  it('keeps SettingsPanel cleanup free of console-era styles and custom provider buttons', () => {
+    expect(settingsPanelCss).not.toMatch(/console-/);
+    expect(settingsPanelCss).not.toContain('--settings-sidenav-width');
+    expect(settingsPanelCss).not.toContain('astryx-side-nav');
     expect(settingsPanelCss).not.toContain('settings-icon-btn');
     expect(settingsPanelCss).not.toContain('--space-');
+    expect(settingsPanelCss).not.toMatch(/\b\d+px\b/);
     expect(settingsPanelCss).not.toMatch(/#[0-9a-fA-F]{3,8}/);
     expect(settingsPanelCss).toContain('var(--spacing-');
     expect(settingsPanelCss).toContain('var(--radius-');
   });
 
-  it('maps readiness to color through one data-readiness attribute per surface', () => {
-    // One readiness→color mapping per surface (chip, hero, status row),
-    // driven by data-readiness so the three states stay in sync.
-    expect(settingsPanelCss).toContain('.console-readiness-chip[data-readiness="ready"]');
-    expect(settingsPanelCss).toContain('.console-readiness-chip[data-readiness="degraded"]');
-    expect(settingsPanelCss).toContain('.console-readiness-chip[data-readiness="missing"]');
-    expect(settingsPanelCss).toContain('.console-hero[data-readiness="ready"]');
-    expect(settingsPanelCss).toContain('.console-status-row[data-readiness="ready"]');
-    expect(settingsPanelCss).toContain('.console-status-row[data-readiness="missing"]');
+  it('uses a single AI-tab attention dot instead of readiness color surfaces', () => {
+    expect(settingsPanelCss).toContain('.settings-tab-attention');
+    expect(settingsPanelCss).toContain('background: var(--error);');
+    expect(settingsPanelCss).not.toContain('data-readiness');
+    expect(settingsPanelCss).not.toContain('.console-hero');
+    expect(settingsPanelCss).not.toContain('.console-status-row');
   });
 
   it('falls back to a single-column layout on small viewports', () => {
-    expect(settingsPanelCss).toContain('@media (max-width: 720px)');
+    expect(settingsPanelCss).toContain('@media (max-width: 45rem)');
     expect(settingsPanelCss).toContain('flex-direction: column;');
-    // The SideNav section becomes a wrapping row so nav labels do not overlap.
-    expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav-section');
-    expect(settingsPanelCss).toContain('flex-direction: row;');
+    expect(settingsPanelCss).toContain('grid-template-columns: 1fr;');
   });
 });

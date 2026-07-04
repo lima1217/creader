@@ -17,16 +17,6 @@ export function clampAITextSize(size: number): number {
 }
 
 /**
- * Format the current Conversation Behavior strategy into a single summary line
- * shown at the top of the Conversation Behavior page, before its controls.
- * Pure.
- */
-export function formatConversationStrategy(settings: Pick<Settings, 'aiContextWindow' | 'aiAutoSummarize' | 'aiTextSize'>): string {
-  const summarize = settings.aiAutoSummarize ? '自动压缩已开启' : '自动压缩已关闭';
-  return `上下文 ${settings.aiContextWindow} 条 · ${summarize} · AI 文字 ${settings.aiTextSize}px`;
-}
-
-/**
  * Clear the configured Reading Memory repository path while leaving the user's
  * auto-ingest preference intact. Disconnect never deletes local Markdown
  * files — it is a pure settings change. Pure.
@@ -157,22 +147,19 @@ export const QUICK_PROMPT_DIRECT_BUTTON_COUNT = 6;
 
 /**
  * Summarize the current Quick Prompt set for the Quick Prompts page header:
- * enabled count, and the first-six-vs-overflow behavior. Marked degraded when
- * the set is empty (the AI panel bottom-bar would have no buttons). Pure.
+ * enabled count, and the first-six-vs-overflow behavior. Pure.
  */
 export function formatQuickPromptStatus(
   actions: QuickActionConfig[],
-): { summary: string; isDegraded: boolean } {
+): string {
   if (actions.length === 0) {
-    return { summary: '没有可用的快捷提示词按钮', isDegraded: true };
+    return '没有可用的快捷提示词按钮';
   }
   const directCount = Math.min(actions.length, QUICK_PROMPT_DIRECT_BUTTON_COUNT);
   const overflowCount = Math.max(0, actions.length - QUICK_PROMPT_DIRECT_BUTTON_COUNT);
-  const summary =
-    overflowCount > 0
-      ? `已启用 ${actions.length} 个 · 前 ${directCount} 个直接显示，其余 ${overflowCount} 个进入「更多」`
-      : `已启用 ${actions.length} 个 · 全部直接显示`;
-  return { summary, isDegraded: false };
+  return overflowCount > 0
+    ? `已启用 ${actions.length} 个 · 前 ${directCount} 个直接显示，其余 ${overflowCount} 个进入「更多」`
+    : `已启用 ${actions.length} 个 · 全部直接显示`;
 }
 
 /**

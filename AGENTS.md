@@ -36,7 +36,7 @@
 ## AI
 
 - Keep the AI panel a reading conversation surface: message stream, quick prompt buttons, and input. Put provider/model, AI text size, context window, Reading Memory path, and quick prompt management in `SettingsPanel.tsx`.
-- Settings has three top-level tabs: `AI`, `Reading Memory`, and `快捷提示词`. Add new settings inside the matching tab.
+- Settings is the `AI 设置` dialog with three top-level tabs: `AI`, `阅读记忆`, and `快捷提示词`. Add new settings inside the matching tab; do not reintroduce a console overview or side navigation.
 - Quick prompts are persisted by `src/components/ai/quickActions.tsx`; show up to six direct buttons in the AI panel and put overflow in the more menu.
 - The input placeholder is intentionally empty.
 - Chat requests carry prompt, frozen reading context, conversation summary, and recent history only. Do not add provider/model fields to `buildChatRequest`.

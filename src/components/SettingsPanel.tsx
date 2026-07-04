@@ -11,8 +11,7 @@ import { Switch } from '@astryxdesign/core/Switch';
 import { Button } from '@astryxdesign/core/Button';
 import { ButtonGroup } from '@astryxdesign/core/ButtonGroup';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
-import { Badge } from '@astryxdesign/core/Badge';
-import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
+import { Tab, TabList } from '@astryxdesign/core/TabList';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { NumberInput } from '@astryxdesign/core/NumberInput';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -38,7 +37,6 @@ import {
     clearReadingMemoryPath,
     commitQuickActionDraft,
     createCustomQuickAction,
-    formatConversationStrategy,
     formatQuickPromptStatus,
     hideQuickAction,
     moveQuickActionDown,
@@ -48,14 +46,9 @@ import {
     validateProviderDraft,
 } from './settingsPanelLogic';
 import {
-    CONSOLE_AREAS,
-    computeAreaStatuses,
-    computeOverallReadiness,
-    computeSideNavBadges,
+    isAiServiceReady,
     resolveProviderCandidate,
-    type ConsoleAreaId,
-    type ConsoleReadiness,
-} from './consoleReadiness';
+} from './aiServiceReadiness';
 import './SettingsPanel.css';
 
 const logger = createLogger('SettingsPanel');
@@ -74,7 +67,7 @@ function newProviderId() {
 }
 
 // Session-only UI state for an explicit AI Service connection test. Never
-// persisted into provider config, never fed into Console readiness.
+// persisted into provider config, never fed into the AI tab attention state.
 type ProviderTestState = {
     status: 'loading' | 'success' | 'error';
     message: string;
@@ -86,20 +79,7 @@ const contextWindowOptions = [
     { value: 40, label: '近 40 条', hint: '长对话' },
 ] as const;
 
-const readinessCopy: Record<ConsoleReadiness, { label: string; headline: string }> = {
-    ready: {
-        label: '已就绪',
-        headline: '阅读 AI 已就绪。所有运行所需的能力都已配置。',
-    },
-    degraded: {
-        label: '部分能力受限',
-        headline: '阅读 AI 可以运行，但部分能力受限或未启用。',
-    },
-    missing: {
-        label: '需要配置',
-        headline: '阅读 AI 尚未就绪。完成下方配置后即可开始对话。',
-    },
-};
+type SettingsTabId = 'ai' | 'reading-memory' | 'quick-prompts';
 
 type SettingsPanelProps = {
     isOpen: boolean;
@@ -115,7 +95,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(loadQuickActionConfigs);
     const [editingActionId, setEditingActionId] = useState<string | null>(quickActionConfigs[0]?.id || null);
     const [quickActionDraft, setQuickActionDraft] = useState({ label: '', prompt: '' });
-    const [activeSection, setActiveSection] = useState<ConsoleAreaId>('overview');
+    const [activeTab, setActiveTab] = useState<SettingsTabId>('ai');
 
     // Provider editor state.
     const emptyDraft: AIProviderConfig = useMemo(() => ({ id: newProviderId(), name: '', baseUrl: '', model: '' }), []);
@@ -123,18 +103,17 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const [draftKey, setDraftKey] = useState('');
     const [providerError, setProviderError] = useState('');
 
-    // Per-provider connection-test state. Session-only: closing/reopening the
-    // console clears results. Never persisted, never feeds Console readiness.
+    // Per-provider connection-test state. Session-only: closing/reopening
+    // settings clears results. Never persisted, never feeds AI tab attention.
     const [providerTests, setProviderTests] = useState<Record<string, ProviderTestState>>({});
 
     useEffect(() => {
         if (!isOpen) return;
-        // The console always opens on the actionable Overview first.
-        setActiveSection('overview');
+        setActiveTab('ai');
         setEditingProvider(null);
         setDraftKey('');
         setProviderError('');
-        // Connection test results do not survive a console reopen.
+        // Connection test results do not survive a settings reopen.
         setProviderTests({});
         const loadedActions = loadQuickActionConfigs();
         setQuickActionConfigs(loadedActions);
@@ -297,34 +276,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const missingDefaultQuickActions = getMissingDefaultQuickActions(quickActionConfigs);
     const quickPromptStatus = formatQuickPromptStatus(quickActionConfigs);
 
-    // ---- Console readiness (local configuration only — never calls a provider) ----
-    const areaStatuses = useMemo(
-        () => computeAreaStatuses({
-            providers: aiProviders.providers,
-            readingMemoryPath: settings.readingMemoryPath,
-            readingMemoryAutoIngest: settings.readingMemoryAutoIngest,
-            aiContextWindow: settings.aiContextWindow,
-            aiAutoSummarize: settings.aiAutoSummarize,
-            quickPromptCount: quickActionConfigs.length,
-        }),
-        [
-            aiProviders.providers,
-            settings.readingMemoryPath,
-            settings.readingMemoryAutoIngest,
-            settings.aiContextWindow,
-            settings.aiAutoSummarize,
-            quickActionConfigs.length,
-        ],
-    );
-    const overallReadiness = useMemo(() => computeOverallReadiness(areaStatuses), [areaStatuses]);
-    const sideNavBadges = useMemo(() => computeSideNavBadges(areaStatuses), [areaStatuses]);
+    // Local-only setup signal: do not call providers while opening settings.
+    const aiServiceReady = useMemo(() => isAiServiceReady(aiProviders.providers), [aiProviders.providers]);
     const candidateProvider = resolveProviderCandidate(aiProviders.providers);
 
-    const goToArea = useCallback((area: ConsoleAreaId) => {
-        setActiveSection(area);
-        // Entering the AI Service area should not pre-open the editor; the
-        // provider summary/list is the landing surface.
-        if (area !== 'ai-service') {
+    const switchTab = useCallback((tab: string) => {
+        setActiveTab(tab as SettingsTabId);
+        if (tab !== 'ai') {
             setEditingProvider(null);
             setProviderError('');
         }
@@ -334,366 +292,308 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         <Dialog
             isOpen={isOpen}
             onOpenChange={open => { if (!open) onClose(); }}
-            width={840}
+            width={720}
             maxHeight="86vh"
             purpose="form"
-            className="settings-dialog console-dialog"
+            className="settings-dialog"
         >
-            <Layout className="settings-dialog-layout console-layout">
+            <Layout className="settings-dialog-layout">
                 <DialogHeader
                     className="settings-dialog-header"
-                    title="AI 阅读控制台"
-                    subtitle="阅读 AI 运行状态与配置"
+                    title="AI 设置"
                     hasDivider={false}
                     endContent={(
                         <Button
                             variant="ghost"
-                            label="关闭控制台"
+                            label="关闭设置"
                             isIconOnly
                             icon={<CloseIcon />}
                             onClick={onClose}
                         />
                     )}
                 />
-                <LayoutContent isScrollable={false} className="console-content">
-                    <div className="console-sidenav">
-                        <SideNav
-                            aria-label="控制台导航"
-                            topContent={
-                                <button
-                                    type="button"
-                                    className="console-readiness-chip"
-                                    data-readiness={overallReadiness}
-                                    onClick={() => goToArea('overview')}
-                                    aria-pressed={activeSection === 'overview'}
-                                >
-                                    <span className="console-readiness-dot" aria-hidden="true" />
-                                    <span className="console-readiness-chip-copy">
-                                        <strong>阅读 AI</strong>
-                                        <small>{readinessCopy[overallReadiness].label}</small>
-                                    </span>
-                                </button>
-                            }
-                        >
-                            <SideNavSection title="控制台导航" isHeaderHidden>
-                                {CONSOLE_AREAS.map(area => {
-                                    const badge = sideNavBadges.find(b => b.area === area.id);
-                                    const isActive = activeSection === area.id;
-                                    return (
-                                        <SideNavItem
-                                            key={area.id}
-                                            label={area.label}
-                                            isSelected={isActive}
-                                            onClick={() => goToArea(area.id)}
-                                            endContent={badge ? (
-                                                <Badge
-                                                    variant={badge.variant === 'error' ? 'error' : 'warning'}
-                                                    label={badge.variant === 'error' ? '需配置' : '待完善'}
-                                                />
-                                            ) : undefined}
-                                        />
-                                    );
-                                })}
-                            </SideNavSection>
-                        </SideNav>
-                    </div>
-
-                    <div className="console-main">
-                    {activeSection === 'overview' && (
-                        <ConsoleOverview
-                            overallReadiness={overallReadiness}
-                            statuses={areaStatuses}
-                            candidateProviderName={candidateProvider?.name ?? null}
-                            onJump={goToArea}
+                <div className="settings-tabs-row">
+                    <TabList
+                        value={activeTab}
+                        onChange={switchTab}
+                        size="sm"
+                        layout="hug"
+                        hasDivider
+                    >
+                        <Tab
+                            value="ai"
+                            label="AI"
+                            endContent={!aiServiceReady ? (
+                                <span className="settings-tab-attention" aria-label="需要配置 AI 服务" />
+                            ) : undefined}
                         />
-                    )}
+                        <Tab value="reading-memory" label="阅读记忆" />
+                        <Tab value="quick-prompts" label="快捷提示词" />
+                    </TabList>
+                </div>
+                <LayoutContent isScrollable className="settings-content">
+                    {activeTab === 'ai' && (
+                        <div className="settings-section settings-section-stack">
+                            <section className="settings-subsection">
+                                <div className="settings-section-title">AI 服务</div>
 
-                    {activeSection === 'ai-service' && (
-                        <div className="settings-section">
-                            <div className="settings-section-title">AI 服务</div>
+                                {editingProvider ? (
+                                    <div className="settings-provider-editor">
+                                        <Field inputID="settings-provider-name" label="名称" isRequired>
+                                            <TextInput
+                                                label="名称"
+                                                isLabelHidden
+                                                value={editingProvider.name}
+                                                onChange={value => setEditingProvider({ ...editingProvider, name: value })}
+                                                placeholder="如 DeepSeek"
+                                                htmlName="settings-provider-name"
+                                            />
+                                        </Field>
+                                        <Field inputID="settings-provider-base-url" label="Base URL（OpenAI 兼容）" isRequired>
+                                            <TextInput
+                                                label="Base URL（OpenAI 兼容）"
+                                                isLabelHidden
+                                                value={editingProvider.baseUrl}
+                                                onChange={value => setEditingProvider({ ...editingProvider, baseUrl: value })}
+                                                placeholder="https://api.deepseek.com/v1"
+                                                htmlName="settings-provider-base-url"
+                                            />
+                                        </Field>
+                                        <Field inputID="settings-provider-model" label="模型" isRequired>
+                                            <TextInput
+                                                label="模型"
+                                                isLabelHidden
+                                                value={editingProvider.model}
+                                                onChange={value => setEditingProvider({ ...editingProvider, model: value })}
+                                                placeholder="deepseek-chat"
+                                                htmlName="settings-provider-model"
+                                            />
+                                        </Field>
+                                        <Field
+                                            inputID="settings-provider-key"
+                                            label="API Key（存入本地配置文件，不回显）"
+                                            description="留空则保留已保存的 Key"
+                                        >
+                                            <TextInput
+                                                label="API Key（存入本地配置文件，不回显）"
+                                                isLabelHidden
+                                                type="password"
+                                                value={draftKey}
+                                                onChange={value => setDraftKey(value)}
+                                                placeholder="留空则保留已保存的 Key"
+                                                htmlName="settings-provider-key"
+                                            />
+                                        </Field>
 
-                        {editingProvider ? (
-                            <div className="settings-provider-editor">
-                                <Field
-                                    inputID="settings-provider-name"
-                                    label="名称"
-                                    isRequired
-                                >
-                                    <TextInput
-                                        label="名称"
-                                        isLabelHidden
-                                        value={editingProvider.name}
-                                        onChange={value => setEditingProvider({ ...editingProvider, name: value })}
-                                        placeholder="如 DeepSeek"
-                                        htmlName="settings-provider-name"
-                                    />
-                                </Field>
-                                <Field
-                                    inputID="settings-provider-base-url"
-                                    label="Base URL（OpenAI 兼容）"
-                                    isRequired
-                                >
-                                    <TextInput
-                                        label="Base URL（OpenAI 兼容）"
-                                        isLabelHidden
-                                        value={editingProvider.baseUrl}
-                                        onChange={value => setEditingProvider({ ...editingProvider, baseUrl: value })}
-                                        placeholder="https://api.deepseek.com/v1"
-                                        htmlName="settings-provider-base-url"
-                                    />
-                                </Field>
-                                <Field
-                                    inputID="settings-provider-model"
-                                    label="模型"
-                                    isRequired
-                                >
-                                    <TextInput
-                                        label="模型"
-                                        isLabelHidden
-                                        value={editingProvider.model}
-                                        onChange={value => setEditingProvider({ ...editingProvider, model: value })}
-                                        placeholder="deepseek-chat"
-                                        htmlName="settings-provider-model"
-                                    />
-                                </Field>
-                                <Field
-                                    inputID="settings-provider-key"
-                                    label="API Key（存入本地配置文件，不回显）"
-                                    description="留空则保留已保存的 Key"
-                                >
-                                    <TextInput
-                                        label="API Key（存入本地配置文件，不回显）"
-                                        isLabelHidden
-                                        type="password"
-                                        value={draftKey}
-                                        onChange={value => setDraftKey(value)}
-                                        placeholder="留空则保留已保存的 Key"
-                                        htmlName="settings-provider-key"
-                                    />
-                                </Field>
+                                        <div className="settings-provider-templates">
+                                            <small>快捷填充：</small>
+                                            <ButtonGroup label="快捷填充">
+                                                {providerTemplates.map(template => (
+                                                    <Button
+                                                        key={template.name}
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        label={template.name}
+                                                        onClick={() => applyTemplate(template)}
+                                                    />
+                                                ))}
+                                            </ButtonGroup>
+                                        </div>
 
-                                <div className="settings-provider-templates">
-                                    <small>快捷填充：</small>
-                                    <ButtonGroup label="快捷填充">
-                                        {providerTemplates.map(template => (
+                                        {providerError && (
+                                            <FieldStatus type="error" message={providerError} variant="detached" />
+                                        )}
+
+                                        <div className="settings-provider-edit-actions">
                                             <Button
-                                                key={template.name}
+                                                variant="ghost"
+                                                label="取消"
+                                                onClick={() => { setEditingProvider(null); setProviderError(''); }}
+                                            />
+                                            <Button
+                                                variant="secondary"
+                                                label="保存"
+                                                onClick={() => saveEditingProvider(false)}
+                                            />
+                                            <Button
+                                                variant="primary"
+                                                label="保存并启用"
+                                                onClick={() => saveEditingProvider(true)}
+                                            />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="settings-provider-summary">
+                                            <span className={`settings-provider-dot ${candidateProvider?.hasKey ? 'available' : 'unavailable'}`} />
+                                            <span className="settings-provider-summary-copy">
+                                                <strong>{candidateProvider ? candidateProvider.name : '尚未配置 AI 服务'}</strong>
+                                                <small>
+                                                    {candidateProvider
+                                                        ? `${candidateProvider.model} · ${candidateProvider.hasKey ? 'Key 已设置' : '未设置 Key'}`
+                                                        : '添加一个 OpenAI 兼容服务后即可使用 AI。'}
+                                                </small>
+                                                {candidateProvider && (
+                                                    <small className="settings-provider-url">{candidateProvider.baseUrl}</small>
+                                                )}
+                                            </span>
+                                            <Button
                                                 variant="secondary"
                                                 size="sm"
-                                                label={template.name}
-                                                onClick={() => applyTemplate(template)}
+                                                label={candidateProvider ? '添加' : '添加 AI 服务'}
+                                                icon={<PlusIcon />}
+                                                onClick={startNewProvider}
+                                                isDisabled={!isTauri}
                                             />
-                                        ))}
-                                    </ButtonGroup>
-                                </div>
+                                        </div>
 
-                                {providerError && (
-                                    <FieldStatus type="error" message={providerError} variant="detached" />
-                                )}
-
-                                <div className="settings-provider-edit-actions">
-                                    <Button
-                                        variant="ghost"
-                                        label="取消"
-                                        onClick={() => { setEditingProvider(null); setProviderError(''); }}
-                                    />
-                                    <Button
-                                        variant="secondary"
-                                        label="保存"
-                                        onClick={() => saveEditingProvider(false)}
-                                    />
-                                    <Button
-                                        variant="primary"
-                                        label="保存并启用"
-                                        onClick={() => saveEditingProvider(true)}
-                                    />
-                                </div>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="settings-provider-summary">
-                                    <span className={`settings-provider-dot ${candidateProvider?.hasKey ? 'available' : 'unavailable'}`} />
-                                    <span className="settings-provider-summary-copy">
-                                        <strong>{candidateProvider ? candidateProvider.name : '尚未配置 AI 服务'}</strong>
-                                        <small>
-                                            {candidateProvider
-                                                ? `${candidateProvider.model} · ${candidateProvider.hasKey ? 'Key 已设置' : '未设置 Key'}`
-                                                : '添加一个 OpenAI 兼容服务后即可使用 AI。'}
-                                        </small>
-                                        {candidateProvider && (
-                                            <small className="settings-provider-url">{candidateProvider.baseUrl}</small>
-                                        )}
-                                    </span>
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        label={candidateProvider ? '添加' : '添加 AI 服务'}
-                                        icon={<PlusIcon />}
-                                        onClick={startNewProvider}
-                                        isDisabled={!isTauri}
-                                    />
-                                </div>
-
-                                {aiProviders.providers.length > 0 && (
-                                    <Collapsible
-                                        className="settings-provider-collapsible"
-                                        defaultIsOpen={false}
-                                        trigger={(
-                                            <span className="settings-provider-collapsible-trigger">
-                                                <span>管理服务</span>
-                                                <small>{aiProviders.providers.length} 个服务，可切换、编辑或删除</small>
-                                            </span>
-                                        )}
-                                    >
-                                        <ul className="settings-provider-list">
-                                            {aiProviders.providers.map(provider => {
-                                                const test = providerTests[provider.id];
-                                                const isTestLoading = test?.status === 'loading';
-                                                return (
-                                                <li
-                                                    key={provider.id}
-                                                    className={`settings-provider-item ${provider.active ? 'active' : ''}`}
-                                                >
-                                                    <button
-                                                        className="settings-provider-main"
-                                                        onClick={() => !provider.active && aiProviders.setActive(provider.id)}
-                                                        aria-label={provider.active ? `${provider.name}，当前启用的服务` : `启用 ${provider.name}`}
-                                                    >
-                                                        <span className={`settings-provider-dot ${provider.hasKey ? 'available' : 'unavailable'}`} />
-                                                        <span className="settings-provider-copy">
-                                                            <span className="settings-provider-name">
-                                                                {provider.name}
-                                                                {provider.active && <CheckIcon />}
-                                                            </span>
-                                                            <small>{provider.model} · {provider.hasKey ? 'Key 已设置' : '未设置 Key'}</small>
-                                                            <small className="settings-provider-url">{provider.baseUrl}</small>
-                                                            {test && (
-                                                                <span
-                                                                    className="settings-provider-test"
-                                                                    data-test-status={test.status}
-                                                                    role="status"
+                                        {aiProviders.providers.length > 0 && (
+                                            <Collapsible
+                                                className="settings-provider-collapsible"
+                                                defaultIsOpen={false}
+                                                trigger={(
+                                                    <span className="settings-provider-collapsible-trigger">
+                                                        <span>管理服务</span>
+                                                        <small>{aiProviders.providers.length} 个服务，可切换、编辑或删除</small>
+                                                    </span>
+                                                )}
+                                            >
+                                                <ul className="settings-provider-list">
+                                                    {aiProviders.providers.map(provider => {
+                                                        const test = providerTests[provider.id];
+                                                        const isTestLoading = test?.status === 'loading';
+                                                        return (
+                                                            <li
+                                                                key={provider.id}
+                                                                className={`settings-provider-item ${provider.active ? 'active' : ''}`}
+                                                            >
+                                                                <button
+                                                                    className="settings-provider-main"
+                                                                    onClick={() => !provider.active && aiProviders.setActive(provider.id)}
+                                                                    aria-label={provider.active ? `${provider.name}，当前启用的服务` : `启用 ${provider.name}`}
                                                                 >
-                                                                    {test.status === 'success' && <CheckIcon />}
-                                                                    {test.status === 'error' && <CloseIcon />}
-                                                                    <span>{test.message}</span>
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                    </button>
-                                                    <div className="settings-provider-actions">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            label={isTestLoading ? '测试中…' : '测试'}
-                                                            onClick={() => runProviderTest(provider)}
-                                                            isDisabled={isTestLoading || !isTauri}
-                                                            aria-label={`测试 ${provider.name} 的连接`}
-                                                        />
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            label="编辑"
-                                                            onClick={() => startEditProvider(provider)}
-                                                        />
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            label="删除"
-                                                            onClick={() => aiProviders.deleteProvider(provider.id)}
-                                                        />
-                                                    </div>
-                                                </li>
-                                                );
-                                            })}
-                                        </ul>
-                                    </Collapsible>
+                                                                    <span className={`settings-provider-dot ${provider.hasKey ? 'available' : 'unavailable'}`} />
+                                                                    <span className="settings-provider-copy">
+                                                                        <span className="settings-provider-name">
+                                                                            {provider.name}
+                                                                            {provider.active && <CheckIcon />}
+                                                                        </span>
+                                                                        <small>{provider.model} · {provider.hasKey ? 'Key 已设置' : '未设置 Key'}</small>
+                                                                        <small className="settings-provider-url">{provider.baseUrl}</small>
+                                                                        {test && (
+                                                                            <span
+                                                                                className="settings-provider-test"
+                                                                                data-test-status={test.status}
+                                                                                role="status"
+                                                                            >
+                                                                                {test.status === 'success' && <CheckIcon />}
+                                                                                {test.status === 'error' && <CloseIcon />}
+                                                                                <span>{test.message}</span>
+                                                                            </span>
+                                                                        )}
+                                                                    </span>
+                                                                </button>
+                                                                <div className="settings-provider-actions">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        label={isTestLoading ? '测试中…' : '测试'}
+                                                                        onClick={() => runProviderTest(provider)}
+                                                                        isDisabled={isTestLoading || !isTauri}
+                                                                        aria-label={`测试 ${provider.name} 的连接`}
+                                                                    />
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        label="编辑"
+                                                                        onClick={() => startEditProvider(provider)}
+                                                                    />
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        label="删除"
+                                                                        onClick={() => aiProviders.deleteProvider(provider.id)}
+                                                                    />
+                                                                </div>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            </Collapsible>
+                                        )}
+                                    </>
                                 )}
-                            </>
-                        )}
+                            </section>
+
+                            <section className="settings-subsection settings-subsection-separated">
+                                <div className="settings-section-title">对话行为</div>
+                                <Field
+                                    className="settings-field settings-field-stacked"
+                                    inputID="settings-context-window"
+                                    label="上下文轮次"
+                                    description="每次提问带上的最近记录，越多越连贯，也越慢。"
+                                >
+                                    <div id="settings-context-window">
+                                        <SegmentedControl
+                                            label="AI 上下文轮次"
+                                            size="sm"
+                                            layout="fill"
+                                            value={String(settings.aiContextWindow)}
+                                            onChange={value => setSettings({ ...settings, aiContextWindow: Number(value) as Settings['aiContextWindow'] })}
+                                        >
+                                            {contextWindowOptions.map(option => (
+                                                <SegmentedControlItem
+                                                    key={option.value}
+                                                    value={String(option.value)}
+                                                    label={option.label}
+                                                />
+                                            ))}
+                                        </SegmentedControl>
+                                    </div>
+                                </Field>
+
+                                <Switch
+                                    label="自动压缩"
+                                    description="超过轮次后，将更早对话压成隐藏摘要继续带上（摘要不作为消息渲染）。"
+                                    value={settings.aiAutoSummarize}
+                                    onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
+                                />
+
+                                <NumberInput
+                                    label="AI 文字大小"
+                                    isLabelHidden
+                                    description="调整旁注正文和输入框文字（13–20px）。"
+                                    value={settings.aiTextSize}
+                                    onChange={value => setSettings({ ...settings, aiTextSize: clampAITextSize(value) })}
+                                    min={AI_TEXT_SIZE_MIN}
+                                    max={AI_TEXT_SIZE_MAX}
+                                    step={1}
+                                    isIntegerOnly
+                                    units="px"
+                                    size="sm"
+                                />
+                            </section>
                         </div>
                     )}
 
-                    {activeSection === 'conversation' && (
-                        <div className="settings-section">
-                            <div className="settings-section-title">对话行为</div>
-                            <div className="console-strategy" data-degraded={false}>
-                                <div className="console-strategy-title">当前对话策略</div>
-                                <p className="console-strategy-summary">{formatConversationStrategy(settings)}</p>
-                                <p className="console-strategy-hint">
-                                    调整上下文长度、隐藏摘要与旁注文字大小。这些偏好只影响对话运行方式，不会泄露给服务商选择。
-                                </p>
-                            </div>
-
-                            <Field
-                                className="settings-field settings-field-stacked"
-                                inputID="settings-context-window"
-                                label="上下文轮次"
-                                description="每次提问带上的最近记录，越多越连贯，也越慢。"
-                            >
-                                <div id="settings-context-window">
-                                    <SegmentedControl
-                                        label="AI 上下文轮次"
-                                        size="sm"
-                                        layout="fill"
-                                        value={String(settings.aiContextWindow)}
-                                        onChange={value => setSettings({ ...settings, aiContextWindow: Number(value) as Settings['aiContextWindow'] })}
-                                    >
-                                        {contextWindowOptions.map(option => (
-                                            <SegmentedControlItem
-                                                key={option.value}
-                                                value={String(option.value)}
-                                                label={option.label}
-                                            />
-                                        ))}
-                                    </SegmentedControl>
-                                </div>
-                            </Field>
-
-                            <Switch
-                                label="自动压缩"
-                                description="超过轮次后，将更早对话压成隐藏摘要继续带上（摘要不作为消息渲染）。"
-                                value={settings.aiAutoSummarize}
-                                onChange={checked => setSettings({ ...settings, aiAutoSummarize: checked })}
-                            />
-
-                            <NumberInput
-                                label="AI 文字大小"
-                                isLabelHidden
-                                description="调整旁注正文和输入框文字（13–20px）。"
-                                value={settings.aiTextSize}
-                                onChange={value => setSettings({ ...settings, aiTextSize: clampAITextSize(value) })}
-                                min={AI_TEXT_SIZE_MIN}
-                                max={AI_TEXT_SIZE_MAX}
-                                step={1}
-                                isIntegerOnly
-                                units="px"
-                                size="sm"
-                            />
-                        </div>
-                    )}
-
-                    {activeSection === 'reading-memory' && (
+                    {activeTab === 'reading-memory' && (
                         <div className="settings-section">
                             <div className="settings-section-title">阅读记忆</div>
-                            <div className="console-strategy" data-degraded={!settings.readingMemoryPath}>
-                                <div className="console-strategy-title">仓库状态</div>
+                            <div className="settings-memory-status">
                                 {settings.readingMemoryPath ? (
                                     <>
-                                        <p className="console-strategy-summary">
-                                            已连接：<code className="console-strategy-path">{settings.readingMemoryPath}</code>
-                                        </p>
-                                        <p className="console-strategy-hint">
+                                        <strong>已连接</strong>
+                                        <code>{settings.readingMemoryPath}</code>
+                                        <small>
                                             {settings.readingMemoryAutoIngest
                                                 ? '自动沉淀已开启，AI 判断有长期价值时写入当前书的 books/<book-slug>/ 目录。'
                                                 : '自动沉淀已关闭；保留此偏好，重新连接仓库后即可恢复写入。'}
-                                        </p>
+                                        </small>
                                     </>
                                 ) : (
                                     <>
-                                        <p className="console-strategy-summary">未连接仓库</p>
-                                        <p className="console-strategy-hint">
-                                            选择本地 Markdown 仓库后，AI 才能写入值得保留的笔记。断开仓库只会清除已配置路径，不会删除本地 Markdown 文件。
-                                        </p>
+                                        <strong>未连接仓库</strong>
+                                        <small>选择本地 Markdown 仓库后，AI 才能写入值得保留的笔记。断开仓库只会清除路径，不会删除本地文件。</small>
                                     </>
                                 )}
                             </div>
@@ -739,16 +639,12 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         </div>
                     )}
 
-                    {activeSection === 'quick-prompts' && (
+                    {activeTab === 'quick-prompts' && (
                         <div className="settings-section">
                             <div className="settings-section-title">快捷提示词</div>
-                            <div className="console-strategy" data-degraded={quickPromptStatus.isDegraded}>
-                                <div className="console-strategy-title">AI 面板按钮</div>
-                                <p className="console-strategy-summary">{quickPromptStatus.summary}</p>
-                                <p className="console-strategy-hint">
-                                    顺序决定旁注面板底部哪些按钮直接显示（最多前 6 个），其余进入「更多」。用上移/下移调整顺序。
-                                </p>
-                            </div>
+                            <p className="settings-field-hint settings-quick-help">
+                                {quickPromptStatus}。前 6 个直接显示，其余进入“更多”。用上移/下移调整顺序。
+                            </p>
                             <div className="settings-quick-actions">
                                 <div className="settings-quick-list">
                                     <Button
@@ -876,69 +772,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                     </div>
                                 )}
                             </div>
-                            <div className="settings-field-hint settings-quick-help">旁注面板底部最多显示前 6 个按钮，其余进入“更多”。</div>
                         </div>
                     )}
-                    </div>
                 </LayoutContent>
             </Layout>
         </Dialog>
-    );
-}
-
-type ConsoleOverviewProps = {
-    overallReadiness: ConsoleReadiness;
-    statuses: ReturnType<typeof computeAreaStatuses>;
-    candidateProviderName: string | null;
-    onJump: (area: ConsoleAreaId) => void;
-};
-
-function ConsoleOverview({ overallReadiness, statuses, candidateProviderName, onJump }: ConsoleOverviewProps) {
-    const copy = readinessCopy[overallReadiness];
-    const candidateCopy = candidateProviderName
-        ? `当前候选服务：${candidateProviderName}。`
-        : '配置一个 OpenAI 兼容服务即可开始。';
-    return (
-        <div className="console-section console-overview">
-            <div className="settings-section-title">概览</div>
-            <section
-                className="console-hero"
-                data-readiness={overallReadiness}
-                aria-live="polite"
-            >
-                <div className="console-hero-copy">
-                    <div className="console-hero-status">
-                        <span className="console-readiness-dot" aria-hidden="true" />
-                        <span>{copy.label}</span>
-                    </div>
-                    <p className="console-hero-headline">{copy.headline}</p>
-                    <p className="console-hero-sub">{candidateCopy}控制台不会自动发起任何网络请求。</p>
-                </div>
-            </section>
-
-            <ul className="console-status-list">
-                {statuses.map(status => (
-                    <li
-                        key={status.area}
-                        className="console-status-row"
-                        data-readiness={status.readiness}
-                    >
-                        <div className="console-status-row-main">
-                            <span className="console-status-row-dot" aria-hidden="true" />
-                            <div className="console-status-row-copy">
-                                <div className="console-status-row-title">{status.title}</div>
-                                <div className="console-status-row-detail">{status.detail}</div>
-                            </div>
-                        </div>
-                        <Button
-                            variant={status.readiness === 'ready' ? 'secondary' : 'primary'}
-                            size="sm"
-                            label={status.actionLabel}
-                            onClick={() => onJump(status.area)}
-                        />
-                    </li>
-                ))}
-            </ul>
-        </div>
     );
 }

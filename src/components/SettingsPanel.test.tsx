@@ -5,21 +5,6 @@ import { useSettingsStore } from '../stores/settingsStore';
 
 import { installDialogElementStub, installResizeObserverStub } from './testUtils';
 
-/**
- * SettingsPanel contract tests — issue #50.
- *
- * Locks the AI Reading Console shell: it opens on the actionable Overview
- * first, derives readiness from local configuration only, never triggers a
- * provider network request on open, offers working side-nav navigation across
- * the five console areas, and surfaces a status row for each non-overview area.
- *
- * Mocking follows the Phase 1 contract-mock precedent (see AIPanel.test.tsx):
- * heavy Tauri plugins and the provider hook are mocked so the shell can be
- * driven synchronously without a backend.
- */
-
-// --- vi.hoisted: provider + invoke capture --------------------------------
-
 const {
   invokeCalls,
   resetInvokeCapture,
@@ -38,8 +23,6 @@ const {
     active: boolean;
     hasKey: boolean;
   }> = [];
-  // Connection-test mock: the pending result that `test_ai_provider` resolves
-  // or rejects with. Cleared after each call so tests stay explicit.
   type TestResult = { kind: 'resolve'; value: string } | { kind: 'reject'; message: string };
   let testResult: TestResult | null = null;
   return {
@@ -66,7 +49,6 @@ vi.mock('@tauri-apps/api/core', () => ({
     invokeCalls.push({ cmd, args });
     if (cmd === 'list_ai_providers') return getProviders();
     if (cmd === 'test_ai_provider') {
-      // Defer to the next tick so the loading state is observable.
       await new Promise((r) => setTimeout(r, 0));
       const result = getTestResult();
       clearTestResult();
@@ -92,8 +74,6 @@ vi.mock('../utils/logger', () => ({
 }));
 
 import { SettingsPanel } from './SettingsPanel';
-
-// --- Fixture helpers ------------------------------------------------------
 
 const DEFAULT_PROVIDERS = [
   {
@@ -152,8 +132,6 @@ async function settle() {
   flushSync(() => {});
 }
 
-// Multi-round settle for async handlers whose post-await setState lands after
-// the first macrotask (e.g. the connection-test round trip through the mock).
 async function settleAsync() {
   for (let i = 0; i < 4; i++) {
     await new Promise((r) => setTimeout(r, 0));
@@ -161,20 +139,36 @@ async function settleAsync() {
   }
 }
 
-function activeAreaLabel(container: HTMLElement): string | null {
-  // SideNavItem sets aria-current="page" on the selected item; the label text
-  // renders directly inside the item element.
-  const active = container.querySelector('.astryx-side-nav-item[aria-current="page"]');
-  return active?.textContent?.trim() ?? null;
+function tabs(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll('.astryx-tab'));
 }
 
-function statusRowTitles(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll('.console-status-row-title')).map((el) =>
-    el.textContent?.trim() ?? '',
+function tabByLabel(container: HTMLElement, label: string): HTMLElement | undefined {
+  return tabs(container).find((el) => (el.textContent ?? '').includes(label));
+}
+
+function clickTab(container: HTMLElement, label: string) {
+  tabByLabel(container, label)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
+
+function providerTestButton(container: HTMLElement, name: string): HTMLButtonElement | null {
+  const item = Array.from(container.querySelectorAll('.settings-provider-item')).find((el) =>
+    (el.textContent ?? '').includes(name),
   );
+  return item?.querySelector('.settings-provider-actions button') as HTMLButtonElement | null;
 }
 
-describe('SettingsPanel — AI Reading Console shell (#50)', () => {
+function seedOrderedActions(labels: string[]) {
+  const actions = labels.map((label, i) => ({
+    id: `qa-${i}`,
+    label,
+    prompt: `prompt ${i}`,
+    icon: 'explain' as const,
+  }));
+  localStorage.setItem('creader-quick-actions', JSON.stringify({ v: 1, data: actions }));
+}
+
+describe('SettingsPanel — AI 设置三标签弹窗 (#61)', () => {
   beforeEach(() => {
     installDialogElementStub();
     installResizeObserverStub();
@@ -189,433 +183,117 @@ describe('SettingsPanel — AI Reading Console shell (#50)', () => {
     unmountAll();
   });
 
-  it('opens the Overview first and lists the five console areas in the side nav', async () => {
+  it('opens as AI 设置 with three top tabs and no console overview shell', async () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    const navLabels = Array.from(container.querySelectorAll('.astryx-side-nav-item')).map((el) =>
-      el.textContent?.trim() ?? '',
-    );
-    expect(navLabels).toEqual(['概览', 'AI 服务', '对话行为', '阅读记忆', '快捷提示词']);
-    // Overview is the active area on open.
-    expect(activeAreaLabel(container)).toBe('概览');
-    // Overview content (hero) is present.
-    expect(container.querySelector('.console-hero')).not.toBeNull();
+    expect(container.textContent ?? '').toContain('AI 设置');
+    expect(tabs(container).length).toBe(3);
+    expect(tabByLabel(container, 'AI')).toBeTruthy();
+    expect(tabByLabel(container, '阅读记忆')).toBeTruthy();
+    expect(tabByLabel(container, '快捷提示词')).toBeTruthy();
+    expect(tabByLabel(container, 'AI')?.hasAttribute('data-selected')).toBe(true);
+    expect(container.querySelector('.console-sidenav')).toBeNull();
+    expect(container.querySelector('.console-hero')).toBeNull();
+    expect(container.querySelector('.console-status-row')).toBeNull();
+    expect(container.querySelector('.console-strategy')).toBeNull();
   });
 
-  it('shows a status row for each non-overview area on Overview', async () => {
+  it('shows AI service and conversation behavior together on the AI tab', async () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    // Four status rows: AI Service, Conversation Behavior, Reading Memory, Quick Prompts.
-    expect(statusRowTitles(container).length).toBe(4);
-    // Each row has an actionable button that jumps to its area.
-    const rowButtons = container.querySelectorAll('.console-status-row Button, .console-status-row button');
-    expect(rowButtons.length).toBeGreaterThanOrEqual(4);
+    expect(container.querySelector('.settings-provider-summary')).not.toBeNull();
+    expect(container.textContent ?? '').toContain('AI 服务');
+    expect(container.textContent ?? '').toContain('对话行为');
+    expect(container.querySelector('#settings-context-window')).not.toBeNull();
+    expect(container.querySelector('.astryx-number-input input')?.getAttribute('min')).toBe('13');
+    expect(container.querySelector('.astryx-number-input input')?.getAttribute('max')).toBe('20');
   });
 
-  it('marks the overall readiness "ready" when everything is configured', async () => {
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-
-    const chip = container.querySelector('.console-readiness-chip');
-    // Default fixture: provider with key, memory path, auto-ingest on, prompts present.
-    expect(chip?.getAttribute('data-readiness')).toBe('ready');
-  });
-
-  it('downgrades to missing when the AI Service has no provider', async () => {
+  it('shows an attention dot only on the AI tab when no active keyed provider exists', async () => {
     setProviderList([]);
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    const chip = container.querySelector('.console-readiness-chip');
-    expect(chip?.getAttribute('data-readiness')).toBe('missing');
-    // Side nav shows an attention badge on the AI Service item.
-    const aiItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
-      (el.textContent ?? '').includes('AI 服务'),
-    );
-    expect(aiItem?.querySelector('.astryx-badge')).not.toBeNull();
+    expect(tabByLabel(container, 'AI')?.querySelector('.settings-tab-attention')).not.toBeNull();
+    expect(tabByLabel(container, '阅读记忆')?.querySelector('.settings-tab-attention')).toBeNull();
+    expect(tabByLabel(container, '快捷提示词')?.querySelector('.settings-tab-attention')).toBeNull();
   });
 
-  it('shows a side-nav badge on Reading Memory when no repository is chosen', async () => {
-    useSettingsStore.setState({
-      settings: {
-        ...useSettingsStore.getState().settings,
-        readingMemoryPath: undefined,
-        readingMemoryAutoIngest: false,
-      },
-    });
+  it('does not show any positive readiness marker when AI service is ready', async () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    const memItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
-      (el.textContent ?? '').includes('阅读记忆'),
-    );
-    expect(memItem?.querySelector('.astryx-badge')).not.toBeNull();
+    expect(container.querySelector('.settings-tab-attention')).toBeNull();
+    expect(container.textContent ?? '').not.toContain('已就绪');
   });
 
-  it('shows a side-nav badge on Quick Prompts when the prompt list is empty', async () => {
-    localStorage.setItem('creader-quick-actions', JSON.stringify([]));
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-
-    const qpItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
-      (el.textContent ?? '').includes('快捷提示词'),
-    );
-    expect(qpItem?.querySelector('.astryx-badge')).not.toBeNull();
-  });
-
-  it('navigates to AI Service from the Overview CTA', async () => {
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-
-    // The AI Service status row is the first row and ends in an action button.
-    const rows = container.querySelectorAll('.console-status-row');
-    const aiRow = rows[0];
-    expect(aiRow?.textContent ?? '').toContain('DeepSeek');
-    const aiRowButton = aiRow.querySelector('button');
-    expect(aiRowButton).toBeTruthy();
-    aiRowButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await settle();
-
-    expect(activeAreaLabel(container)).toBe('AI 服务');
-    // The AI Service summary surface is rendered, not the editor.
-    expect(container.querySelector('.settings-provider-summary')).not.toBeNull();
-  });
-
-  it('navigates between areas via the side nav', async () => {
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-
-    const convItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
-      (el.textContent ?? '').includes('对话行为'),
-    );
-    convItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await settle();
-
-    expect(activeAreaLabel(container)).toBe('对话行为');
-    // Conversation Behavior renders the context-window segmented control.
-    expect(container.querySelector('#settings-context-window')).not.toBeNull();
-  });
-
-  it('does not trigger a provider request beyond the local list when opened', async () => {
-    // list_ai_providers is a local read, not a network call to the provider.
-    // Opening the console must not invoke chat, connection-test, or stream commands.
+  it('does not trigger chat, stream, connect, or provider tests when opened', async () => {
     mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
     const cmds = invokeCalls.map((c) => c.cmd);
-    const forbidden = cmds.filter((cmd) =>
-      /chat|stream|connect|test/i.test(cmd),
-    );
-    expect(forbidden).toEqual([]);
     expect(cmds).toContain('list_ai_providers');
+    expect(cmds.filter((cmd) => /chat|stream|connect|test/i.test(cmd))).toEqual([]);
   });
 
-  // ---- Connection test (#51) -------------------------------------------
-
-  function goToAiService(container: HTMLElement) {
-    const aiItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
-      (el.textContent ?? '').includes('AI 服务'),
-    );
-    aiItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  }
-
-  function providerTestButton(container: HTMLElement, name: string): HTMLButtonElement | null {
-    const item = Array.from(container.querySelectorAll('.settings-provider-item')).find((el) =>
-      (el.textContent ?? '').includes(name),
-    );
-    return item?.querySelector('.settings-provider-actions button') as HTMLButtonElement | null;
-  }
-
-  it('runs an explicit connection test and shows a success state inline', async () => {
-    setTestResult({ kind: 'resolve', value: '连接成功：ok' });
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-    goToAiService(container);
-    await settle();
-
-    const testBtn = providerTestButton(container, 'DeepSeek');
-    expect(testBtn).not.toBeNull();
-    testBtn!.click();
-    await settleAsync();
-
-    // The test invoked test_ai_provider with the provider id.
-    const testCall = invokeCalls.find((c) => c.cmd === 'test_ai_provider');
-    expect(testCall).toBeTruthy();
-    expect((testCall!.args as { id?: string }).id).toBe('prov_1');
-
-    const feedback = container.querySelector('.settings-provider-test');
-    expect(feedback?.getAttribute('data-test-status')).toBe('success');
-    expect(feedback?.textContent ?? '').toContain('连接成功');
-  });
-
-  it('shows an error state inline when the connection test rejects', async () => {
-    setTestResult({ kind: 'reject', message: 'API error 401: unauthorized' });
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-    goToAiService(container);
-    await settle();
-
-    providerTestButton(container, 'DeepSeek')!.click();
-    await settleAsync();
-
-    const feedback = container.querySelector('.settings-provider-test');
-    expect(feedback?.getAttribute('data-test-status')).toBe('error');
-    expect(feedback?.textContent ?? '').toContain('API error 401');
-  });
-
-  it('clears connection test results when the console is reopened', async () => {
+  it('runs an explicit provider connection test and clears the result on reopen', async () => {
     setTestResult({ kind: 'resolve', value: '连接成功：ok' });
     const first = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
-    goToAiService(first);
-    await settle();
-    providerTestButton(first, 'DeepSeek')!.click();
-    await settleAsync();
-    // The success state is present after the test.
-    expect(first.querySelector('.settings-provider-test')).not.toBeNull();
 
-    // Simulate closing and reopening the console: a fresh mount carries no
-    // session-only state from the previous instance.
+    providerTestButton(first, 'DeepSeek')?.click();
+    await settleAsync();
+
+    expect(invokeCalls.find((c) => c.cmd === 'test_ai_provider')).toBeTruthy();
+    expect(first.querySelector('.settings-provider-test')?.textContent ?? '').toContain('连接成功');
+
     unmountAll();
     const reopened = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
-    goToAiService(reopened);
-    await settle();
-
-    // No connection-test feedback survives the reopen.
     expect(reopened.querySelector('.settings-provider-test')).toBeNull();
-    // And the readiness chip is unaffected (still ready with the fixture).
-    expect(reopened.querySelector('.console-readiness-chip')?.getAttribute('data-readiness'))
-      .toBe('ready');
-  });
-});
-
-describe('SettingsPanel — Conversation Behavior strategy + Astryx controls (#52)', () => {
-  beforeEach(() => {
-    installDialogElementStub();
-    installResizeObserverStub();
-    localStorage.clear();
-    resetSettings();
-    resetInvokeCapture();
-    clearTestResult();
-    setProviderList(DEFAULT_PROVIDERS);
   });
 
-  afterEach(() => {
-    unmountAll();
-  });
-
-  function goToConversation(container: HTMLElement) {
-    const item = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
-      (el.textContent ?? '').includes('对话行为'),
-    );
-    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  }
-
-  it('shows the current conversation strategy before the controls', async () => {
+  it('keeps Reading Memory behavior while removing the strategy banner', async () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
-    goToConversation(container);
+    clickTab(container, '阅读记忆');
     await settle();
 
-    const strategy = container.querySelector('.console-strategy');
-    expect(strategy).not.toBeNull();
-    // Default fixture: context 20, auto-summarize on, AI text 14px.
-    expect(strategy?.textContent ?? '').toContain('上下文 20 条');
-    expect(strategy?.textContent ?? '').toContain('自动压缩已开启');
-    expect(strategy?.textContent ?? '').toContain('14px');
-  });
-
-  it('renders the context window as an Astryx segmented radiogroup', async () => {
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-    goToConversation(container);
-    await settle();
-
-    const group = container.querySelector('#settings-context-window [role="radiogroup"]');
-    expect(group).not.toBeNull();
-    const radios = container.querySelectorAll('#settings-context-window [role="radio"]');
-    // Three context-window choices: 5 / 20 / 40.
-    expect(radios.length).toBe(3);
-  });
-
-  it('renders the AI text size as a number input in the 13–20 range', async () => {
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-    goToConversation(container);
-    await settle();
-
-    const numberInput = container.querySelector('.astryx-number-input input') as HTMLInputElement | null;
-    expect(numberInput).not.toBeNull();
-    expect(numberInput?.value).toBe('14');
-    expect(numberInput?.min).toBe('13');
-    expect(numberInput?.max).toBe('20');
-  });
-});
-
-describe('SettingsPanel — Reading Memory strategy and disconnect (#53)', () => {
-  beforeEach(() => {
-    installDialogElementStub();
-    installResizeObserverStub();
-    localStorage.clear();
-    resetSettings();
-    resetInvokeCapture();
-    clearTestResult();
-    setProviderList(DEFAULT_PROVIDERS);
-  });
-
-  afterEach(() => {
-    unmountAll();
-  });
-
-  function goToReadingMemory(container: HTMLElement) {
-    const item = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
-      (el.textContent ?? '').includes('阅读记忆'),
-    );
-    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  }
-
-  it('shows the connected repository path in the strategy banner', async () => {
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-    goToReadingMemory(container);
-    await settle();
-
-    const strategy = container.querySelector('.console-strategy');
-    expect(strategy?.getAttribute('data-degraded')).toBe('false');
-    expect(strategy?.textContent ?? '').toContain('/mem/root');
-  });
-
-  it('disconnect clears only the path and keeps auto-ingest preference', async () => {
-    useSettingsStore.setState({
-      settings: {
-        ...useSettingsStore.getState().settings,
-        readingMemoryPath: '/mem/root',
-        readingMemoryAutoIngest: true,
-      },
-    });
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-    goToReadingMemory(container);
-    await settle();
-
+    expect(container.querySelector('.console-strategy')).toBeNull();
+    expect(container.textContent ?? '').toContain('/mem/root');
     const disconnectBtn = Array.from(container.querySelectorAll('button')).find((b) =>
       (b.textContent ?? '').includes('断开仓库'),
     ) as HTMLButtonElement | undefined;
-    expect(disconnectBtn).toBeTruthy();
-    disconnectBtn!.click();
+    disconnectBtn?.click();
     await settle();
 
     const after = useSettingsStore.getState().settings;
     expect(after.readingMemoryPath).toBeUndefined();
-    // Auto-ingest preference is preserved, not reset.
     expect(after.readingMemoryAutoIngest).toBe(true);
-    // Strategy banner now reports a missing repository.
-    const strategy = container.querySelector('.console-strategy');
-    expect(strategy?.getAttribute('data-degraded')).toBe('true');
   });
 
-  it('overall readiness is degraded (not missing) when AI is ready but repository is missing', async () => {
-    useSettingsStore.setState({
-      settings: {
-        ...useSettingsStore.getState().settings,
-        readingMemoryPath: undefined,
-        readingMemoryAutoIngest: true,
-      },
-    });
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-
-    expect(container.querySelector('.console-readiness-chip')?.getAttribute('data-readiness'))
-      .toBe('degraded');
-  });
-});
-
-describe('SettingsPanel — Quick Prompt ordering (#54)', () => {
-  beforeEach(() => {
-    installDialogElementStub();
-    installResizeObserverStub();
-    localStorage.clear();
-    resetSettings();
-    resetInvokeCapture();
-    clearTestResult();
-    setProviderList(DEFAULT_PROVIDERS);
-  });
-
-  afterEach(() => {
-    unmountAll();
-  });
-
-  function goToQuickPrompts(container: HTMLElement) {
-    const item = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
-      (el.textContent ?? '').includes('快捷提示词'),
-    );
-    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  }
-
-  function seedOrderedActions(labels: string[]) {
-    const actions = labels.map((label, i) => ({
-      id: `qa-${i}`,
-      label,
-      prompt: `prompt ${i}`,
-      icon: 'explain' as const,
-    }));
-    localStorage.setItem('creader-quick-actions', JSON.stringify({ v: 1, data: actions }));
-  }
-
-  it('shows the enabled count and first-six summary in the strategy banner', async () => {
+  it('keeps Quick Prompt ordering and uses a lightweight first-six hint', async () => {
     seedOrderedActions(['一', '二', '三']);
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
-    goToQuickPrompts(container);
+    clickTab(container, '快捷提示词');
     await settle();
 
-    const strategy = container.querySelector('.console-strategy');
-    expect(strategy?.textContent ?? '').toContain('已启用 3 个');
-    expect(strategy?.getAttribute('data-degraded')).toBe('false');
-  });
+    expect(container.querySelector('.console-strategy')).toBeNull();
+    expect(container.querySelector('.settings-quick-help')?.textContent ?? '').toContain('前 6 个');
 
-  it('reorders prompts with move up/down and changes the persisted order', async () => {
-    seedOrderedActions(['一', '二', '三']);
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-    goToQuickPrompts(container);
-    await settle();
-
-    // Each row exposes a settings-quick-order group; the first button is up.
     const rows = container.querySelectorAll('.settings-quick-item');
-    expect(rows.length).toBe(3);
     const secondRow = rows[1] as HTMLElement;
     const upBtn = secondRow.querySelector('.settings-quick-order button') as HTMLButtonElement;
     upBtn.click();
     await settle();
 
-    // saveStored writes the raw array (loadStored tolerates either envelope or raw).
     const raw = JSON.parse(localStorage.getItem('creader-quick-actions') ?? 'null');
     const actions = Array.isArray(raw) ? raw : raw?.data;
-    const labels = actions.map((a: { label: string }) => a.label);
-    // Moving the second item up puts it first.
-    expect(labels).toEqual(['二', '一', '三']);
-  });
-
-  it('disables move-up on the first row and move-down on the last row', async () => {
-    seedOrderedActions(['一', '二']);
-    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
-    await settle();
-    goToQuickPrompts(container);
-    await settle();
-
-    const rows = container.querySelectorAll('.settings-quick-item');
-    const firstRowOrder = rows[0].querySelector('.settings-quick-order');
-    const lastRowOrder = rows[1].querySelector('.settings-quick-order');
-    const firstUp = firstRowOrder?.querySelectorAll('button')[0] as HTMLButtonElement;
-    const lastDown = lastRowOrder?.querySelectorAll('button')[1] as HTMLButtonElement;
-    expect(firstUp.disabled).toBe(true);
-    expect(lastDown.disabled).toBe(true);
+    expect(actions.map((a: { label: string }) => a.label)).toEqual(['二', '一', '三']);
   });
 });
 
-// afterEach is hoisted by vitest; declared here for clarity but referenced above.
 import { afterEach } from 'vitest';

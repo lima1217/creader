@@ -48,25 +48,25 @@ _Avoid_: Reading Memory note, chat message
 A user-editable shortcut prompt shown near the AI input and persisted by the quick actions module.
 _Avoid_: provider setting, hard-coded AI mode
 
-**AI Reading Console**:
-The settings surface that shows and changes the runtime state for AI-assisted reading, including provider health, model selection, conversation behavior, Reading Memory writes, and quick prompts.
-_Avoid_: preferences screen, static settings form
+**AI Settings Dialog**:
+The modal settings surface for AI-assisted reading. It has three top tabs: `AI`, `阅读记忆`, and `快捷提示词`.
+_Avoid_: AI Reading Console, Console Overview, readiness dashboard
 
-**Console Overview**:
-The default AI Reading Console view that summarizes whether the reading AI runtime is ready, degraded, or missing required setup before the reader edits individual configuration areas.
-_Avoid_: first settings tab, passive preferences summary
+**AI Settings Tab**:
+The AI Settings Dialog tab that configures how the reading conversation runs: OpenAI-compatible providers, active model/key setup, explicit connection tests, context window, hidden conversation summarization, and AI panel text size.
+_Avoid_: split AI Service Settings and Conversation Behavior Settings, provider health dashboard
 
-**Console Readiness**:
-The AI Reading Console's three-level status model: ready, degraded, or missing setup. "Degraded" means the reading conversation can still run, but an adjacent capability such as Reading Memory or quick prompts is unavailable or intentionally disabled.
-_Avoid_: binary enabled/disabled status, generic health check
+**AI Service Ready**:
+The local boolean that is true only when an active provider has a stored key. If false, the `AI` tab shows a small attention dot; there is no positive ready marker.
+_Avoid_: three-level Console Readiness, Reading Memory/Quick Prompt degradation
 
-**AI Service Settings**:
-The AI Reading Console area for OpenAI-compatible provider records, active model selection, endpoint configuration, and local API key status.
-_Avoid_: conversation settings, prompt settings
+**Reading Memory Settings Tab**:
+The AI Settings Dialog tab for choosing, opening, disconnecting, and enabling automatic ingestion for the Reading Memory repository.
+_Avoid_: internal memory database, readiness blocker
 
-**Conversation Behavior Settings**:
-The AI Reading Console area for how reading conversations behave at runtime, including context window size, hidden conversation summarization, and AI panel text size.
-_Avoid_: provider settings, Reading Memory settings
+**Quick Prompt Settings Tab**:
+The AI Settings Dialog tab for editing, ordering, hiding, adding, and restoring Quick Prompts. The first six prompts render directly in the AI panel; overflow goes into the more menu.
+_Avoid_: provider setting, static shortcut list
 
 **Reading Memory**:
 A user-selected local Markdown repository where CReader writes durable, source-grounded notes from selected reading conversations.

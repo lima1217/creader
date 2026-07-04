@@ -12,7 +12,6 @@ import {
   clearReadingMemoryPath,
   commitQuickActionDraft,
   createCustomQuickAction,
-  formatConversationStrategy,
   formatQuickPromptStatus,
   hideQuickAction,
   moveQuickActionDown,
@@ -197,21 +196,6 @@ describe('settingsPanelLogic', () => {
     });
   });
 
-  describe('formatConversationStrategy', () => {
-    it('summarizes context window, summarization, and AI text size', () => {
-      expect(formatConversationStrategy(createSettings())).toBe(
-        '上下文 20 条 · 自动压缩已开启 · AI 文字 14px',
-      );
-    });
-
-    it('reflects a closed auto-summarization and different values', () => {
-      const summary = formatConversationStrategy(
-        createSettings({ aiContextWindow: 5, aiAutoSummarize: false, aiTextSize: 18 }),
-      );
-      expect(summary).toBe('上下文 5 条 · 自动压缩已关闭 · AI 文字 18px');
-    });
-  });
-
   describe('clearReadingMemoryPath', () => {
     it('removes the repository path and keeps auto-ingest preference intact', () => {
       const before = createSettings({ readingMemoryPath: '/mem/root', readingMemoryAutoIngest: false });
@@ -279,17 +263,14 @@ describe('settingsPanelLogic', () => {
   });
 
   describe('formatQuickPromptStatus', () => {
-    it('is degraded with a descriptive summary when the set is empty', () => {
-      const status = formatQuickPromptStatus([]);
-      expect(status.isDegraded).toBe(true);
-      expect(status.summary.length).toBeGreaterThan(0);
+    it('returns a descriptive summary when the set is empty', () => {
+      expect(formatQuickPromptStatus([])).toBe('没有可用的快捷提示词按钮');
     });
 
     it('reports all-direct when count is within the direct-button set', () => {
       const status = formatQuickPromptStatus(list('a', 'b'));
-      expect(status.isDegraded).toBe(false);
-      expect(status.summary).toContain('已启用 2 个');
-      expect(status.summary).toContain('全部直接显示');
+      expect(status).toContain('已启用 2 个');
+      expect(status).toContain('全部直接显示');
     });
 
     it('reports overflow copy when count exceeds the direct-button set', () => {
@@ -298,9 +279,8 @@ describe('settingsPanelLogic', () => {
         (_, i) => createAction({ id: `qa-${i}` }),
       );
       const status = formatQuickPromptStatus(many);
-      expect(status.isDegraded).toBe(false);
-      expect(status.summary).toContain('已启用 8 个');
-      expect(status.summary).toContain('更多');
+      expect(status).toContain('已启用 8 个');
+      expect(status).toContain('更多');
     });
 
     function list(...ids: string[]): QuickActionConfig[] {

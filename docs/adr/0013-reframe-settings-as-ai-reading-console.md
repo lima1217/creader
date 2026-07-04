@@ -1,5 +1,7 @@
 # Reframe Settings as an AI Reading Console
 
+Superseded by: [0016 Focus AI Settings on Three Tabs](0016-focus-ai-settings-on-three-tabs.md)
+
 CReader's settings surface is not a traditional preferences form; it is the runtime control surface for AI-assisted reading. The settings module will be redesigned as an **AI Reading Console** that opens first to an actionable overview of AI readiness, Reading Memory state, conversation behavior, and quick-prompt availability.
 
 The console uses five top-level areas: Overview, AI Service, Conversation Behavior, Reading Memory, and Quick Prompts. This deliberately separates provider/model/key configuration from conversation behavior such as context window size, hidden summarization, and AI panel text size.

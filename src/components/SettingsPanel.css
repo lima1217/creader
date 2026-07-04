@@ -1,5 +1,5 @@
 /* ============================================
-   AI Reading Console (SettingsPanel) — Astryx
+   AI Settings dialog — Astryx
    ============================================ */
 
 .settings-dialog {
@@ -7,14 +7,12 @@
     --settings-control-pad-x: var(--spacing-4);
     --settings-control-radius: var(--radius-inner);
     --settings-container-radius: var(--radius-container);
-    --settings-sidenav-width: 12.25rem;
     --settings-surface: var(--color-background-popover, var(--bg-elevated));
     top: 50% !important;
     left: 50% !important;
     z-index: 1000 !important;
-    /* Fixed modal measurement: the console needs a stable desktop editing width. */
-    width: min(840px, calc(100vw - 32px)) !important;
-    max-height: min(86vh, calc(100vh - 32px)) !important;
+    width: min(calc(var(--spacing-9) * 20), calc(100vw - var(--spacing-8))) !important;
+    max-height: min(86vh, calc(100vh - var(--spacing-8))) !important;
     overflow: hidden;
     isolation: isolate;
     background: var(--settings-surface) !important;
@@ -41,19 +39,8 @@
 
 .settings-dialog-header {
     flex-shrink: 0;
-    padding: var(--spacing-5) var(--spacing-5) var(--spacing-3) !important;
+    padding: var(--spacing-5) var(--spacing-5) var(--spacing-2) !important;
     background: var(--settings-surface) !important;
-}
-
-.settings-dialog .astryx-layout-content,
-.console-content {
-    background: var(--settings-surface) !important;
-}
-
-.console-content {
-    display: flex;
-    flex: 1;
-    min-height: 0;
 }
 
 .settings-dialog-header > div {
@@ -72,11 +59,6 @@
 
 .settings-dialog-header h2:focus {
     outline: none !important;
-}
-
-.settings-dialog-header p,
-.settings-dialog-header span {
-    line-height: 1.45 !important;
 }
 
 .settings-dialog-header .astryx-button[data-icon-only] {
@@ -105,264 +87,61 @@
     min-height: var(--spacing-8) !important;
 }
 
-/* ---- Console side navigation ---------------------------------------- */
-
-.console-sidenav {
-    display: flex;
-    flex-direction: column;
+.settings-tabs-row {
     flex-shrink: 0;
-    gap: var(--spacing-3);
-    width: var(--settings-sidenav-width);
-    padding: var(--spacing-3) var(--spacing-2) var(--spacing-3) var(--spacing-4);
-    border-right: var(--border-width) solid var(--border-soft);
-    background: color-mix(in srgb, var(--bg-control) 50%, transparent);
-    overflow-y: auto;
-}
-
-.console-readiness-chip {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    padding: var(--spacing-2) var(--spacing-3);
-    border: var(--border-width) solid var(--border-soft);
-    border-radius: var(--radius-element);
+    padding: 0 var(--settings-pad);
     background: var(--settings-surface);
-    color: var(--text-primary);
-    text-align: left;
-    cursor: pointer;
-    transition: border-color var(--transition-fast), background-color var(--transition-fast);
 }
 
-.console-readiness-chip:hover {
-    border-color: var(--border-secondary);
-}
-
-.console-readiness-chip-copy {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-0-5);
-    min-width: 0;
-}
-
-.console-readiness-chip-copy strong {
-    font-size: var(--font-size-sm);
-    font-weight: 650;
-    line-height: 1.3;
-}
-
-.console-readiness-chip-copy small {
-    color: var(--text-tertiary);
-    font-size: var(--font-size-sm);
-    line-height: 1.3;
-}
-
-.console-readiness-dot {
-    width: var(--spacing-2);
-    height: var(--spacing-2);
-    flex-shrink: 0;
-    background: var(--text-muted);
-    border-radius: 50%;
-}
-
-.console-readiness-chip[data-readiness="ready"] .console-readiness-dot { background: var(--success); }
-.console-readiness-chip[data-readiness="degraded"] .console-readiness-dot { background: var(--warning); }
-.console-readiness-chip[data-readiness="missing"] .console-readiness-dot { background: var(--error); }
-
-.console-readiness-chip[data-readiness="ready"] .console-readiness-chip-copy small { color: var(--success); }
-.console-readiness-chip[data-readiness="degraded"] .console-readiness-chip-copy small { color: var(--warning); }
-.console-readiness-chip[data-readiness="missing"] .console-readiness-chip-copy small { color: var(--error); }
-
-/* ---- Console side navigation (Astryx SideNav overrides) --------------
-   The console shell wraps an Astryx SideNav in `.console-sidenav`. We scope
-   style overrides here instead of replacing the component's own classes so
-   the design-system nav owns its DOM/landmark; we only retune surface, item
-   sizing, hover, and selected states to match the console look. ----------- */
-
-.console-sidenav .astryx-side-nav,
-.console-sidenav .astryx-side-nav-section {
+.settings-tabs-row .astryx-tab-list {
     width: 100%;
-    background: transparent !important;
 }
 
-.console-sidenav .astryx-side-nav-item {
-    min-height: var(--spacing-9) !important;
-    padding-inline: var(--spacing-3) !important;
-    border-radius: var(--settings-control-radius) !important;
-    color: var(--text-secondary) !important;
-    font-size: var(--font-size-base) !important;
-    font-weight: 570 !important;
-}
-
-.console-sidenav .astryx-side-nav-item:hover {
-    background: var(--bg-control) !important;
-    color: var(--text-primary) !important;
-}
-
-.console-sidenav .astryx-side-nav-item[aria-current="page"] {
-    background: var(--accent-soft) !important;
-    color: var(--accent) !important;
-    font-weight: 600 !important;
-}
-
-.console-sidenav .astryx-side-nav-item .astryx-badge {
-    flex-shrink: 0;
-}
-
-/* ---- Console main content area -------------------------------------- */
-
-.console-main {
-    flex: 1;
-    min-width: 0;
-    overflow-y: auto;
-}
-
-.console-section {
-    padding: 0 var(--settings-pad) var(--spacing-5);
-}
-
-.console-overview {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-4);
-    padding: 0 var(--settings-pad) var(--spacing-5);
-}
-
-.console-hero {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--spacing-3);
-    padding: var(--spacing-4);
-    border: var(--border-width) solid var(--border-soft);
-    border-radius: var(--settings-container-radius);
-    background: var(--bg-control);
-}
-
-.console-hero[data-readiness="ready"] { border-color: color-mix(in srgb, var(--success) 38%, var(--border-soft)); }
-.console-hero[data-readiness="degraded"] { border-color: color-mix(in srgb, var(--warning) 40%, var(--border-soft)); }
-.console-hero[data-readiness="missing"] { border-color: color-mix(in srgb, var(--error) 40%, var(--border-soft)); }
-
-.console-hero-copy {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-1-5);
-    min-width: 0;
-}
-
-.console-hero-status {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    letter-spacing: 0.02em;
-}
-
-.console-hero-status .console-readiness-dot { width: var(--spacing-2); height: var(--spacing-2); }
-
-.console-hero[data-readiness="ready"] .console-hero-status { color: var(--success); }
-.console-hero[data-readiness="ready"] .console-hero-status .console-readiness-dot { background: var(--success); }
-.console-hero[data-readiness="degraded"] .console-hero-status { color: var(--warning); }
-.console-hero[data-readiness="degraded"] .console-hero-status .console-readiness-dot { background: var(--warning); }
-.console-hero[data-readiness="missing"] .console-hero-status { color: var(--error); }
-.console-hero[data-readiness="missing"] .console-hero-status .console-readiness-dot { background: var(--error); }
-
-.console-hero-headline {
-    margin: 0;
-    color: var(--text-primary);
-    font-size: var(--font-size-base);
-    font-weight: 600;
-    line-height: 1.5;
-}
-
-.console-hero-sub {
-    margin: 0;
-    color: var(--text-tertiary);
-    font-size: var(--font-size-sm);
-    line-height: 1.55;
-}
-
-.console-status-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-2);
-    padding: 0;
-    margin: 0;
-    list-style: none;
-}
-
-.console-status-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-3);
-    padding: var(--spacing-3);
-    border: var(--border-width) solid var(--border-soft);
-    border-radius: var(--radius-element);
-    background: var(--settings-surface);
-}
-
-.console-status-row[data-readiness="degraded"] {
-    border-color: color-mix(in srgb, var(--warning) 32%, var(--border-soft));
-    background: color-mix(in srgb, var(--warning) 6%, var(--settings-surface));
-}
-
-.console-status-row[data-readiness="missing"] {
-    border-color: color-mix(in srgb, var(--error) 32%, var(--border-soft));
-    background: color-mix(in srgb, var(--error) 6%, var(--settings-surface));
-}
-
-.console-status-row-main {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    min-width: 0;
-}
-
-.console-status-row-dot {
+.settings-tab-attention {
     width: var(--spacing-2);
     height: var(--spacing-2);
-    flex-shrink: 0;
-    background: var(--text-muted);
-    border-radius: 50%;
+    border-radius: var(--radius-full);
+    background: var(--error);
 }
 
-.console-status-row[data-readiness="ready"] .console-status-row-dot { background: var(--success); }
-.console-status-row[data-readiness="degraded"] .console-status-row-dot { background: var(--warning); }
-.console-status-row[data-readiness="missing"] .console-status-row-dot { background: var(--error); }
-
-.console-status-row-copy {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-0-5);
-    min-width: 0;
+.settings-content {
+    min-height: 0;
+    background: var(--settings-surface) !important;
 }
-
-.console-status-row-title {
-    color: var(--text-primary);
-    font-size: var(--font-size-base);
-    font-weight: 600;
-    line-height: 1.35;
-}
-
-.console-status-row-detail {
-    color: var(--text-tertiary);
-    font-size: var(--font-size-sm);
-    line-height: 1.45;
-}
-
-/* ---- Shared section/field styling (unchanged behavior) -------------- */
 
 .settings-section {
-    padding: 0 var(--settings-pad) var(--spacing-5);
+    padding: var(--spacing-4) var(--settings-pad) var(--spacing-5);
+}
+
+.settings-section-stack,
+.settings-subsection,
+.settings-provider-editor,
+.settings-quick-list,
+.settings-quick-form {
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-section-stack {
+    gap: var(--spacing-5);
+}
+
+.settings-subsection {
+    gap: var(--spacing-3);
+}
+
+.settings-subsection-separated {
+    padding-top: var(--spacing-5);
+    border-top: var(--border-width) solid var(--border-soft);
 }
 
 .settings-section-title {
-    margin-bottom: var(--spacing-3);
+    margin: 0 0 var(--spacing-1);
     color: var(--text-muted);
     font-size: var(--font-size-sm);
     font-weight: 650;
-    letter-spacing: 0;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
 }
 
 .settings-field {
@@ -371,15 +150,11 @@
     justify-content: space-between;
     gap: var(--spacing-4);
     min-height: var(--spacing-12);
-    margin-bottom: var(--spacing-5);
+    margin-bottom: var(--spacing-4);
 }
 
 .settings-field:last-child {
     margin-bottom: 0;
-}
-
-.settings-field-copy {
-    min-width: 0;
 }
 
 .settings-field-stacked {
@@ -388,126 +163,43 @@
     gap: var(--spacing-3);
 }
 
-.settings-field-label {
-    color: var(--text-primary);
-    font-size: var(--font-size-base);
-    font-weight: 570;
-}
-
 .settings-field-hint {
-    margin-top: var(--spacing-0-5);
+    margin: 0;
     color: var(--text-tertiary);
     font-size: var(--font-size-sm);
     line-height: 1.45;
 }
 
-/* ---- Strategy-first banner shared by Conversation / Reading Memory / Quick Prompts */
-.console-strategy {
+.settings-provider-summary,
+.settings-memory-status {
     display: flex;
-    flex-direction: column;
-    gap: var(--spacing-1);
-    margin-bottom: var(--spacing-4);
-    padding: var(--spacing-3) var(--spacing-4);
-    border: var(--border-width) solid var(--border-soft);
-    border-radius: var(--radius-element);
-    background: var(--bg-control);
-}
-
-.console-strategy[data-degraded="true"] {
-    border-color: color-mix(in srgb, var(--warning) 38%, var(--border-soft));
-    background: color-mix(in srgb, var(--warning) 6%, var(--bg-control));
-}
-
-.console-strategy-title {
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-    font-weight: 650;
-    letter-spacing: 0;
-}
-
-.console-strategy-summary {
-    margin: 0;
-    color: var(--text-primary);
-    font-size: var(--font-size-base);
-    font-weight: 570;
-    line-height: 1.45;
-    word-break: break-word;
-}
-
-.console-strategy-summary code,
-.console-strategy-path {
-    padding: var(--spacing-0-5) var(--spacing-1-5);
-    background: var(--settings-surface);
-    border: var(--border-width) solid var(--border-soft);
-    border-radius: var(--settings-control-radius);
-    color: var(--text-secondary);
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
-    font-size: var(--font-size-sm);
-    word-break: break-all;
-}
-
-.console-strategy-hint {
-    margin: 0;
-    color: var(--text-tertiary);
-    font-size: var(--font-size-sm);
-    line-height: 1.55;
-}
-
-.settings-memory-picker {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
     gap: var(--spacing-3);
-}
-
-.settings-inline-path {
-    display: inline-flex;
-    align-items: center;
-    flex: 1 1 100%;
-    gap: var(--spacing-2);
-    min-width: 0;
-}
-
-.settings-inline-path code {
-    max-width: min(100%, 24.375rem);
-    padding: var(--spacing-2);
-    overflow: hidden;
-    background: var(--bg-control);
-    border: var(--border-width) solid var(--border-soft);
-    border-radius: var(--settings-control-radius);
-    color: var(--text-secondary);
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
-    font-size: var(--font-size-sm);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.settings-provider-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-2);
-    padding: 0;
-    margin: var(--spacing-2) 0 0;
-    list-style: none;
-}
-
-.settings-provider-summary {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    min-height: 3.375rem;
     padding: var(--spacing-3);
     background: var(--bg-control);
     border: var(--border-width) solid var(--border-soft);
     border-radius: var(--radius-element);
 }
 
-.settings-provider-summary-copy {
+.settings-provider-summary {
+    align-items: center;
+    min-height: calc(var(--spacing-9) + var(--spacing-5));
+}
+
+.settings-provider-summary-copy,
+.settings-provider-copy,
+.settings-memory-status {
+    min-width: 0;
+}
+
+.settings-provider-summary-copy,
+.settings-provider-copy {
     display: flex;
-    flex: 1;
     flex-direction: column;
     gap: var(--spacing-0-5);
-    min-width: 0;
+}
+
+.settings-provider-summary-copy {
+    flex: 1;
 }
 
 .settings-provider-summary-copy strong {
@@ -520,13 +212,37 @@
     white-space: nowrap;
 }
 
-.settings-provider-summary-copy small {
+.settings-provider-summary-copy small,
+.settings-provider-copy small,
+.settings-memory-status small {
     overflow: hidden;
     color: var(--text-tertiary);
     font-size: var(--font-size-sm);
-    line-height: 1.35;
+    line-height: 1.45;
+    text-overflow: ellipsis;
+}
+
+.settings-provider-url {
+    max-width: 100%;
+    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.settings-provider-dot {
+    width: var(--spacing-2);
+    height: var(--spacing-2);
+    flex-shrink: 0;
+    background: var(--text-muted);
+    border-radius: var(--radius-full);
+}
+
+.settings-provider-dot.available {
+    background: var(--success);
+}
+
+.settings-provider-dot.unavailable {
+    background: var(--warning);
 }
 
 .settings-provider-collapsible {
@@ -562,11 +278,20 @@
     line-height: 1.3;
 }
 
+.settings-provider-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+    padding: 0;
+    margin: var(--spacing-2) 0 0;
+    list-style: none;
+}
+
 .settings-provider-item {
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
-    min-height: 3.625rem;
+    min-height: calc(var(--spacing-9) + var(--spacing-6));
     padding: var(--spacing-3);
     background: var(--settings-surface);
     border: var(--border-width) solid var(--border-soft);
@@ -596,39 +321,11 @@
     text-align: left;
 }
 
-.settings-provider-dot {
-    width: var(--spacing-2);
-    height: var(--spacing-2);
-    flex-shrink: 0;
-    background: var(--text-muted);
-    border-radius: 50%;
-}
-
-.settings-provider-dot.available {
-    background: var(--success);
-}
-
-.settings-provider-dot.unavailable {
-    background: var(--warning);
-}
-
-.settings-provider-copy {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-0-5);
-    min-width: 0;
-}
-
-.settings-provider-copy small {
-    color: var(--text-tertiary);
-    font-size: var(--font-size-sm);
-    line-height: 1.35;
-}
-
 .settings-provider-name {
     display: inline-flex;
     align-items: center;
     gap: var(--spacing-2);
+    color: var(--text-primary);
     font-size: var(--font-size-base);
     font-weight: 600;
     line-height: 1.35;
@@ -640,14 +337,6 @@
     color: var(--accent);
 }
 
-.settings-provider-url {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-/* Session-only connection-test feedback shown inline on a provider row. */
 .settings-provider-test {
     display: inline-flex;
     align-items: center;
@@ -689,8 +378,6 @@
 }
 
 .settings-provider-editor {
-    display: flex;
-    flex-direction: column;
     gap: var(--spacing-4);
 }
 
@@ -707,16 +394,70 @@
     font-size: var(--font-size-sm);
 }
 
-.settings-provider-edit-actions {
+.settings-provider-edit-actions,
+.settings-quick-actions-row {
     display: flex;
     justify-content: flex-end;
     gap: var(--spacing-3);
+}
+
+.settings-provider-edit-actions {
     margin-top: var(--spacing-1);
+}
+
+.settings-memory-status {
+    flex-direction: column;
+    margin-bottom: var(--spacing-4);
+}
+
+.settings-memory-status strong {
+    color: var(--text-primary);
+    font-size: var(--font-size-base);
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+.settings-memory-status code,
+.settings-inline-path code {
+    padding: var(--spacing-2);
+    overflow: hidden;
+    background: var(--settings-surface);
+    border: var(--border-width) solid var(--border-soft);
+    border-radius: var(--settings-control-radius);
+    color: var(--text-secondary);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-memory-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-3);
+}
+
+.settings-inline-path {
+    display: inline-flex;
+    align-items: center;
+    flex: 1 1 100%;
+    gap: var(--spacing-2);
+    min-width: 0;
+}
+
+.settings-inline-path code {
+    max-width: min(100%, calc(var(--spacing-9) * 12));
+    background: var(--bg-control);
+}
+
+.settings-quick-help {
+    margin-bottom: var(--spacing-3);
 }
 
 .settings-quick-actions {
     display: grid;
-    grid-template-columns: minmax(140px, 0.82fr) minmax(0, 1.18fr);
+    grid-template-columns: minmax(calc(var(--spacing-9) * 4), 0.82fr) minmax(0, 1.18fr);
     gap: var(--spacing-5);
 }
 
@@ -726,9 +467,8 @@
     min-width: 0;
 }
 
-.settings-quick-list {
-    display: flex;
-    flex-direction: column;
+.settings-quick-list,
+.settings-quick-form {
     gap: var(--spacing-2);
 }
 
@@ -806,18 +546,6 @@
     color: var(--accent);
 }
 
-.settings-quick-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-3);
-}
-
-.settings-quick-actions-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--spacing-2);
-}
-
 .settings-quick-restore {
     padding-top: var(--spacing-3);
     margin-top: var(--spacing-2);
@@ -832,7 +560,7 @@
 .settings-quick-empty {
     align-items: center;
     justify-content: center;
-    min-height: 6rem;
+    min-height: calc(var(--spacing-9) * 3);
     padding: var(--spacing-4);
     border: var(--border-width) dashed var(--border-soft);
     border-radius: var(--radius-element);
@@ -848,59 +576,17 @@
     gap: var(--spacing-2);
 }
 
-.settings-quick-help {
-    margin-top: var(--spacing-3);
-}
-
-/* ---- Responsive fallback: narrow viewport collapses to a single column
-   with a top navigation row so labels do not overlap the content. ------ */
-
-@media (max-width: 720px) {
+@media (max-width: 45rem) {
     .settings-dialog {
         --settings-pad: var(--spacing-4);
+        width: calc(100vw - var(--spacing-6)) !important;
     }
 
-    .console-content {
-        flex-direction: column;
+    .settings-tabs-row .astryx-tab-list {
+        overflow-x: auto;
     }
 
-    .console-sidenav {
-        width: auto;
-        max-height: none;
-        padding: var(--spacing-2);
-        border-right: 0;
-        border-bottom: var(--border-width) solid var(--border-soft);
-    }
-
-    .console-readiness-chip {
-        flex-shrink: 0;
-    }
-
-    .console-sidenav .astryx-side-nav-section {
-        /* Lay the five console areas out as a wrapping top-nav row so labels
-           do not overlap the content on a single-column fallback. */
-        display: flex;
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: var(--spacing-1-5);
-    }
-
-    .console-sidenav .astryx-side-nav-item {
-        flex: 1 1 auto;
-        min-height: var(--spacing-8) !important;
-        justify-content: center;
-    }
-
-    .console-sidenav .astryx-side-nav-item .astryx-badge {
-        order: -1;
-    }
-
-    .settings-field {
-        align-items: stretch;
-        flex-direction: column;
-        gap: var(--spacing-2);
-    }
-
+    .settings-field,
     .settings-provider-item {
         align-items: stretch;
         flex-direction: column;
