@@ -2,6 +2,28 @@
    AI Settings dialog — Astryx
    ============================================ */
 
+/* Override Astryx Dialog's enterDirectional keyframes. Its `to` frame
+   hardcodes transform: translate(0,0) scale(1); during the animation that
+   value is in the CSS Animation origin and overrides this dialog's
+   translate(-50%, -50%) centering — so the dialog's top-left corner pins to
+   the viewport center and the body spills toward the bottom-right, then snaps
+   back to center when the animation ends. These keyframes keep the -50%/-50%
+   offset in every frame so the dialog stays centered while still entering
+   with the directional fade. */
+@keyframes settings-dialog-enter {
+    from {
+        opacity: 0;
+        transform: translate(
+            calc(-50% + var(--dialog-dir-x, var(--spacing-0))),
+            calc(-50% + var(--dialog-dir-y, var(--spacing-0)))
+        ) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
 .settings-dialog {
     --settings-pad: var(--spacing-5);
     --settings-control-pad-x: var(--spacing-4);
@@ -25,6 +47,12 @@
     border-radius: var(--settings-container-radius) !important;
     box-shadow: var(--shadow-popover) !important;
     transform: translate(-50%, -50%) !important;
+    /* !important beats Astryx's :not(#\#):not(#\#):not(#\#) selector that
+       applies enterDirectional, so our centering-preserving keyframes win. */
+    animation-name: settings-dialog-enter !important;
+    animation-duration: var(--duration-medium-max) !important;
+    animation-timing-function: var(--ease-standard) !important;
+    animation-fill-mode: backwards;
 }
 
 .settings-dialog::backdrop {
