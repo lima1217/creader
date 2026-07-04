@@ -21,7 +21,6 @@ export function useEpubBookLifecycle(params: {
   currentBook: Book | null;
   containerRef: RefObject<HTMLDivElement | null>;
   settings: Settings;
-  bookRef: RefObject<EpubBookLike | null>;
   renditionRef: RefObject<ReaderRendition | null>;
   bookLikeRef: RefObject<EpubBookLike | null>;
   setToc: (toc: NavItem[]) => void;
@@ -35,7 +34,6 @@ export function useEpubBookLifecycle(params: {
     currentBook,
     containerRef,
     settings,
-    bookRef,
     renditionRef,
     bookLikeRef,
     setToc,
@@ -68,7 +66,6 @@ export function useEpubBookLifecycle(params: {
       }
       renditionRef.current = null;
       bookLikeRef.current = null;
-      bookRef.current = null;
 
       try {
         const fileData = await perfSpan('epub:readFile', async () => readFile(currentBook.filePath));
@@ -91,7 +88,6 @@ export function useEpubBookLifecycle(params: {
         const { rendition, bookLike, toc } = engineInstance;
         renditionRef.current = rendition;
         bookLikeRef.current = bookLike;
-        bookRef.current = { destroy: () => engineInstance?.destroy() };
 
         setToc(toc);
         if (onRenditionCreated) onRenditionCreated(rendition);
@@ -130,7 +126,6 @@ export function useEpubBookLifecycle(params: {
       }
       renditionRef.current = null;
       bookLikeRef.current = null;
-      bookRef.current = null;
     };
   }, [currentBook?.id, currentBook?.filePath]);
 }

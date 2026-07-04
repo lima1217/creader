@@ -73,6 +73,20 @@ class FoliateRenditionEventBridge {
   }
 }
 
+/**
+ * FoliateRendition bridges foliate-js's custom-element event surface to the
+ * ReadingEngineRendition contract consumed by reader hooks.
+ *
+ * Emitted events (consumed via `on(event, cb)`):
+ *   - 'relocated' / 'locationChanged' — foliate `relocate` event → progress + TOC highlight.
+ *   - 'selected'                      — a content-doc selection became non-empty; payload
+ *                                       `(cfi, { window, document })`. Used to show SelectionToolbar.
+ *   - 'selectionCleared'              — the content-doc selection collapsed (click on blank
+ *                                       space, Esc, etc.). SelectionToolbar listens to dismiss.
+ *
+ * Selection listeners attach once per loaded section via foliate's `load` event, so we
+ * never need to reach across foliate's closed shadow root from the host page.
+ */
 class FoliateRendition implements ReadingEngineRendition {
   readonly engineName = 'foliate' as const;
   readonly themes = {
@@ -168,21 +182,35 @@ class FoliateRendition implements ReadingEngineRendition {
   private attachSelectionListener(doc?: Document, index?: number): void {
     if (!doc) return;
 
-    const emitSelected = () => {
+    // `selected` fires on every non-empty selection change so the store tracks the
+    // live text as the user drags; downstream `setSelectedText` dedupes unchanged
+    // text. Only the collapsed transition is edge-detected, so `selectionCleared`
+    // fires once when the user clicks blank space instead of repeating.
+    let hasSelection = false;
+
+    const evaluate = () => {
       const selection = doc.defaultView?.getSelection();
-      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
-      const range = selection.getRangeAt(0);
-      const cfi = typeof index === 'number' ? this.view.getCFI?.(index, range) ?? '' : '';
-      this.bridge.emit('selected', cfi, { window: doc.defaultView, document: doc });
+      const hasText = !!selection && !selection.isCollapsed && selection.rangeCount > 0
+        && !!selection.toString().trim();
+
+      if (hasText) {
+        hasSelection = true;
+        const range = selection!.getRangeAt(0);
+        const cfi = typeof index === 'number' ? this.view.getCFI?.(index, range) ?? '' : '';
+        this.bridge.emit('selected', cfi, { window: doc.defaultView, document: doc });
+      } else if (hasSelection) {
+        hasSelection = false;
+        this.bridge.emit('selectionCleared');
+      }
     };
 
-    doc.addEventListener('selectionchange', emitSelected);
-    doc.addEventListener('mouseup', emitSelected);
-    doc.addEventListener('keyup', emitSelected);
+    doc.addEventListener('selectionchange', evaluate);
+    doc.addEventListener('mouseup', evaluate);
+    doc.addEventListener('keyup', evaluate);
     this.selectionCleanups.push(() => {
-      doc.removeEventListener('selectionchange', emitSelected);
-      doc.removeEventListener('mouseup', emitSelected);
-      doc.removeEventListener('keyup', emitSelected);
+      doc.removeEventListener('selectionchange', evaluate);
+      doc.removeEventListener('mouseup', evaluate);
+      doc.removeEventListener('keyup', evaluate);
     });
   }
 

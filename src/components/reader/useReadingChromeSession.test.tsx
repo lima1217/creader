@@ -94,14 +94,11 @@ function Harness({
   const containerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<ReaderRendition | null>(rendition);
   const bookLikeRef = useRef<EpubBookLike | null>({} as EpubBookLike);
-  const lastMousePosRef = useRef({ x: 12, y: 34 });
   const session = useReadingChromeSession({
     currentBook,
-    containerRef,
     renditionRef,
     bookLikeRef,
     renditionKey: 1,
-    lastMousePosRef,
   });
   onSession(session);
   return <div ref={containerRef} />;

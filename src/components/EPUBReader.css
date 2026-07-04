@@ -20,11 +20,6 @@
     overflow: hidden;
 }
 
-.reader-content iframe {
-    border: 0 !important;
-    background: var(--bg-reader) !important;
-}
-
 /* foliate-js engine: the `<foliate-view>` custom element fills the reader
    container and hosts its own iframes. It must not collapse, inherit the
    reader surface color, and stay clipped to the padded reader-content box. */

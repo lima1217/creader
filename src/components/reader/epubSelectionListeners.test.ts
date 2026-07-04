@@ -1,25 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getSelectionFromEpubContent, setupEpubSelectionListeners } from './epubSelectionListeners';
+import { getSelectionPosition } from './epubSelectionListeners';
 
-function createFakeRendition(contents: Array<{ document?: Document; window?: Window }>) {
-  const callbacks: Array<(content: { document?: Document; window?: Window }) => void> = [];
-  return {
-    rendition: {
-      getContents: () => contents,
-      hooks: {
-        content: {
-          register: (cb: (content: { document?: Document; window?: Window }) => void) => {
-            callbacks.push(cb);
-          },
-        },
-      },
-    },
-    callbacks,
-  };
-}
-
-describe('epubSelectionListeners', () => {
-  it('extracts selected text and positions it relative to the epub iframe', () => {
+describe('getSelectionPosition', () => {
+  it('lifts the iframe-local range rect into top-page coordinates via win.frameElement', () => {
     const iframe = document.createElement('iframe');
     vi.spyOn(iframe, 'getBoundingClientRect').mockReturnValue({
       left: 100,
@@ -46,60 +29,51 @@ describe('epubSelectionListeners', () => {
         toJSON: () => ({}),
       }),
     } as Range;
+
     const selection = {
       rangeCount: 1,
       getRangeAt: () => range,
       toString: () => ' selected passage ',
     } as unknown as Selection;
+
     const win = {
       getSelection: () => selection,
+      frameElement: iframe,
+      innerWidth: 1280,
     } as unknown as Window;
 
-    const result = getSelectionFromEpubContent({
-      win,
-      iframe,
-      lastMousePos: { x: 0, y: 0 },
-    });
+    const position = getSelectionPosition(win);
 
-    expect(result?.text).toBe('selected passage');
-    expect(result?.position).toEqual({ x: 180, y: 120 });
+    expect(position).toEqual({ x: 180, y: 120 });
   });
 
-  it('attaches selection listeners to already-rendered rendition contents', () => {
-    vi.useFakeTimers();
-
+  it('returns null when the selection is empty', () => {
     const selection = {
-      toString: () => 'highlighted text',
+      rangeCount: 0,
+      getRangeAt: () => null,
+      toString: () => '',
     } as unknown as Selection;
-    const epubWindow = {
+
+    const win = {
       getSelection: () => selection,
-      setTimeout: window.setTimeout.bind(window),
+      frameElement: null,
     } as unknown as Window;
-    const epubDocument = document.implementation.createHTMLDocument('chapter');
-    Object.defineProperty(epubDocument, 'defaultView', {
-      configurable: true,
-      value: epubWindow,
-    });
-    const { rendition } = createFakeRendition([{ document: epubDocument, window: epubWindow }]);
-    const updateSelectionFromWindow = vi.fn();
 
-    const cleanup = setupEpubSelectionListeners({
-      rendition: rendition as never,
-      containerRef: { current: document.createElement('div') },
-      lastMousePosRef: { current: { x: 0, y: 0 } },
-      startSelectionPolling: vi.fn(),
-      updateSelectionFromWindow,
-      setShowSelectionToolbar: vi.fn(),
-    });
+    expect(getSelectionPosition(win)).toBeNull();
+  });
 
-    epubDocument.dispatchEvent(new Event('selectionchange'));
-    epubDocument.dispatchEvent(new MouseEvent('mouseup'));
-    vi.runAllTimers();
+  it('returns null when the host iframe is unreachable (cross-origin)', () => {
+    const selection = {
+      rangeCount: 1,
+      getRangeAt: () => ({ getBoundingClientRect: () => ({ width: 10, height: 10 }) } as Range),
+      toString: () => 'some text',
+    } as unknown as Selection;
 
-    expect(updateSelectionFromWindow).toHaveBeenCalledWith(epubWindow);
-    expect(updateSelectionFromWindow).toHaveBeenCalledTimes(2);
+    const win = {
+      getSelection: () => selection,
+      frameElement: null, // cross-origin iframes report null
+    } as unknown as Window;
 
-    cleanup();
-    vi.useRealTimers();
+    expect(getSelectionPosition(win)).toBeNull();
   });
 });

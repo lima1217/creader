@@ -64,7 +64,6 @@ function Harness({
   onFileNotFound?: (isNotFound: boolean) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const bookRef = useRef<EpubBookLike | null>(null);
   const renditionRef = useRef<ReaderRendition | null>(null);
   const bookLikeRef = useRef<EpubBookLike | null>(null);
   const [, setLoading] = useState(false);
@@ -82,7 +81,6 @@ function Harness({
       aiContextWindow: 20,
       aiAutoSummarize: false,
     },
-    bookRef,
     renditionRef,
     bookLikeRef,
     setToc: () => {},

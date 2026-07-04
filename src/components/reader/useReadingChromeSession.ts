@@ -33,13 +33,11 @@ function searchIndexMessage(state: string, error?: string): string {
 
 export function useReadingChromeSession(params: {
   currentBook: Book | null;
-  containerRef: RefObject<HTMLDivElement | null>;
   renditionRef: RefObject<ReaderRendition | null>;
   bookLikeRef: RefObject<EpubBookLike | null>;
   renditionKey: number;
-  lastMousePosRef: RefObject<{ x: number; y: number }>;
 }) {
-  const { currentBook, containerRef, renditionRef, bookLikeRef, renditionKey, lastMousePosRef } = params;
+  const { currentBook, renditionRef, bookLikeRef, renditionKey } = params;
   const updateBookSearchIndex = useLibraryStore((s) => s.updateBookSearchIndex);
   const updateBookProgress = useProgressStore((s) => s.updateBookProgress);
   const isSearchOpen = useUIStore((s) => s.isSearchOpen);
@@ -164,8 +162,6 @@ export function useReadingChromeSession(params: {
   useEpubSelectionTracking({
     renditionRef,
     renditionKey,
-    containerRef,
-    lastMousePosRef,
     setSelectedText,
     setSelectedCfiRange,
     setSelectionToolbarPos,

@@ -24,10 +24,8 @@ export function EPUBReader() {
     const updateBookSearchIndex = useLibraryStore((s) => s.updateBookSearchIndex);
     const settings = useSettingsStore((s) => s.settings);
     const containerRef = useRef<HTMLDivElement>(null);
-    const bookRef = useRef<EpubBookLike | null>(null);
     const renditionRef = useRef<ReaderRendition | null>(null);
     const bookLikeRef = useRef<EpubBookLike | null>(null);
-    const lastMousePosRef = useRef({ x: 0, y: 0 });
     const [renditionKey, setRenditionKey] = useState(0);
 
     const [isLoading, setIsLoading] = useState(false);
@@ -37,18 +35,15 @@ export function EPUBReader() {
 
     const chrome = useReadingChromeSession({
         currentBook,
-        containerRef,
         renditionRef,
         bookLikeRef,
         renditionKey,
-        lastMousePosRef,
     });
 
     useEpubBookLifecycle({
         currentBook,
         containerRef,
         settings,
-        bookRef,
         renditionRef,
         bookLikeRef,
         setToc: chrome.setToc,
