@@ -12,6 +12,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { ButtonGroup } from '@astryxdesign/core/ButtonGroup';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Badge } from '@astryxdesign/core/Badge';
+import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
 import { useSettingsStore } from '../stores/settingsStore';
 import { ensureReadingMemoryRepository } from '../services/ReadingMemory';
 import { isTauriRuntime } from '../utils/tauri';
@@ -295,45 +296,47 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     )}
                 />
                 <LayoutContent isScrollable={false} className="console-content">
-                    <nav className="console-sidenav" aria-label="控制台导航">
-                        <button
-                            type="button"
-                            className="console-readiness-chip"
-                            data-readiness={overallReadiness}
-                            onClick={() => goToArea('overview')}
-                            aria-pressed={activeSection === 'overview'}
+                    <div className="console-sidenav">
+                        <SideNav
+                            aria-label="控制台导航"
+                            topContent={
+                                <button
+                                    type="button"
+                                    className="console-readiness-chip"
+                                    data-readiness={overallReadiness}
+                                    onClick={() => goToArea('overview')}
+                                    aria-pressed={activeSection === 'overview'}
+                                >
+                                    <span className="console-readiness-dot" aria-hidden="true" />
+                                    <span className="console-readiness-chip-copy">
+                                        <strong>阅读 AI</strong>
+                                        <small>{readinessCopy[overallReadiness].label}</small>
+                                    </span>
+                                </button>
+                            }
                         >
-                            <span className="console-readiness-dot" aria-hidden="true" />
-                            <span className="console-readiness-chip-copy">
-                                <strong>阅读 AI</strong>
-                                <small>{readinessCopy[overallReadiness].label}</small>
-                            </span>
-                        </button>
-                        <ul className="console-nav-list">
-                            {CONSOLE_AREAS.map(area => {
-                                const badge = sideNavBadges.find(b => b.area === area.id);
-                                const isActive = activeSection === area.id;
-                                return (
-                                    <li key={area.id}>
-                                        <button
-                                            type="button"
-                                            className={`console-nav-item ${isActive ? 'active' : ''}`}
-                                            aria-current={isActive ? 'page' : undefined}
+                            <SideNavSection title="控制台导航" isHeaderHidden>
+                                {CONSOLE_AREAS.map(area => {
+                                    const badge = sideNavBadges.find(b => b.area === area.id);
+                                    const isActive = activeSection === area.id;
+                                    return (
+                                        <SideNavItem
+                                            key={area.id}
+                                            label={area.label}
+                                            isSelected={isActive}
                                             onClick={() => goToArea(area.id)}
-                                        >
-                                            <span className="console-nav-label">{area.label}</span>
-                                            {badge && (
+                                            endContent={badge ? (
                                                 <Badge
                                                     variant={badge.variant === 'error' ? 'error' : 'warning'}
                                                     label={badge.variant === 'error' ? '需配置' : '待完善'}
                                                 />
-                                            )}
-                                        </button>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    </nav>
+                                            ) : undefined}
+                                        />
+                                    );
+                                })}
+                            </SideNavSection>
+                        </SideNav>
+                    </div>
 
                     <div className="console-main">
                     {activeSection === 'overview' && (

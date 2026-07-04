@@ -125,7 +125,9 @@ async function settle() {
 }
 
 function activeAreaLabel(container: HTMLElement): string | null {
-  const active = container.querySelector('.console-nav-item.active .console-nav-label');
+  // SideNavItem sets aria-current="page" on the selected item; the label text
+  // renders directly inside the item element.
+  const active = container.querySelector('.astryx-side-nav-item[aria-current="page"]');
   return active?.textContent?.trim() ?? null;
 }
 
@@ -153,7 +155,7 @@ describe('SettingsPanel — AI Reading Console shell (#50)', () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    const navLabels = Array.from(container.querySelectorAll('.console-nav-label')).map((el) =>
+    const navLabels = Array.from(container.querySelectorAll('.astryx-side-nav-item')).map((el) =>
       el.textContent?.trim() ?? '',
     );
     expect(navLabels).toEqual(['概览', 'AI 服务', '对话行为', '阅读记忆', '快捷提示词']);
@@ -191,7 +193,7 @@ describe('SettingsPanel — AI Reading Console shell (#50)', () => {
     const chip = container.querySelector('.console-readiness-chip');
     expect(chip?.getAttribute('data-readiness')).toBe('missing');
     // Side nav shows an attention badge on the AI Service item.
-    const aiItem = Array.from(container.querySelectorAll('.console-nav-item')).find((el) =>
+    const aiItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
       (el.textContent ?? '').includes('AI 服务'),
     );
     expect(aiItem?.querySelector('.astryx-badge')).not.toBeNull();
@@ -208,7 +210,7 @@ describe('SettingsPanel — AI Reading Console shell (#50)', () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    const memItem = Array.from(container.querySelectorAll('.console-nav-item')).find((el) =>
+    const memItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
       (el.textContent ?? '').includes('阅读记忆'),
     );
     expect(memItem?.querySelector('.astryx-badge')).not.toBeNull();
@@ -219,7 +221,7 @@ describe('SettingsPanel — AI Reading Console shell (#50)', () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    const qpItem = Array.from(container.querySelectorAll('.console-nav-item')).find((el) =>
+    const qpItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
       (el.textContent ?? '').includes('快捷提示词'),
     );
     expect(qpItem?.querySelector('.astryx-badge')).not.toBeNull();
@@ -247,7 +249,7 @@ describe('SettingsPanel — AI Reading Console shell (#50)', () => {
     const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
 
-    const convItem = Array.from(container.querySelectorAll('.console-nav-item')).find((el) =>
+    const convItem = Array.from(container.querySelectorAll('.astryx-side-nav-item')).find((el) =>
       (el.textContent ?? '').includes('对话行为'),
     );
     convItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

@@ -14,17 +14,19 @@ describe('visual CSS contracts', () => {
     expect(aiPanelCss).toContain('line-height: 22px;');
   });
 
-  it('renders the AI Reading Console as a wide shell with side navigation', () => {
+  it('renders the AI Reading Console as a wide shell with Astryx side navigation', () => {
     // The console shell replaces the legacy tab strip. Lock the wide layout,
-    // the side-nav column, and the overview status rows so a future refactor
-    // cannot silently regress back to the narrow tabbed settings form.
+    // the side-nav column wrapping an Astryx SideNav, and the overview status
+    // rows so a future refactor cannot regress to a hand-rolled nav or the
+    // narrow tabbed settings form.
     expect(settingsPanelCss).toContain('width: min(840px, calc(100vw - 32px)) !important;');
     expect(settingsPanelCss).toContain('.console-content');
     expect(settingsPanelCss).toContain('display: flex;');
     expect(settingsPanelCss).toContain('.console-sidenav');
     expect(settingsPanelCss).toContain('width: 196px;');
-    expect(settingsPanelCss).toContain('.console-nav-list');
-    expect(settingsPanelCss).toContain('.console-nav-item');
+    expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav');
+    expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav-item');
+    expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav-item[aria-current="page"]');
     expect(settingsPanelCss).toContain('.console-status-row');
     expect(settingsPanelCss).toContain('.console-readiness-dot');
   });
@@ -43,7 +45,8 @@ describe('visual CSS contracts', () => {
   it('falls back to a single-column layout on small viewports', () => {
     expect(settingsPanelCss).toContain('@media (max-width: 720px)');
     expect(settingsPanelCss).toContain('flex-direction: column;');
-    expect(settingsPanelCss).toContain('.console-nav-list');
+    // The SideNav section becomes a wrapping row so nav labels do not overlap.
+    expect(settingsPanelCss).toContain('.console-sidenav .astryx-side-nav-section');
     expect(settingsPanelCss).toContain('flex-direction: row;');
   });
 });

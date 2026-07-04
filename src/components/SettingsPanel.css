@@ -169,54 +169,39 @@
 .console-readiness-chip[data-readiness="degraded"] .console-readiness-chip-copy small { color: var(--warning); }
 .console-readiness-chip[data-readiness="missing"] .console-readiness-chip-copy small { color: var(--error); }
 
-.console-nav-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 0;
-    margin: 0;
-    list-style: none;
+/* ---- Console side navigation (Astryx SideNav overrides) --------------
+   The console shell wraps an Astryx SideNav in `.console-sidenav`. We scope
+   style overrides here instead of replacing the component's own classes so
+   the design-system nav owns its DOM/landmark; we only retune surface, item
+   sizing, hover, and selected states to match the console look. ----------- */
+
+.console-sidenav .astryx-side-nav,
+.console-sidenav .astryx-side-nav-section {
+    width: 100%;
+    background: transparent !important;
 }
 
-.console-nav-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    min-height: 38px;
-    padding: 0 12px;
-    border: 1px solid transparent;
-    border-radius: var(--settings-control-radius);
-    background: transparent;
-    color: var(--text-secondary);
-    font: inherit;
-    font-size: 13px;
-    font-weight: 570;
-    text-align: left;
-    cursor: pointer;
-    transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+.console-sidenav .astryx-side-nav-item {
+    min-height: 38px !important;
+    padding-inline: 12px !important;
+    border-radius: var(--settings-control-radius) !important;
+    color: var(--text-secondary) !important;
+    font-size: 13px !important;
+    font-weight: 570 !important;
 }
 
-.console-nav-item:hover {
-    background: var(--bg-control);
-    color: var(--text-primary);
+.console-sidenav .astryx-side-nav-item:hover {
+    background: var(--bg-control) !important;
+    color: var(--text-primary) !important;
 }
 
-.console-nav-item.active {
-    background: var(--accent-soft);
-    border-color: var(--border-accent);
-    color: var(--accent);
-    font-weight: 600;
+.console-sidenav .astryx-side-nav-item[aria-current="page"] {
+    background: var(--accent-soft) !important;
+    color: var(--accent) !important;
+    font-weight: 600 !important;
 }
 
-.console-nav-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.console-nav-item .astryx-badge {
+.console-sidenav .astryx-side-nav-item .astryx-badge {
     flex-shrink: 0;
 }
 
@@ -819,19 +804,22 @@
         flex-shrink: 0;
     }
 
-    .console-nav-list {
+    .console-sidenav .astryx-side-nav-section {
+        /* Lay the five console areas out as a wrapping top-nav row so labels
+           do not overlap the content on a single-column fallback. */
+        display: flex;
         flex-direction: row;
         flex-wrap: wrap;
         gap: 6px;
     }
 
-    .console-nav-item {
+    .console-sidenav .astryx-side-nav-item {
         flex: 1 1 auto;
-        min-height: 34px;
+        min-height: 34px !important;
         justify-content: center;
     }
 
-    .console-nav-item .astryx-badge {
+    .console-sidenav .astryx-side-nav-item .astryx-badge {
         order: -1;
     }
 
