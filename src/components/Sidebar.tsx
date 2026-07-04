@@ -7,6 +7,7 @@ import type { Book, BookCategory } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
 import { CATEGORY_COLORS } from '../constants';
 import { useAppDialog } from './AppDialog';
+import { openBookThroughLifecycle, removeBookThroughLifecycle } from '../appLifecycle';
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
@@ -183,8 +184,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const { confirm } = useAppDialog();
     const library = useLibraryStore((s) => s.library);
     const currentBook = useLibraryStore((s) => s.currentBook);
-    const setCurrentBook = useLibraryStore((s) => s.setCurrentBook);
-    const removeBook = useLibraryStore((s) => s.removeBook);
     const updateBook = useLibraryStore((s) => s.updateBook);
     const addCategory = useLibraryStore((s) => s.addCategory);
     const removeCategory = useLibraryStore((s) => s.removeCategory);
@@ -261,7 +260,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     }, [currentBook, library.books, selectedCategoryId, bookProgressById]);
 
     const handleBookClick = (book: Book) => {
-        setCurrentBook(book);
+        openBookThroughLifecycle({ book });
     };
 
     const handleDeleteBook = async (e: React.MouseEvent, bookId: string) => {
@@ -275,10 +274,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         });
 
         if (shouldDelete) {
-            removeBook(bookId);
-            if (currentBook?.id === bookId) {
-                setCurrentBook(null);
-            }
+            removeBookThroughLifecycle({ bookId });
         }
     };
 

@@ -1,24 +1,13 @@
 import { create } from 'zustand';
 import type { Book, BookCategory, Library, SearchIndexSummary } from '../types';
-import { deleteCover, revokeCoverUrl } from '../services/CoverStore';
 import { getInitialLibrary } from './app/initialState';
-import { useProgressStore } from './progressStore';
-import { createLogger } from '../utils/logger';
-
-const logger = createLogger('libraryStore');
 
 /**
  * Library + current book (issue #13), persisted via debounced localStorage.
  *
- * Book/category mutators carry the same side effects they had inside the old
- * `AppProvider`:
- *   - `addBook` / `removeBook` / `setCurrentBook` also touch the progress map
- *     in {@link useProgressStore};
- *   - `removeBook` revokes the cover URL, deletes the stored cover blob, and
- *     invokes the Rust `delete_book_file` command for books that live in the
- *     app's books directory;
- *   - `setCurrentBook` bumps `lastReadAt` and merges any stored progress so
- *     the reader resumes at the right spot.
+ * Mutators here are in-memory library state transitions. Cross-store progress
+ * updates, cover cleanup, native file deletion, and open-book orchestration
+ * live in the App Lifecycle seam.
  *
  * `latestLibrary` / `latestCurrentBook` are module-level mirrors of the same
  * race-safety refs the original provider kept (`latestLibraryRef` /
@@ -51,6 +40,7 @@ type LibraryState = {
   updateCategory: (id: string, updates: Partial<Pick<BookCategory, 'name' | 'color'>>) => void;
   setBookCategory: (bookId: string, categoryId: string | undefined) => void;
   currentBook: Book | null;
+  /** Pure setter. User open-book flows should use App Lifecycle orchestration. */
   setCurrentBook: (book: Book | null) => void;
   /** Replace currentBook without open-book side effects. Internal startup seam. */
   replaceCurrentBookSnapshot: (book: Book | null) => void;
@@ -79,32 +69,9 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     };
     syncLibrary(next);
     set({ library: next });
-    useProgressStore.getState().setEntry(book.id, {
-      ...book.progress,
-      lastReadAt: book.lastReadAt ?? 0,
-    });
   },
 
   removeBook: (id) => {
-    const book = latestLibrary.books.find((b) => b.id === id);
-
-    void deleteCover(id);
-    revokeCoverUrl(id);
-    useProgressStore.getState().removeEntry(id);
-
-    // Delete the book file if it's in the app's books directory.
-    if (book?.filePath) {
-      import('@tauri-apps/api/core')
-        .then(({ invoke }) => {
-          invoke('delete_book_file', { filePath: book.filePath }).catch((err) =>
-            logger.warn('Failed to delete book file:', err),
-          );
-        })
-        .catch(() => {
-          // Not running in Tauri environment
-        });
-    }
-
     const next: Library = {
       ...latestLibrary,
       books: latestLibrary.books.filter((b) => b.id !== id),
@@ -214,34 +181,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     set({ currentBook: book });
   },
   setCurrentBook: (book) => {
-    if (!book) {
-      syncCurrentBook(null);
-      set({ currentBook: null });
-      return;
-    }
-
-    // Opening a book marks it as recently read, so the sidebar ordering
-    // (by lastReadAt) keeps frequently-opened books near the top even
-    // when the user hasn't turned a page yet. Merge any stored progress
-    // (cfi/percentage) so the reader resumes at the right spot.
-    const now = Date.now();
-    const progressStore = useProgressStore.getState();
-    // Snapshot the entry as it was *before* this open, mirroring the original
-    // `setCurrentBook` which read the closure-captured (pre-update) value.
-    const storedProgress = progressStore.bookProgressById[book.id];
-    const existing = progressStore.bookProgressById[book.id];
-    progressStore.setEntry(book.id, existing ? { ...existing, lastReadAt: now } : { ...book.progress, lastReadAt: now });
-
-    const progress = storedProgress
-      ? {
-          ...book.progress,
-          currentCfi: storedProgress.currentCfi,
-          percentage: storedProgress.percentage,
-        }
-      : book.progress;
-
-    const nextBook: Book = { ...book, progress, lastReadAt: now };
-    syncCurrentBook(nextBook);
-    set({ currentBook: nextBook });
+    syncCurrentBook(book);
+    set({ currentBook: book });
   },
 }));

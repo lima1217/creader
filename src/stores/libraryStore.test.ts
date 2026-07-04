@@ -21,12 +21,12 @@ async function loadFreshStores() {
   } as const;
 }
 
-describe('libraryStore / progressStore setCurrentBook', () => {
+describe('libraryStore pure state transitions', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('hydrates currentBook progress from stored progress map', async () => {
+  it('sets currentBook without reading the progress store', async () => {
     const book: Book = {
       id: 'b1',
       title: 'Book',
@@ -56,11 +56,11 @@ describe('libraryStore / progressStore setCurrentBook', () => {
 
     useLibraryStore.getState().setCurrentBook(useLibraryStore.getState().library.books[0]);
 
-    expect(useLibraryStore.getState().currentBook?.progress.currentCfi).toBe('epubcfi(/6/2[chap]!/4/2/14)');
-    expect(useLibraryStore.getState().currentBook?.progress.percentage).toBe(55);
+    expect(useLibraryStore.getState().currentBook?.progress.currentCfi).toBe('');
+    expect(useLibraryStore.getState().currentBook?.progress.percentage).toBe(0);
   });
 
-  it('marks the opened book as recently read (bumps lastReadAt)', async () => {
+  it('adds and removes books without mutating the progress store', async () => {
     const now = 1_700_000_000_000;
     vi.spyOn(Date, 'now').mockReturnValue(now);
 
@@ -78,13 +78,12 @@ describe('libraryStore / progressStore setCurrentBook', () => {
 
     const { useLibraryStore, useProgressStore } = await loadFreshStores();
 
-    useLibraryStore.getState().setCurrentBook(useLibraryStore.getState().library.books[0]);
+    useLibraryStore.getState().addBook({ ...book, id: 'b2' });
+    expect(useProgressStore.getState().bookProgressById.b2).toBeUndefined();
 
-    // Opening the book should write a fresh lastReadAt into the progress map,
-    // even though the book had no prior progress entry and the user hasn't
-    // turned a page. This is what keeps frequently-opened books near the top
-    // of the sidebar.
-    expect(useProgressStore.getState().bookProgressById[book.id]?.lastReadAt).toBe(now);
+    useProgressStore.getState().setEntry(book.id, { currentCfi: '', percentage: 0, lastReadAt: 1 });
+    useLibraryStore.getState().removeBook(book.id);
+    expect(useProgressStore.getState().bookProgressById[book.id]?.lastReadAt).toBe(1);
 
     vi.restoreAllMocks();
   });

@@ -7,6 +7,9 @@ import {
   hydrateConversationMemoryFromStorage,
   importBookThroughLifecycle,
   migrateInlineCovers,
+  openBookThroughLifecycle,
+  prepareBookOpen,
+  removeBookThroughLifecycle,
   useAppLifecyclePersistence,
   validateStartupBookPaths,
 } from './appLifecycle';
@@ -212,6 +215,67 @@ describe('App Lifecycle contract', () => {
     expect(added).toHaveLength(1);
     expect(added[0]).toMatchObject({ id: 'new-book', searchIndex: { state: 'pending' } });
     expect(searchUpdates).toEqual([{ id: 'new-book', state: 'ready', indexedAtMs: 123 }]);
+  });
+
+  it('prepares an opened book by merging stored progress and bumping lastReadAt', () => {
+    const prepared = prepareBookOpen({
+      book: book(),
+      storedProgress: { currentCfi: 'epubcfi(/6/2)', percentage: 64, lastReadAt: 1 },
+      now: () => 2,
+    });
+
+    expect(prepared.book).toMatchObject({
+      id: 'book-1',
+      lastReadAt: 2,
+      progress: { currentCfi: 'epubcfi(/6/2)', percentage: 64 },
+    });
+    expect(prepared.progressEntry).toEqual({ currentCfi: 'epubcfi(/6/2)', percentage: 64, lastReadAt: 2 });
+  });
+
+  it('opens a book through the lifecycle seam and writes the progress entry', () => {
+    const currentBook = vi.fn();
+    const progressEntry = vi.fn();
+
+    openBookThroughLifecycle({
+      book: book(),
+      progressById: {},
+      setCurrentBook: currentBook,
+      setProgressEntry: progressEntry,
+      now: () => 3,
+    });
+
+    expect(progressEntry).toHaveBeenCalledWith('book-1', { currentCfi: '', percentage: 0, lastReadAt: 3 });
+    expect(currentBook).toHaveBeenCalledWith(expect.objectContaining({ id: 'book-1', lastReadAt: 3 }));
+  });
+
+  it('removes a book through the lifecycle seam and runs cleanup side effects', async () => {
+    const target = book({ id: 'book-1', filePath: '/library/book.epub' });
+    const removeBook = vi.fn();
+    const removeProgressEntry = vi.fn();
+    const setCurrentBook = vi.fn();
+    const deleteCover = vi.fn().mockResolvedValue(undefined);
+    const revokeCoverUrl = vi.fn();
+    const deleteNativeBookFile = vi.fn().mockResolvedValue(undefined);
+
+    removeBookThroughLifecycle({
+      bookId: target.id,
+      books: [target],
+      currentBook: target,
+      removeBook,
+      removeProgressEntry,
+      setCurrentBook,
+      deleteCover,
+      revokeCoverUrl,
+      deleteNativeBookFile,
+    });
+    await Promise.resolve();
+
+    expect(deleteCover).toHaveBeenCalledWith('book-1');
+    expect(revokeCoverUrl).toHaveBeenCalledWith('book-1');
+    expect(removeProgressEntry).toHaveBeenCalledWith('book-1');
+    expect(deleteNativeBookFile).toHaveBeenCalledWith('/library/book.epub');
+    expect(removeBook).toHaveBeenCalledWith('book-1');
+    expect(setCurrentBook).toHaveBeenCalledWith(null);
   });
 
   it('skips importing an existing file path', async () => {

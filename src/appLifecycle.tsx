@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { importBookFromPath } from './services/BookImportService';
 import { rebuildSearchIndexQuietly, toSearchIndexSummary } from './services/reader/searchIndex';
-import { dataUrlToBlob, saveCover } from './services/CoverStore';
+import { dataUrlToBlob, deleteCover, revokeCoverUrl, saveCover } from './services/CoverStore';
 import { loadChatMessages, loadConversationMemory, replaceChatMessages } from './services/ChatStore';
 import { validateAndFixLibraryPaths } from './services/BookPathValidator';
 import { STORAGE_KEYS, loadStored } from './services/LocalStore';
@@ -241,6 +241,103 @@ export async function importBookThroughLifecycle(params: {
   } finally {
     params.setIsImporting?.(false);
   }
+}
+
+export function prepareBookOpen(params: {
+  book: Book;
+  storedProgress?: BookProgressById[string];
+  now?: () => number;
+}): {
+  book: Book;
+  progressEntry: BookProgressById[string];
+} {
+  const now = params.now ?? Date.now;
+  const lastReadAt = now();
+  const storedProgress = params.storedProgress;
+  const progressEntry = storedProgress
+    ? { ...storedProgress, lastReadAt }
+    : { ...params.book.progress, lastReadAt };
+  const progress = storedProgress
+    ? {
+        ...params.book.progress,
+        currentCfi: storedProgress.currentCfi,
+        percentage: storedProgress.percentage,
+      }
+    : params.book.progress;
+
+  return {
+    book: { ...params.book, progress, lastReadAt },
+    progressEntry,
+  };
+}
+
+export function openBookThroughLifecycle(params: {
+  book: Book | null;
+  progressById?: BookProgressById;
+  setProgressEntry?: (id: string, entry: BookProgressById[string]) => void;
+  setCurrentBook?: (book: Book | null) => void;
+  now?: () => number;
+}): void {
+  const setCurrentBook = params.setCurrentBook ?? useLibraryStore.getState().setCurrentBook;
+
+  if (!params.book) {
+    setCurrentBook(null);
+    return;
+  }
+
+  const progressById = params.progressById ?? useProgressStore.getState().bookProgressById;
+  const prepared = prepareBookOpen({
+    book: params.book,
+    storedProgress: progressById[params.book.id],
+    now: params.now,
+  });
+  const setProgressEntry = params.setProgressEntry ?? useProgressStore.getState().setEntry;
+  setProgressEntry(params.book.id, prepared.progressEntry);
+  setCurrentBook(prepared.book);
+}
+
+export async function deleteNativeBookFile(params: {
+  filePath?: string;
+  invoke?: (cmd: string, args: { filePath: string }) => Promise<unknown>;
+}): Promise<void> {
+  if (!params.filePath) return;
+
+  try {
+    const invoke = params.invoke ?? (await import('@tauri-apps/api/core')).invoke;
+    await invoke('delete_book_file', { filePath: params.filePath });
+  } catch (error) {
+    lifecycleLogger.warn('Failed to delete book file:', error);
+  }
+}
+
+export function removeBookThroughLifecycle(params: {
+  bookId: string;
+  books?: Book[];
+  currentBook?: Book | null;
+  removeBook?: (id: string) => void;
+  removeProgressEntry?: (id: string) => void;
+  setCurrentBook?: (book: Book | null) => void;
+  deleteCover?: (bookId: string) => Promise<void>;
+  revokeCoverUrl?: (bookId: string) => void;
+  deleteNativeBookFile?: (filePath?: string) => Promise<void>;
+}): void {
+  const books = params.books ?? useLibraryStore.getState().library.books;
+  const book = books.find((candidate) => candidate.id === params.bookId);
+  const removeBook = params.removeBook ?? useLibraryStore.getState().removeBook;
+  const removeProgressEntry = params.removeProgressEntry ?? useProgressStore.getState().removeEntry;
+  const setCurrentBook = params.setCurrentBook ?? ((nextBook) => openBookThroughLifecycle({ book: nextBook }));
+  const removeCover = params.deleteCover ?? deleteCover;
+  const revokeCover = params.revokeCoverUrl ?? revokeCoverUrl;
+  const removeNativeFile = params.deleteNativeBookFile ?? ((filePath) => deleteNativeBookFile({ filePath }));
+
+  void removeCover(params.bookId);
+  revokeCover(params.bookId);
+  removeProgressEntry(params.bookId);
+  if (book?.filePath) void removeNativeFile(book.filePath);
+
+  removeBook(params.bookId);
+  const currentBook = params.currentBook ?? useLibraryStore.getState().currentBook;
+  if (currentBook?.id === params.bookId) setCurrentBook(null);
 }
 
 export function useAppLifecycleBootstrap(): void {
