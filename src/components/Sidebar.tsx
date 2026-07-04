@@ -5,6 +5,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useProgressStore } from '../stores/progressStore';
 import type { Book, BookFolder } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
+import { STORAGE_KEYS, loadStored, saveStored } from '../services/LocalStore';
 import { useAppDialog } from './AppDialog';
 import { openBookThroughLifecycle, removeBookThroughLifecycle } from '../appLifecycle';
 import { Button } from '@astryxdesign/core/Button';
@@ -90,6 +91,23 @@ function AstryxMutedDotIcon(props: SVGProps<SVGSVGElement>) {
     );
 }
 
+function AstryxSearchIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+        </svg>
+    );
+}
+
+function AstryxChevronIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="m9 18 6-6-6-6" />
+        </svg>
+    );
+}
+
 interface SidebarProps {
     onImportBook: () => void;
     onOpenSettings: () => void;
@@ -100,6 +118,40 @@ interface EditBookState {
     id: string;
     title: string;
     author: string;
+}
+
+type OrganizerView = 'all' | 'unfiled' | string;
+
+interface BookGroup {
+    id: string;
+    label: string;
+    books: Book[];
+    isFolder: boolean;
+}
+
+function getBookActivity(book: Book, bookProgressById: Record<string, { lastReadAt?: number }>): number {
+    return bookProgressById[book.id]?.lastReadAt ?? book.lastReadAt ?? 0;
+}
+
+function orderBooks(books: Book[], currentBook: Book | null, bookProgressById: Record<string, { lastReadAt?: number }>): Book[] {
+    const ordered = [...books].sort((a, b) => getBookActivity(b, bookProgressById) - getBookActivity(a, bookProgressById));
+    const currentBookIndex = currentBook ? ordered.findIndex(book => book.id === currentBook.id) : -1;
+    if (currentBookIndex <= 0) return ordered;
+
+    const nextBooks = [...ordered];
+    const [activeBook] = nextBooks.splice(currentBookIndex, 1);
+    return [activeBook, ...nextBooks];
+}
+
+function matchesBookSearch(book: Book, query: string): boolean {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return true;
+    return book.title.toLocaleLowerCase().includes(normalized)
+        || (book.author || '').toLocaleLowerCase().includes(normalized);
+}
+
+function loadExpandedFolderIds(): Set<string> {
+    return new Set(loadStored<string[]>(STORAGE_KEYS.libraryOrganizerExpandedFolders, []));
 }
 
 // Lazy loaded book cover component
@@ -173,16 +225,29 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
     const [bookToEdit, setBookToEdit] = useState<EditBookState | null>(null);
-    const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+    const [selectedView, setSelectedView] = useState<OrganizerView>('all');
     const [showFolderModal, setShowFolderModal] = useState(false);
     const [editingFolder, setEditingFolder] = useState<BookFolder | null>(null);
-    const [isFoldersOpen, setFoldersOpen] = useState(false);
+    const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(loadExpandedFolderIds);
     const [newFolderName, setNewFolderName] = useState('');
     const [bookForFolder, setBookForFolder] = useState<string | null>(null);
+    const [bookSearchQuery, setBookSearchQuery] = useState('');
+    const hasPrimedCurrentFolderRef = useRef(false);
 
-    const folders = library.folders || [];
+    const folders = useMemo(
+        () => [...(library.folders || [])].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+        [library.folders],
+    );
+    const folderIds = useMemo(() => new Set(folders.map(folder => folder.id)), [folders]);
+    const hasSearch = bookSearchQuery.trim().length > 0;
 
-    // Group books by folder
+    const orderedBooks = useMemo(
+        () => orderBooks(library.books, currentBook, bookProgressById),
+        [currentBook, library.books, bookProgressById],
+    );
+
+    const continueBook = currentBook ?? orderedBooks[0] ?? null;
+
     const groupedBooks = useMemo(() => {
         const groups: Record<string, Book[]> = {
             unfiled: []
@@ -192,7 +257,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
             groups[folder.id] = [];
         });
 
-        library.books.forEach(book => {
+        orderedBooks.forEach(book => {
             if (book.folderId && groups[book.folderId]) {
                 groups[book.folderId].push(book);
             } else {
@@ -201,38 +266,76 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         });
 
         return groups;
-    }, [library.books, folders]);
+    }, [orderedBooks, folders]);
 
-    // Filter books based on selected folder
-    const filteredBooks = useMemo(() => {
-        let books: Book[];
+    const visibleGroups = useMemo<BookGroup[]>(() => {
+        const allGroups: BookGroup[] = [
+            { id: 'unfiled', label: '未归档', books: groupedBooks.unfiled || [], isFolder: false },
+            ...folders.map(folder => ({
+                id: folder.id,
+                label: folder.name,
+                books: groupedBooks[folder.id] || [],
+                isFolder: true,
+            })),
+        ];
 
-        if (!selectedFolderId || selectedFolderId === 'all') {
-            books = library.books;
-        } else if (selectedFolderId === 'unfiled') {
-            books = library.books.filter(b => !b.folderId);
-        } else {
-            books = library.books.filter(b => b.folderId === selectedFolderId);
+        const scopedGroups = selectedView === 'all'
+            ? allGroups
+            : allGroups.filter(group => group.id === selectedView);
+
+        if (!hasSearch) return scopedGroups;
+
+        return allGroups
+            .map(group => ({
+                ...group,
+                books: group.books.filter(book => matchesBookSearch(book, bookSearchQuery)),
+            }))
+            .filter(group => group.books.length > 0);
+    }, [bookSearchQuery, folders, groupedBooks, hasSearch, selectedView]);
+
+    const visibleBookCount = visibleGroups.reduce((count, group) => count + group.books.length, 0);
+
+    useEffect(() => {
+        if (folders.length > 0 && localStorage.getItem(STORAGE_KEYS.libraryOrganizerExpandedFolders) === null) {
+            const next = new Set(folders.map(folder => folder.id));
+            setExpandedFolderIds(next);
+            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
+            return;
         }
 
-        // Order by most-recently-read first. lastReadAt is bumped both when the
-        // user opens a book and on every page turn, so frequently-read books
-        // float to the top and naturally stay near the front after switching.
-        // Books with no reading history keep their import order (stable sort).
-        const ordered = [...books].sort((a, b) => {
-            const aAt = bookProgressById[a.id]?.lastReadAt ?? a.lastReadAt ?? 0;
-            const bAt = bookProgressById[b.id]?.lastReadAt ?? b.lastReadAt ?? 0;
-            return bAt - aAt;
+        const currentFolderId = currentBook?.folderId;
+        if (hasPrimedCurrentFolderRef.current || !currentFolderId || !folderIds.has(currentFolderId)) return;
+        hasPrimedCurrentFolderRef.current = true;
+        setExpandedFolderIds((current) => {
+            if (current.has(currentFolderId)) return current;
+            const next = new Set(current);
+            next.add(currentFolderId);
+            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
+            return next;
         });
+    }, [currentBook?.folderId, folderIds, folders]);
 
-        // Pin the currently-open book to the very top.
-        const currentBookIndex = currentBook ? ordered.findIndex(book => book.id === currentBook.id) : -1;
-        if (currentBookIndex <= 0) return ordered;
+    useEffect(() => {
+        setExpandedFolderIds((current) => {
+            const next = new Set(Array.from(current).filter(id => folderIds.has(id)));
+            if (next.size === current.size) return current;
+            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
+            return next;
+        });
+    }, [folderIds]);
 
-        const nextBooks = [...ordered];
-        const [activeBook] = nextBooks.splice(currentBookIndex, 1);
-        return [activeBook, ...nextBooks];
-    }, [currentBook, library.books, selectedFolderId, bookProgressById]);
+    const toggleFolder = (folderId: string) => {
+        setExpandedFolderIds((current) => {
+            const next = new Set(current);
+            if (next.has(folderId)) {
+                next.delete(folderId);
+            } else {
+                next.add(folderId);
+            }
+            saveStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, Array.from(next));
+            return next;
+        });
+    };
 
     const handleBookClick = (book: Book) => {
         openBookThroughLifecycle({ book });
@@ -307,8 +410,8 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
 
         if (shouldDelete) {
             removeFolder(folderId);
-            if (selectedFolderId === folderId) {
-                setSelectedFolderId(null);
+            if (selectedView === folderId) {
+                setSelectedView('all');
             }
         }
     };
@@ -338,6 +441,68 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
             setBookFolder(bookForFolder, folderId);
             setBookForFolder(null);
         }
+    };
+
+    const renderBookItem = (book: Book) => {
+        const percentage = bookProgressById[book.id]?.percentage ?? book.progress.percentage;
+        return (
+            <ListItem
+                key={book.id}
+                className={`book-item ${currentBook?.id === book.id ? 'active' : ''}`}
+                onMouseEnter={() => void onPreloadReader()}
+                onClick={() => handleBookClick(book)}
+                isSelected={currentBook?.id === book.id}
+                startContent={<LazyBookCover book={book} />}
+                label={
+                    <span className="book-title-row">
+                        <span className="book-title">{book.title}</span>
+                    </span>
+                }
+                description={
+                    <span className="book-info">
+                        <span className="book-author">{book.author || 'Unknown'}</span>
+                        {book.folderId && (
+                            <span className="book-category-badge">
+                                {folders.find(folder => folder.id === book.folderId)?.name || ''}
+                            </span>
+                        )}
+                        {percentage > 0 && (
+                            <div className="book-progress">
+                                <div
+                                    className="book-progress-bar"
+                                    style={{ '--book-progress-scale': percentage / 100 } as React.CSSProperties}
+                                />
+                            </div>
+                        )}
+                    </span>
+                }
+                endContent={
+                    <span className="book-actions">
+                        <button
+                            className="btn btn-ghost btn-icon book-action-btn"
+                            onClick={(e) => handleSetBookFolder(e, book.id)}
+                            aria-label="设置文件夹"
+                        >
+                            <Icon icon={AstryxFolderIcon} size="sm" />
+                        </button>
+                        <button
+                            className="btn btn-ghost btn-icon book-edit"
+                            onClick={(e) => handleEditBook(e, book)}
+                            aria-label="编辑书籍信息"
+                        >
+                            <EditIcon />
+                        </button>
+                        <button
+                            className="btn btn-ghost btn-icon book-delete"
+                            onClick={(e) => handleDeleteBook(e, book.id)}
+                            aria-label="移除书籍"
+                        >
+                            <TrashIcon />
+                        </button>
+                    </span>
+                }
+            />
+        );
     };
 
     const bookForFolderRecord = bookForFolder ? library.books.find(book => book.id === bookForFolder) : null;
@@ -532,64 +697,85 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 </div>
             </div>
 
-            {/* Folder Filter */}
+            <div className="sidebar-continue">
+                {continueBook ? (
+                    <button
+                        className="continue-book"
+                        onMouseEnter={() => void onPreloadReader()}
+                        onClick={() => handleBookClick(continueBook)}
+                    >
+                        <span className="continue-book-label">继续阅读</span>
+                        <span className="continue-book-title">{continueBook.title}</span>
+                        <span className="continue-book-author">{continueBook.author || 'Unknown'}</span>
+                    </button>
+                ) : (
+                    <div className="continue-book empty">
+                        <span className="continue-book-label">继续阅读</span>
+                        <span className="continue-book-title">暂无书籍</span>
+                    </div>
+                )}
+            </div>
+
+            <div className="sidebar-search">
+                <TextInput
+                    label="搜索书库"
+                    isLabelHidden
+                    value={bookSearchQuery}
+                    onChange={setBookSearchQuery}
+                    placeholder="搜索书名或作者"
+                    startIcon={AstryxSearchIcon}
+                    hasClear
+                    size="sm"
+                />
+            </div>
+
             <div className="sidebar-categories">
                 <SideNav>
-                    <SideNavSection title="书库文件夹" isHeaderHidden>
+                    <SideNavSection title="书库整理" isHeaderHidden>
                         <SideNavItem
                             label="全部书籍"
                             icon={AstryxBookIcon}
-                            isSelected={!selectedFolderId || selectedFolderId === 'all'}
-                            onClick={() => setSelectedFolderId(null)}
+                            isSelected={selectedView === 'all'}
+                            onClick={() => setSelectedView('all')}
                             endContent={<span className="category-filter-count">{library.books.length}</span>}
                         />
                         <SideNavItem
-                            label="文件夹"
-                            icon={AstryxFolderIcon}
-                            endContent={<span className="category-filter-count">{folders.length}</span>}
-                            collapsible={{
-                                isCollapsed: !isFoldersOpen,
-                                onCollapsedChange: collapsed => setFoldersOpen(!collapsed),
-                            }}
-                        >
-                            {groupedBooks.unfiled.length > 0 && (
+                            label="未归档"
+                            icon={AstryxMutedDotIcon}
+                            isSelected={selectedView === 'unfiled'}
+                            onClick={() => setSelectedView('unfiled')}
+                            endContent={<span className="category-filter-count">{groupedBooks.unfiled.length}</span>}
+                        />
+                        {folders.map(folder => (
+                            <div key={folder.id} className="category-filter-group">
                                 <SideNavItem
-                                    label="未归档"
-                                    icon={AstryxMutedDotIcon}
-                                    isSelected={selectedFolderId === 'unfiled'}
-                                    onClick={() => setSelectedFolderId('unfiled')}
-                                    endContent={<span className="category-filter-count">{groupedBooks.unfiled.length}</span>}
+                                    label={folder.name}
+                                    icon={AstryxFolderIcon}
+                                    isSelected={selectedView === folder.id}
+                                    onClick={() => {
+                                        setSelectedView(folder.id);
+                                        if (!expandedFolderIds.has(folder.id)) toggleFolder(folder.id);
+                                    }}
+                                    endContent={<span className="category-filter-count">{groupedBooks[folder.id]?.length || 0}</span>}
                                 />
-                            )}
-
-                            {folders.map(folder => (
-                                <div key={folder.id} className="category-filter-group">
-                                    <SideNavItem
-                                        label={folder.name}
-                                        icon={AstryxFolderIcon}
-                                        isSelected={selectedFolderId === folder.id}
-                                        onClick={() => setSelectedFolderId(folder.id)}
-                                        endContent={<span className="category-filter-count">{groupedBooks[folder.id]?.length || 0}</span>}
+                                <div className="category-actions">
+                                    <MoreMenu
+                                        label={`${folder.name} 操作`}
+                                        size="sm"
+                                        items={[
+                                            { label: '编辑文件夹', icon: AstryxEditIcon, onClick: () => openEditFolder(folder) },
+                                            { label: '删除文件夹', icon: AstryxTrashIcon, onClick: () => void handleDeleteFolderAction(folder.id) },
+                                        ]}
                                     />
-                                    <div className="category-actions">
-                                        <MoreMenu
-                                            label={`${folder.name} 操作`}
-                                            size="sm"
-                                            items={[
-                                                { label: '编辑文件夹', icon: AstryxEditIcon, onClick: () => openEditFolder(folder) },
-                                                { label: '删除文件夹', icon: AstryxTrashIcon, onClick: () => void handleDeleteFolderAction(folder.id) },
-                                            ]}
-                                        />
-                                    </div>
                                 </div>
-                            ))}
-                        </SideNavItem>
+                            </div>
+                        ))}
                     </SideNavSection>
                 </SideNav>
             </div>
 
             <div className="sidebar-content">
-                {filteredBooks.length === 0 ? (
+                {library.books.length === 0 ? (
                     <div className="sidebar-empty">
                         <EmptyState
                             isCompact
@@ -607,79 +793,55 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                             }
                         />
                     </div>
+                ) : visibleBookCount === 0 ? (
+                    <div className="sidebar-empty compact">
+                        <EmptyState
+                            isCompact
+                            headingLevel={4}
+                            title="没有匹配书籍"
+                            description="试试书名或作者里的其他字词"
+                            icon={<Icon icon={AstryxSearchIcon} />}
+                        />
+                    </div>
                 ) : (
-                    <List density="compact" className="book-list">
-                        {filteredBooks.map((book) => {
-                            const percentage = bookProgressById[book.id]?.percentage ?? book.progress.percentage;
+                    <div className="organizer-bookshelf">
+                        {visibleGroups.map((group) => {
+                            const isExpanded = hasSearch || !group.isFolder || expandedFolderIds.has(group.id);
                             return (
-                                <ListItem
-                                    key={book.id}
-                                    className={`book-item ${currentBook?.id === book.id ? 'active' : ''}`}
-                                    onMouseEnter={() => void onPreloadReader()}
-                                    onClick={() => handleBookClick(book)}
-                                    isSelected={currentBook?.id === book.id}
-                                    startContent={<LazyBookCover book={book} />}
-                                    label={
-                                        <span className="book-title-row">
-                                            <span className="book-title">{book.title}</span>
-                                        </span>
-                                    }
-                                    description={
-                                        <span className="book-info">
-                                        <span className="book-author">{book.author || 'Unknown'}</span>
-                                        {book.folderId && (
-                                            <span
-                                                className="book-category-badge"
-                                            >
-                                                {folders.find(folder => folder.id === book.folderId)?.name || ''}
-                                            </span>
+                                <section key={group.id} className="organizer-group">
+                                    <button
+                                        className={`organizer-group-header ${isExpanded ? 'expanded' : ''}`}
+                                        onClick={() => {
+                                            if (group.isFolder && !hasSearch) {
+                                                toggleFolder(group.id);
+                                            } else {
+                                                setSelectedView(group.id);
+                                            }
+                                        }}
+                                    >
+                                        <Icon icon={group.isFolder ? AstryxFolderIcon : AstryxMutedDotIcon} size="sm" />
+                                        <span className="organizer-group-title">{group.label}</span>
+                                        <span className="category-filter-count">{group.books.length}</span>
+                                        {group.isFolder && (
+                                            <Icon icon={AstryxChevronIcon} size="sm" />
                                         )}
-                                        {percentage > 0 && (
-                                            <div className="book-progress">
-                                                <div
-                                                    className="book-progress-bar"
-                                                    style={{ '--book-progress-scale': percentage / 100 } as React.CSSProperties}
-                                                />
-                                            </div>
-                                        )}
-                                        </span>
-                                    }
-                                    endContent={
-                                        <span className="book-actions">
-                                        <button
-                                            className="btn btn-ghost btn-icon book-action-btn"
-                                            onClick={(e) => handleSetBookFolder(e, book.id)}
-                                            aria-label="设置文件夹"
-                                        >
-                                            <Icon icon={AstryxFolderIcon} size="sm" />
-                                        </button>
-                                        <button
-                                            className="btn btn-ghost btn-icon book-edit"
-                                            onClick={(e) => handleEditBook(e, book)}
-                                            aria-label="编辑书籍信息"
-                                        >
-                                            <EditIcon />
-                                        </button>
-                                        <button
-                                            className="btn btn-ghost btn-icon book-delete"
-                                            onClick={(e) => handleDeleteBook(e, book.id)}
-                                            aria-label="移除书籍"
-                                        >
-                                            <TrashIcon />
-                                        </button>
-                                        </span>
-                                    }
-                                />
+                                    </button>
+                                    {isExpanded && (
+                                        <List density="compact" className="book-list">
+                                            {group.books.map(renderBookItem)}
+                                        </List>
+                                    )}
+                                </section>
                             );
                         })}
-                    </List>
+                    </div>
                 )}
             </div>
 
             {/* Book count footer */}
             <div className="sidebar-footer">
                 <span className="book-count">
-                    {filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'}
+                    {visibleBookCount} {visibleBookCount === 1 ? 'book' : 'books'}
                 </span>
                 <button className="sidebar-settings-btn" onClick={onOpenSettings} aria-label="打开设置">
                     <SettingsIcon />

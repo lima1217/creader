@@ -130,15 +130,7 @@ function mountSidebar(handlers: Handlers = {}) {
   );
 }
 
-// Expand the folders section so folder children render, then return the child
-// node matching the given name. The click is async (React re-render), so the
-// caller awaits this and searches after the settle.
-async function expandFoldersAndFindChild(container: HTMLElement, name: string): Promise<HTMLElement> {
-  const foldersToggle = Array.from(container.querySelectorAll('button')).find(
-    (el) => el.textContent?.includes('文件夹'),
-  ) as HTMLElement;
-  click(foldersToggle);
-  await settle();
+async function findOrganizerButton(container: HTMLElement, name: string): Promise<HTMLElement> {
   const child = Array.from(container.querySelectorAll('button')).find(
     (el) => el.textContent?.includes(name),
   ) as HTMLElement | undefined;
@@ -150,6 +142,7 @@ async function expandFoldersAndFindChild(container: HTMLElement, name: string): 
 beforeEach(() => {
   installIntersectionObserverStub();
   installDialogElementStub();
+  localStorage.removeItem('creader-library-organizer-expanded-folders');
   resetConfirmState();
   useLibraryStore.setState({
     library: { books: [], folders: [], lastUpdated: 1 },
@@ -194,6 +187,25 @@ describe('Sidebar contract — rendering', () => {
     const activeItem = container.querySelector('.book-item.active') as HTMLElement | null;
     expect(activeItem).not.toBeNull();
     expect(activeItem!.textContent).toContain('Active');
+  });
+
+  it('shows the current book in the continue-reading area before older activity', () => {
+    const active = makeBook({ id: 'b1', title: 'Now Reading', lastReadAt: 1 });
+    const recent = makeBook({ id: 'b2', title: 'Recently Read', lastReadAt: 100 });
+    seedLibrary({ books: [active, recent], folders: [], lastUpdated: 1 }, active);
+    const { container } = mountSidebar();
+    const continueEntry = container.querySelector('.continue-book') as HTMLElement;
+    expect(continueEntry.textContent).toContain('继续阅读');
+    expect(continueEntry.textContent).toContain('Now Reading');
+  });
+
+  it('falls back to the most recently read book in the continue-reading area', () => {
+    const older = makeBook({ id: 'b1', title: 'Older', lastReadAt: 1 });
+    const recent = makeBook({ id: 'b2', title: 'Recent', lastReadAt: 100 });
+    seedLibrary({ books: [older, recent], folders: [], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    const continueEntry = container.querySelector('.continue-book') as HTMLElement;
+    expect(continueEntry.textContent).toContain('Recent');
   });
 });
 
@@ -267,12 +279,76 @@ describe('Sidebar contract — folder nav', () => {
     expect(container.textContent).toContain('In Folder');
     expect(container.textContent).toContain('Outside');
 
-    const readingChild = await expandFoldersAndFindChild(container, 'Reading');
+    const readingChild = await findOrganizerButton(container, 'Reading');
     click(readingChild);
     await settle();
 
     expect(container.textContent).toContain('In Folder');
     expect(container.textContent).not.toContain('Outside');
+  });
+
+  it('remembers multiple expanded folders as UI state', async () => {
+    const folderA = makeFolder({ id: 'folder-a', name: 'Theory', sortOrder: 0 });
+    const folderB = makeFolder({ id: 'folder-b', name: 'Practice', sortOrder: 1 });
+    const theoryBook = makeBook({ id: 'b1', title: 'Deep Work', folderId: 'folder-a' });
+    const practiceBook = makeBook({ id: 'b2', title: 'Ship It', folderId: 'folder-b' });
+    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify(['folder-b']));
+    seedLibrary({ books: [theoryBook, practiceBook], folders: [folderA, folderB], lastUpdated: 1 });
+
+    const { container } = mountSidebar();
+    await settle();
+    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('Deep Work');
+    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).toContain('Ship It');
+
+    click(await findOrganizerButton(container, 'Theory'));
+    await settle();
+    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]').sort()).toEqual(['folder-a', 'folder-b']);
+  });
+
+  it('expands the current book folder on first entry when remembered state is empty', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const current = makeBook({ id: 'b1', title: 'Current Folder Book', folderId: 'folder1' });
+    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify([]));
+    seedLibrary({ books: [current], folders: [folder], lastUpdated: 1 }, current);
+
+    const { container } = mountSidebar();
+    await settle();
+
+    expect(container.querySelector('.book-item')?.textContent).toContain('Current Folder Book');
+    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual(['folder1']);
+  });
+
+  it('removes deleted folder ids from remembered expansion state', async () => {
+    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify(['deleted-folder']));
+    seedLibrary({ books: [], folders: [], lastUpdated: 1 });
+
+    mountSidebar();
+    await settle();
+
+    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual([]);
+  });
+
+  it('searches title and author in folder context without changing previous expansion', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const inFolder = makeBook({ id: 'b1', title: 'Invisible Title', author: 'Needle Author', folderId: 'folder1' });
+    const other = makeBook({ id: 'b2', title: 'Other Book', author: 'Someone Else' });
+    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify([]));
+    seedLibrary({ books: [inFolder, other], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    await settle();
+    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('Invisible Title');
+
+    const searchInput = container.querySelector('input') as HTMLInputElement;
+    setInputValue(searchInput, 'needle');
+    await settle();
+    expect(container.textContent).toContain('Reading');
+    expect(container.textContent).toContain('Invisible Title');
+    expect(container.textContent).not.toContain('Other Book');
+
+    setInputValue(searchInput, '');
+    await settle();
+    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('Invisible Title');
+    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual([]);
   });
 });
 
@@ -388,7 +464,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     seedLibrary({ books: [], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    await expandFoldersAndFindChild(container, 'Old Name');
+    await findOrganizerButton(container, 'Old Name');
     click(container.querySelector('[aria-label="Old Name 操作"]')!);
     await settle();
     const editBtn = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
@@ -455,6 +531,7 @@ describe('Sidebar contract — assign-folder modal', () => {
     const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
     seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
+    await settle();
 
     click(container.querySelector('.book-action-btn')!);
     await settle();
@@ -475,6 +552,7 @@ describe('Sidebar contract — assign-folder modal', () => {
     const book = makeBook({ id: 'b1', title: 'Original', folderId: 'folder1' });
     seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
+    await settle();
 
     click(container.querySelector('.book-action-btn')!);
     await settle();

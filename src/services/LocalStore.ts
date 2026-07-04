@@ -4,6 +4,7 @@ export const STORAGE_KEYS = {
   chat: 'creader-chat',
   quickActions: 'creader-quick-actions',
   progress: 'creader-progress',
+  libraryOrganizerExpandedFolders: 'creader-library-organizer-expanded-folders',
   syncMeta: 'creader-sync-meta',
   deviceId: 'creader-device-id',
 } as const;
