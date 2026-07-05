@@ -14,7 +14,7 @@ import { defineTheme } from '@astryxdesign/core/theme';
  * migration").
  */
 export const paperBodyPalette = {
-  light: { background: '#FBF9F4', text: '#2B2B2B', link: '#33526E' },
+  light: { background: '#F7F3EA', text: '#2B2B2B', link: '#33526E' },
   dark: { background: '#1A1B1E', text: '#D4D4D4', link: '#7EB0E0' },
 } as const;
 

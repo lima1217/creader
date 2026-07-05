@@ -1,6 +1,9 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { AlertDialog } from '@astryxdesign/core/AlertDialog';
+import { Button } from '@astryxdesign/core/Button';
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
+import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { ToastViewport, useToast } from '@astryxdesign/core/Toast';
+import './AppDialog.css';
 
 type ConfirmOptions = {
     title: string;
@@ -29,15 +32,11 @@ const AppDialogContext = createContext<DialogContextValue | null>(null);
 /**
  * Global dialog + toast provider.
  *
- * `confirm()` shows a blocking Astryx AlertDialog (focus trap, Escape cancels,
- * initial focus on the cancel button) and resolves with the user's choice —
- * the Promise API is unchanged from the bespoke-overlay era so call sites need
- * no edits.
+ * `confirm()` shows a blocking dialog (focus trap, Escape cancels,
+ * initial focus on the cancel button) and resolves with the user's choice.
  *
  * `notice()` shows a non-blocking Astryx toast (auto-dismiss for info, sticky
- * for error) via `useToast`. It does not steal focus, matching the
- * "non-blocking notices as toasts" intent. The Promise/void contract is
- * preserved; no call-site edits required.
+ * for error) via `useToast`. It does not steal focus.
  */
 export function AppDialogProvider({ children }: { children: React.ReactNode }) {
     const [dialog, setDialog] = useState<DialogState | null>(null);
@@ -64,8 +63,6 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
         toast({
             body,
             type: 'error',
-            // Error toasts stay until dismissed (Astryx default for error), so
-            // import failures are not missed while never blocking the reader.
         });
     }, [toast]);
 
@@ -81,17 +78,37 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
         <AppDialogContext.Provider value={value}>
             {children}
             {isConfirm && dialog && (
-                <AlertDialog
+                <Dialog
+                    className="app-confirm-dialog"
                     isOpen={isOpen}
                     onOpenChange={(open) => { if (!open) close(false); }}
-                    title={dialog.title}
-                    description={dialog.message}
-                    cancelLabel={dialog.cancelLabel ?? '取消'}
-                    actionLabel={dialog.confirmLabel ?? '确认'}
-                    actionVariant={dialog.tone === 'danger' ? 'destructive' : 'primary'}
-                    onAction={onAction}
-                    width={440}
-                />
+                    width={400}
+                    purpose="form"
+                    role="alertdialog"
+                >
+                    <Layout height="auto" className="app-confirm-dialog-layout">
+                        <DialogHeader
+                            className="app-confirm-dialog-header"
+                            title={dialog.title}
+                            subtitle={dialog.message}
+                            hasDivider={false}
+                        />
+                        <LayoutContent className="app-confirm-dialog-content">
+                            <div className="app-confirm-dialog-actions">
+                                <Button
+                                    variant="secondary"
+                                    label={dialog.cancelLabel ?? '取消'}
+                                    onClick={() => close(false)}
+                                />
+                                <Button
+                                    variant={dialog.tone === 'danger' ? 'destructive' : 'primary'}
+                                    label={dialog.confirmLabel ?? '确认'}
+                                    onClick={onAction}
+                                />
+                            </div>
+                        </LayoutContent>
+                    </Layout>
+                </Dialog>
             )}
             <ToastViewport position="bottomEnd" maxVisible={3} />
         </AppDialogContext.Provider>

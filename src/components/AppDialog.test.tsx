@@ -12,10 +12,11 @@ vi.mock('@astryxdesign/core/Toast', () => ({
   ToastViewport: () => null,
 }));
 
-// Stub AlertDialog so the test doesn't depend on a real <dialog> polyfill;
+// Stub Dialog so the test doesn't depend on a real <dialog> polyfill;
 // we only assert the confirm() Promise + resolver wiring.
-vi.mock('@astryxdesign/core/AlertDialog', () => ({
-  AlertDialog: () => null,
+vi.mock('@astryxdesign/core/Dialog', () => ({
+  Dialog: () => null,
+  DialogHeader: () => null,
 }));
 
 import { AppDialogProvider, useAppDialog } from './AppDialog';

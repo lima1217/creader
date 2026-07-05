@@ -1,0 +1,123 @@
+/* Global confirm dialogs — centered shell + sidebar-matched card chrome. */
+
+@keyframes app-confirm-dialog-enter {
+    from {
+        opacity: 0;
+        transform: translate(
+            calc(-50% + var(--dialog-dir-x, var(--spacing-0))),
+            calc(-50% + var(--dialog-dir-y, var(--spacing-0)))
+        ) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+dialog.app-confirm-dialog {
+    --app-confirm-dialog-surface: var(--color-background-popover, var(--bg-elevated));
+    position: fixed !important;
+    inset: auto !important;
+    top: 50% !important;
+    left: 50% !important;
+    display: flex !important;
+    width: min(400px, calc(100vw - 32px)) !important;
+    max-height: min(78vh, calc(100vh - 32px)) !important;
+    margin: 0 !important;
+    z-index: 1000 !important;
+    padding: 0 !important;
+    overflow: hidden;
+    background: var(--app-confirm-dialog-surface) !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    box-shadow: var(--shadow-popover) !important;
+    transform: translate(-50%, -50%) !important;
+    animation-name: app-confirm-dialog-enter !important;
+    animation-duration: var(--duration-medium-max, 550ms) !important;
+    animation-timing-function: var(--ease-standard, cubic-bezier(0.24, 1, 0.4, 1)) !important;
+    animation-fill-mode: backwards;
+}
+
+dialog.app-confirm-dialog::backdrop {
+    background: rgba(31, 41, 51, 0.34);
+    backdrop-filter: blur(1.5px);
+}
+
+.app-confirm-dialog > * {
+    width: 100%;
+    background: var(--app-confirm-dialog-surface) !important;
+}
+
+.app-confirm-dialog-layout {
+    width: 100%;
+    max-height: inherit;
+    min-height: 0;
+    background: var(--app-confirm-dialog-surface) !important;
+}
+
+.app-confirm-dialog-layout > div {
+    min-height: 0 !important;
+}
+
+.app-confirm-dialog-header {
+    flex-shrink: 0;
+    padding: var(--spacing-4, 16px) var(--spacing-4, 16px) var(--spacing-3, 12px) !important;
+    background: var(--app-confirm-dialog-surface) !important;
+}
+
+.app-confirm-dialog-header > div {
+    align-items: flex-start !important;
+    gap: var(--spacing-3, 12px) !important;
+}
+
+.app-confirm-dialog-header h2 {
+    margin: 0 !important;
+    color: var(--text-primary) !important;
+    font-size: 18px !important;
+    font-weight: 680 !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0 !important;
+}
+
+.app-confirm-dialog-header h2:focus {
+    outline: none !important;
+}
+
+.app-confirm-dialog-header .astryx-text {
+    margin-top: var(--spacing-2, 8px) !important;
+    color: var(--text-secondary) !important;
+    font-size: 13.5px !important;
+    line-height: 1.45 !important;
+}
+
+.app-confirm-dialog-content {
+    min-height: 0;
+    padding: 0 var(--spacing-4, 16px) var(--spacing-4, 16px) !important;
+    background: var(--app-confirm-dialog-surface) !important;
+}
+
+.app-confirm-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-2, 8px);
+    width: 100%;
+    margin-top: var(--spacing-1, 4px);
+    padding: var(--spacing-3, 12px) 0 0 !important;
+    background: var(--app-confirm-dialog-surface) !important;
+    border-top: 1px solid var(--border-soft);
+}
+
+.app-confirm-dialog-layout .astryx-button {
+    border-radius: 6px !important;
+}
+
+.app-confirm-dialog-layout .astryx-button:not([data-icon-only]) {
+    min-height: 38px !important;
+    padding-inline: 15px !important;
+    gap: 8px !important;
+}
+
+.app-confirm-dialog-layout .astryx-button[data-size="sm"]:not([data-icon-only]) {
+    min-height: 34px !important;
+    padding-inline: 13px !important;
+}
