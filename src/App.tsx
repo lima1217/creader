@@ -7,6 +7,7 @@ import { preloadEpubReader, Reader } from './components/Reader';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppDialogProvider, useAppDialog } from './components/AppDialog';
 import { AstryxThemeBoundary } from './theme/AstryxThemeBoundary';
+import { handleWindowDragMouseDown } from './utils/windowDrag';
 import { isTauriRuntime } from './utils/tauri';
 import { createLogger } from './utils/logger';
 import { useUIStore } from './stores/uiStore';
@@ -135,7 +136,7 @@ function AppContent() {
           </div>
         </div>
       )}
-      <div className="window-sidebar-toggle-region" data-tauri-drag-region>
+      <div className="window-sidebar-toggle-region" onMouseDown={handleWindowDragMouseDown}>
         <button
           className={`window-sidebar-toggle btn btn-ghost btn-icon ${isSidebarOpen ? 'active' : ''}`}
           onClick={() => setSidebarOpen(!isSidebarOpen)}

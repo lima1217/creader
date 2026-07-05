@@ -188,7 +188,7 @@
 
 .reader-chrome-control:hover,
 .reader-chrome-control:focus-visible {
-    background: var(--bg-elevated);
+    background: var(--bg-control-hover);
     border-color: var(--border-secondary);
     color: var(--accent);
 }

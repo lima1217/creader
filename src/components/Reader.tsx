@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect } from 'react';
 import { useLibraryStore } from '../stores/libraryStore';
+import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import './Reader.css';
 
 let epubReaderPromise: ReturnType<typeof importEpubReader> | undefined;
@@ -19,7 +20,7 @@ const EPUBReader = lazy(async () => {
 });
 
 const ReaderLoading = () => (
-    <div className="reader-empty">
+    <div className="reader-empty" onMouseDown={handleWindowDragMouseDown}>
         <div className="reader-empty-content">
             <div className="reader-empty-book" aria-hidden="true" />
             <h2>正在打开</h2>
@@ -51,7 +52,7 @@ export function Reader() {
 
     if (!currentBook) {
         return (
-            <div className="reader-empty">
+            <div className="reader-empty" onMouseDown={handleWindowDragMouseDown}>
                 <div className="reader-empty-content">
                     <div className="reader-empty-shelf" aria-hidden="true">
                         <div className="reader-empty-book reader-empty-book-primary" />
