@@ -13,10 +13,17 @@
     height: 100%;
     color: var(--text-primary);
     background: var(--bg-reader);
+    border-left: 1px solid var(--border-soft);
+    transition: border-color var(--transition-fast);
+}
+
+.ai-panel:has(.ai-panel-resize-handle:hover) {
+    border-left-color: var(--border-secondary);
 }
 
 .ai-panel-resizing {
     user-select: none;
+    border-left-color: var(--border-accent);
     transition: none !important;
 }
 
@@ -29,38 +36,6 @@
     width: 8px;
     cursor: col-resize;
     background: transparent;
-    transition: background-color var(--transition-fast);
-}
-
-.ai-panel-resize-handle:hover,
-.ai-panel-resizing .ai-panel-resize-handle {
-    background: rgba(var(--accent-rgb), 0.08);
-}
-
-.ai-panel-resize-handle::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 3px;
-    width: 3px;
-    height: 80px;
-    border-radius: 2px;
-    background: var(--border-secondary);
-    opacity: 0;
-    scale: 1 0.72;
-    transform: translateY(-50%);
-    transition: opacity var(--transition-fast), background-color var(--transition-fast), scale var(--transition-fast);
-}
-
-.ai-panel-resize-handle:hover::before,
-.ai-panel-resizing .ai-panel-resize-handle::before {
-    background: var(--accent);
-    opacity: 1;
-    scale: 1 1;
-}
-
-.ai-panel-resizing .ai-panel-resize-handle::before {
-    scale: 1 1.25;
 }
 
 /* Header */
@@ -573,8 +548,7 @@
         animation: none;
     }
 
-    .ai-panel-resize-handle,
-    .ai-panel-resize-handle::before,
+    .ai-panel,
     .ai-margin-action.astryx-button {
         transition-duration: 0.01ms !important;
     }
