@@ -129,9 +129,15 @@
     box-shadow: none;
 }
 
-.toolbar .btn-icon:active {
+.toolbar .btn-icon:active,
+.toolbar-action:not(:disabled):active {
     transform: scale(0.96);
     filter: none;
+}
+
+.toolbar-action:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
 }
 
 .toolbar .btn-icon.active,
@@ -143,6 +149,7 @@
 
 .toolbar-theme-button > svg,
 .toolbar-action > svg,
+.toolbar-chapter-action > svg,
 .toolbar-ai-action > svg {
     display: block !important;
     visibility: visible !important;

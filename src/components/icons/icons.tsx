@@ -89,6 +89,17 @@ export const EpubTocIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => 
   </svg>
 );
 
+/** Current-chapter text segment — page with margin + lines (not whole book). */
+export const ChapterIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
+    <rect x="4" y="3" width="16" height="18" rx="2" />
+    <line x1="8" y1="3" x2="8" y2="21" />
+    <line x1="10" y1="8" x2="17" y2="8" />
+    <line x1="10" y1="12" x2="17" y2="12" />
+    <line x1="10" y1="16" x2="15" y2="16" />
+  </svg>
+);
+
 export const SidebarPanelIcon = ({ size = 20, strokeWidth = 1.8 }: StrokeIconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
     <rect x="5" y="4" width="14" height="16" rx="3.2" />

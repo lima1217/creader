@@ -9,7 +9,7 @@ import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { DropdownMenu, DropdownMenuItem } from '@astryxdesign/core/DropdownMenu';
 import {
-    BookOpenIcon,
+    ChapterIcon,
     CheckIcon,
     CopyIcon,
     MoreHorizontalIcon,
@@ -42,6 +42,9 @@ export function Toolbar() {
 
     const displayProgress = currentBook ? (bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage ?? 0) : 0;
     const canUseChapter = Boolean(currentChapterContent && currentChapterContent.length > 100);
+    const useChapterLabel = canUseChapter
+        ? `使用本章（约 ${Math.round(currentChapterContent!.length / 1000)}k 字）`
+        : '使用本章';
 
     const themes: Theme[] = ['light', 'dark'];
     const themeIcons: Record<Theme, React.ReactNode> = {
@@ -143,12 +146,6 @@ export function Toolbar() {
                         <div role="group" aria-label="章节" className="toolbar-more-section">
                             <div className="toolbar-more-section-title" aria-hidden="true">章节</div>
                             <DropdownMenuItem
-                                label={canUseChapter ? `使用本章（约 ${Math.round(currentChapterContent.length / 1000)}k 字）` : '使用本章'}
-                                icon={<BookOpenIcon size={17} strokeWidth={2} />}
-                                isDisabled={!canUseChapter}
-                                onClick={handleUseChapter}
-                            />
-                            <DropdownMenuItem
                                 label={chapterCopied ? '已复制章节' : '复制章节'}
                                 icon={chapterCopied ? <CheckIcon /> : <CopyIcon />}
                                 isDisabled={!canUseChapter}
@@ -156,6 +153,17 @@ export function Toolbar() {
                             />
                         </div>
                     </DropdownMenu>
+
+                    <button
+                        type="button"
+                        className="btn btn-secondary toolbar-action toolbar-chapter-action"
+                        onClick={handleUseChapter}
+                        disabled={!canUseChapter}
+                        aria-label={useChapterLabel}
+                        title={useChapterLabel}
+                    >
+                        <ChapterIcon size={18} strokeWidth={1.9} />
+                    </button>
 
                     <DropdownMenu
                         button={{
