@@ -6,7 +6,7 @@ CReader's Phase 1 introduced Astryx for settings, dialogs, and toasts. The core 
 
 ### 1. Scope: chrome-only. The reading body is out of scope as Astryx components.
 
-The book content is rendered by foliate-js inside the host DOM via a custom element hidden behind `ReadingEngineAdapter` (`docs/reading-engine-adapter.md`). Astryx components live in the React tree; they cannot own the engine's rendered content. Therefore "migrating the reader" means the **reader chrome** (toolbar, TOC drawer, search overlay, progress, selection toolbar), never the rendered book body.
+The book content is rendered by foliate-js inside the host DOM via a custom element hidden behind `ReadingEngineAdapter` (`docs/reading-engine-adapter.md`). Astryx components live in the React tree; they cannot own the engine's rendered content. Therefore "migrating the reader" means the **reader chrome** (toolbar, TOC drawer, progress, selection toolbar), never the rendered book body.
 
 Note: the original framing of this decision ("the iframe is the wall") was wrong — foliate-js renders a custom element, not an iframe. The *real* constraint is that the engine renders its own content tree outside Astryx's component ownership, regardless of whether that tree is an iframe or a custom element. The conclusion (chrome-only) is unchanged.
 

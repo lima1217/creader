@@ -1,4 +1,3 @@
-use crate::search_index;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
@@ -155,70 +154,6 @@ pub(crate) fn validate_book_paths(app: tauri::AppHandle, file_paths: Vec<String>
 pub struct FindBookResult {
     pub found: bool,
     pub path: Option<String>,
-}
-
-fn validated_book_file_path(app: &tauri::AppHandle, file_path: &str) -> Result<PathBuf, String> {
-    if !validate_book_path_inner(app, file_path) {
-        return Err("Refusing to read book file outside allowed directories".to_string());
-    }
-    std::fs::canonicalize(Path::new(file_path))
-        .map_err(|e| format!("Failed to resolve book file path: {}", e))
-}
-
-#[tauri::command]
-pub(crate) fn extract_epub_search_preview(
-    app: tauri::AppHandle,
-    file_path: String,
-) -> Result<search_index::EpubExtraction, String> {
-    let file_path = validated_book_file_path(&app, &file_path)?;
-    search_index::extract_epub_for_search(&file_path)
-}
-
-#[tauri::command]
-pub(crate) fn get_search_index_status(
-    app: tauri::AppHandle,
-    book_id: String,
-    file_path: String,
-) -> Result<search_index::SearchIndexStatus, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-    let file_path = validated_book_file_path(&app, &file_path)?;
-    Ok(search_index::get_index_status(
-        &app_data_dir,
-        &book_id,
-        &file_path,
-    ))
-}
-
-#[tauri::command]
-pub(crate) fn rebuild_search_index(
-    app: tauri::AppHandle,
-    book_id: String,
-    file_path: String,
-) -> Result<search_index::SearchIndexStatus, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-    let file_path = validated_book_file_path(&app, &file_path)?;
-    search_index::rebuild_index(&app_data_dir, &book_id, &file_path)
-}
-
-#[tauri::command]
-pub(crate) fn search_book(
-    app: tauri::AppHandle,
-    book_id: String,
-    file_path: String,
-    query: String,
-) -> Result<Vec<search_index::SearchResult>, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-    let file_path = validated_book_file_path(&app, &file_path)?;
-    search_index::search_index(&app_data_dir, &book_id, &file_path, &query)
 }
 
 #[tauri::command]

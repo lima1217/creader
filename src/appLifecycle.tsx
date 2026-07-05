@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { importBookFromPath } from './services/BookImportService';
-import { rebuildSearchIndexQuietly, toSearchIndexSummary } from './services/reader/searchIndex';
 import { dataUrlToBlob, deleteCover, revokeCoverUrl, saveCover } from './services/CoverStore';
 import { loadChatMessages, loadConversationMemory, replaceChatMessages } from './services/ChatStore';
 import { validateAndFixLibraryPaths } from './services/BookPathValidator';
@@ -13,7 +12,7 @@ import { hydrateChatMessages, hydrateConversationMemory } from './stores/aiStore
 import { MAX_CHAT_MESSAGES_STORED } from './constants';
 import { createLogger } from './utils/logger';
 import { perfSpan } from './utils/perf';
-import type { Book, ChatMessage, ConversationMemory, Library, SearchIndexSummary, Settings } from './types';
+import type { Book, ChatMessage, ConversationMemory, Library, Settings } from './types';
 import type { BookProgressById } from './stores/app/initialState';
 
 const importLogger = createLogger('Import');
@@ -190,11 +189,9 @@ export async function importBookThroughLifecycle(params: {
   isImporting?: boolean;
   books: Book[];
   addBook: (book: Book) => void;
-  updateBookSearchIndex: (bookId: string, summary: SearchIndexSummary) => void;
   setIsImporting?: (value: boolean) => void;
   notice?: (options: { title: string; message: string }) => void;
   importBookFromPath?: typeof importBookFromPath;
-  rebuildSearchIndexQuietly?: typeof rebuildSearchIndexQuietly;
 }): Promise<'imported' | 'skipped' | 'busy' | 'failed'> {
   if (params.isImporting) return 'busy';
 
@@ -205,7 +202,6 @@ export async function importBookThroughLifecycle(params: {
   }
 
   const importBook = params.importBookFromPath ?? importBookFromPath;
-  const rebuild = params.rebuildSearchIndexQuietly ?? rebuildSearchIndexQuietly;
 
   try {
     params.setIsImporting?.(true);
@@ -220,14 +216,9 @@ export async function importBookThroughLifecycle(params: {
       return 'skipped';
     }
 
-    const newBook: Book = { ...result.book, searchIndex: { state: 'pending' } };
+    const newBook: Book = { ...result.book };
     importLogger.debug('Adding book to library:', newBook);
     params.addBook(newBook);
-    void rebuild({
-      bookId: newBook.id,
-      filePath: newBook.filePath,
-      onStatus: status => params.updateBookSearchIndex(newBook.id, toSearchIndexSummary(status)),
-    });
     importLogger.debug('Import completed successfully');
     return 'imported';
   } catch (error) {
@@ -425,7 +416,6 @@ export function useAppLifecycleImport(params: {
 } {
   const addBook = useLibraryStore((s) => s.addBook);
   const libraryBooks = useLibraryStore((s) => s.library.books);
-  const updateBookSearchIndex = useLibraryStore((s) => s.updateBookSearchIndex);
   const [isImporting, setIsImporting] = useState(false);
 
   const importBook = useCallback(async (filePath: string) => {
@@ -434,11 +424,10 @@ export function useAppLifecycleImport(params: {
       isImporting,
       books: libraryBooks,
       addBook,
-      updateBookSearchIndex,
       setIsImporting,
       notice: params.notice,
     });
-  }, [addBook, isImporting, libraryBooks, params.notice, updateBookSearchIndex]);
+  }, [addBook, isImporting, libraryBooks, params.notice]);
 
   return { isImporting, importBook };
 }

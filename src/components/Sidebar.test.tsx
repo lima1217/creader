@@ -200,14 +200,14 @@ beforeEach(() => {
     currentBook: null,
   });
   useProgressStore.setState({ bookProgressById: {} });
-  useUIStore.setState({ isSidebarOpen: true, isAIPanelOpen: false, isSearchOpen: false });
+  useUIStore.setState({ isSidebarOpen: true, isAIPanelOpen: false });
 });
 
 // --- Tests ---------------------------------------------------------------
 
 describe('Sidebar contract — rendering', () => {
   it('renders nothing when the sidebar is closed', () => {
-    useUIStore.setState({ isSidebarOpen: false, isAIPanelOpen: false, isSearchOpen: false });
+    useUIStore.setState({ isSidebarOpen: false, isAIPanelOpen: false });
     const { container } = mountSidebar();
     expect(container.textContent).toBe('');
   });

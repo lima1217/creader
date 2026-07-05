@@ -1,7 +1,6 @@
 mod ai;
 mod book_files;
 mod reading_memory;
-mod search_index;
 
 // ============================================================
 // App entry
@@ -31,10 +30,6 @@ pub fn run() {
             book_files::validate_book_path,
             book_files::validate_book_paths,
             book_files::find_book_in_library,
-            book_files::extract_epub_search_preview,
-            book_files::get_search_index_status,
-            book_files::rebuild_search_index,
-            book_files::search_book,
             reading_memory::ensure_reading_memory_repository,
             reading_memory::review_reading_memory_direct,
             reading_memory::write_reading_memory_note,

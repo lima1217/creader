@@ -14,7 +14,6 @@ import {
     CopyIcon,
     MoreHorizontalIcon,
     MoonIcon,
-    SearchIcon,
     SunIcon,
     ToolbarAIIcon,
     EpubTocIcon,
@@ -37,8 +36,6 @@ export function Toolbar() {
     const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
     const isAIPanelOpen = useUIStore((s) => s.isAIPanelOpen);
     const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
-    const isSearchOpen = useUIStore((s) => s.isSearchOpen);
-    const setSearchOpen = useUIStore((s) => s.setSearchOpen);
     const isTocOpen = useUIStore((s) => s.isTocOpen);
     const setTocOpen = useUIStore((s) => s.setTocOpen);
     const [chapterCopied, setChapterCopied] = useState(false);
@@ -86,8 +83,6 @@ export function Toolbar() {
     useKeyboardShortcuts({
         isSidebarOpen,
         setSidebarOpen,
-        isSearchOpen,
-        setSearchOpen,
         isAIPanelOpen,
         setAIPanelOpen,
     });
@@ -187,14 +182,6 @@ export function Toolbar() {
                             },
                         ]}
                     />
-
-                    <button
-                        className={`btn btn-secondary toolbar-action ${isSearchOpen ? 'active' : ''}`}
-                        onClick={() => setSearchOpen(!isSearchOpen)}
-                        aria-label="搜索"
-                    >
-                        <SearchIcon />
-                    </button>
 
                     <button
                         className="btn btn-secondary toolbar-action toolbar-ai-action"

@@ -32,15 +32,6 @@ export interface Book {
   folderId?: string; // Optional Book Folder assignment
   /** @deprecated Old local-library field. Hydration migrates this to folderId. */
   categoryId?: string;
-  searchIndex?: SearchIndexSummary;
-}
-
-export type SearchIndexState = 'missing' | 'pending' | 'ready' | 'failed' | 'stale';
-
-export interface SearchIndexSummary {
-  state: SearchIndexState;
-  error?: string;
-  indexedAtMs?: number;
 }
 
 // Reading progress

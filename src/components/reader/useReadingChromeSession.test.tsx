@@ -14,20 +14,6 @@ import { useReadingChromeSession } from './useReadingChromeSession';
 const hookMocks = vi.hoisted(() => ({
   progressParams: null as null | Record<string, unknown>,
   selectionParams: null as null | Record<string, unknown>,
-  search: {
-    searchQuery: '',
-    setSearchQuery: vi.fn(),
-    searchResults: [] as Array<{ cfi: string; excerpt: string; section?: string }>,
-    isSearching: false,
-    isRebuildingIndex: false,
-    searchError: null as string | null,
-    refreshIndexStatus: vi.fn(() => Promise.resolve(null)),
-    handleSearch: vi.fn(),
-    rebuildCurrentIndex: vi.fn(),
-    cancelSearch: vi.fn(),
-    handleSearchResultClick: vi.fn(),
-    setSearchResults: vi.fn(),
-  },
 }));
 
 vi.mock('./useEpubProgressTracking', () => ({
@@ -42,10 +28,6 @@ vi.mock('./useEpubSelectionTracking', () => ({
   },
 }));
 
-vi.mock('./useEpubSearch', () => ({
-  useEpubSearch: () => hookMocks.search,
-}));
-
 const book: Book = {
   id: 'book-1',
   title: 'A Book',
@@ -53,7 +35,6 @@ const book: Book = {
   filePath: '/tmp/book.epub',
   addedAt: 1,
   progress: { currentCfi: '', percentage: 0 },
-  searchIndex: { state: 'missing' },
 };
 
 const toc: NavItem[] = [
@@ -114,14 +95,11 @@ describe('useReadingChromeSession', () => {
     vi.clearAllMocks();
     hookMocks.progressParams = null;
     hookMocks.selectionParams = null;
-    hookMocks.search.searchQuery = '';
-    hookMocks.search.searchResults = [];
-    hookMocks.search.searchError = null;
     useLibraryStore.setState({
       library: { books: [book], folders: [], lastUpdated: 0 },
       currentBook: book,
     });
-    useUIStore.setState({ isSidebarOpen: true, isAIPanelOpen: false, isSearchOpen: false });
+    useUIStore.setState({ isSidebarOpen: true, isAIPanelOpen: false });
     useAIStore.setState({ currentChapterContent: '', chatMessages: [], conversationMemory: null });
     useSelectionStore.setState({ selectedText: '', selectedCfiRange: '', accumulatedTexts: [] });
     useProgressStore.setState({ bookProgressById: {} });
@@ -146,28 +124,6 @@ describe('useReadingChromeSession', () => {
 
     expect(rendition.display).toHaveBeenCalledWith('chapter2.xhtml');
     expect(session().showToc).toBe(false);
-  });
-
-  it('keeps search index status visible and actionable through the session', () => {
-    const staleBook: Book = {
-      ...book,
-      searchIndex: {
-        state: 'stale',
-        error: 'old index',
-      },
-    };
-
-    const { session } = mountSession(createRendition(), staleBook);
-
-    expect(session().search.indexState).toBe('stale');
-    expect(session().search.indexNeedsRebuild).toBe(true);
-    expect(session().search.statusText).toBe('书籍文件已变化，需要重建搜索索引。');
-
-    flushSync(() => {
-      session().search.rebuildCurrentIndex();
-    });
-
-    expect(hookMocks.search.rebuildCurrentIndex).toHaveBeenCalledOnce();
   });
 
   it('routes coordinate-based selection add, ask, close, and hint state through the session', () => {

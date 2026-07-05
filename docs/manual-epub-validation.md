@@ -28,12 +28,6 @@ Tauri file access.
   of the viewport. Expect the toolbar to appear only for non-empty selection,
   stay inside viewport edges, keep the selected text for "问 AI", and dismiss
   after close, page navigation, outside click, or Escape.
-- Search precise locator: search in a book with a ready index where results carry
-  EPUB CFI locators. Expect clicking a result to close search and jump to the
-  precise visible passage.
-- Search coarse locator: search in a book where results only carry href or spine
-  locators. Expect clicking a result to close search and jump to the chapter or
-  section rather than doing nothing.
 - Live theme switch: while a book is open, switch light/dark theme and adjust
   font settings. Expect both reader chrome and rendered book body to use coherent
   background, text, and link colors without waiting for a page turn.

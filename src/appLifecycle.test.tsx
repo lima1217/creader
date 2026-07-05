@@ -180,7 +180,6 @@ describe('App Lifecycle contract', () => {
       filePath: '/bad/book.epub',
       books: [],
       addBook,
-      updateBookSearchIndex: vi.fn(),
       notice,
       importBookFromPath: vi.fn().mockRejectedValue(new Error('Unreadable EPUB')),
     });
@@ -193,28 +192,20 @@ describe('App Lifecycle contract', () => {
     });
   });
 
-  it('imports a new EPUB with pending Search Index state and applies quiet rebuild updates', async () => {
+  it('imports a new EPUB and adds it to the library', async () => {
     const imported = book({ id: 'new-book', filePath: '/library/new.epub' });
     const added: Book[] = [];
-    const searchUpdates: Array<{ id: string; state: string; error?: string }> = [];
 
     const result = await importBookThroughLifecycle({
       filePath: '/input/new.epub',
       books: [],
       addBook: (next) => added.push(next),
-      updateBookSearchIndex: (id, summary) => searchUpdates.push({ id, ...summary }),
       importBookFromPath: vi.fn().mockResolvedValue({ status: 'imported', book: imported }),
-      rebuildSearchIndexQuietly: vi.fn(async ({ onStatus }) => {
-        onStatus?.({ state: 'ready', indexedAtMs: 123 });
-      }),
     });
-
-    await Promise.resolve();
 
     expect(result).toBe('imported');
     expect(added).toHaveLength(1);
-    expect(added[0]).toMatchObject({ id: 'new-book', searchIndex: { state: 'pending' } });
-    expect(searchUpdates).toEqual([{ id: 'new-book', state: 'ready', indexedAtMs: 123 }]);
+    expect(added[0]).toMatchObject({ id: 'new-book', filePath: '/library/new.epub' });
   });
 
   it('prepares an opened book by merging stored progress and bumping lastReadAt', () => {
@@ -284,7 +275,6 @@ describe('App Lifecycle contract', () => {
       filePath: '/books/book.epub',
       books: [book()],
       addBook: vi.fn(),
-      updateBookSearchIndex: vi.fn(),
       importBookFromPath: importBook,
     });
 

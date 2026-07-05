@@ -33,13 +33,6 @@ export const CoffeeIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
   </svg>
 );
 
-export const SearchIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
-    <circle cx="11" cy="11" r="8" />
-    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-  </svg>
-);
-
 export const ToolbarAIIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
     <circle cx="12" cy="12" r="2" />

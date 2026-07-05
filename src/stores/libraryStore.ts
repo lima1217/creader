@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Book, BookFolder, Library, SearchIndexSummary } from '../types';
+import type { Book, BookFolder, Library } from '../types';
 import { normalizeLibrary } from '../domain/libraryNormalization';
 import { folderExists, validateFolderName } from '../domain/libraryFolders';
 import { getInitialLibrary } from './app/initialState';
@@ -36,7 +36,6 @@ type LibraryState = {
   removeBook: (id: string) => void;
   updateBook: (id: string, updates: Partial<Pick<Book, 'title' | 'author' | 'folderId'>>) => void;
   updateBookFilePath: (id: string, newFilePath: string) => void;
-  updateBookSearchIndex: (id: string, searchIndex: SearchIndexSummary) => void;
   addFolder: (name: string) => BookFolder | null;
   removeFolder: (id: string) => void;
   updateFolder: (id: string, updates: Partial<Pick<BookFolder, 'name' | 'sortOrder'>>) => void;
@@ -98,32 +97,18 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   updateBookFilePath: (id, newFilePath) => {
-    const pending: SearchIndexSummary = { state: 'pending' };
     const next: Library = {
       ...latestLibrary,
       books: latestLibrary.books.map((b) =>
-        b.id === id ? { ...b, filePath: newFilePath, searchIndex: pending } : b,
+        b.id === id ? { ...b, filePath: newFilePath } : b,
       ),
       lastUpdated: Date.now(),
     };
     syncLibrary(next);
     const currentBook =
       latestCurrentBook?.id === id
-        ? { ...latestCurrentBook, filePath: newFilePath, searchIndex: pending }
+        ? { ...latestCurrentBook, filePath: newFilePath }
         : latestCurrentBook;
-    syncCurrentBook(currentBook);
-    set({ library: next, currentBook });
-  },
-
-  updateBookSearchIndex: (id, searchIndex) => {
-    const next: Library = {
-      ...latestLibrary,
-      books: latestLibrary.books.map((b) => (b.id === id ? { ...b, searchIndex } : b)),
-      lastUpdated: Date.now(),
-    };
-    syncLibrary(next);
-    const currentBook =
-      latestCurrentBook?.id === id ? { ...latestCurrentBook, searchIndex } : latestCurrentBook;
     syncCurrentBook(currentBook);
     set({ library: next, currentBook });
   },

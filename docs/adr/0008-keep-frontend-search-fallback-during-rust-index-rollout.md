@@ -1,5 +1,5 @@
 # Keep Frontend Search Fallback During Rust Index Rollout
 
-CReader will keep the existing frontend EPUB search path as a temporary fallback while Rust indexing rolls out. Rust search is the normal path, but fallback search protects users when an index is missing, pending, failed, or unavailable; the fallback can be deleted after indexing, rebuild, Chinese and English search, locator navigation, and retry behavior are covered and validated.
+**Status: superseded by ADR-0018.** Whole-book search and Rust indexing were removed.
 
-Status: superseded by the Rust Search Index implementation. The frontend whole-book fallback has been removed; missing, pending, failed, and stale indexes are now explicit search UI states with rebuild/retry actions.
+CReader kept a temporary frontend EPUB search fallback while Rust indexing rolled out. That entire search surface has now been removed.

@@ -17,24 +17,16 @@ An EPUB that depends on embedded book scripts for its reading behavior. CReader 
 _Avoid_: safe mode, fallback renderer support
 
 **Whole-Book Work**:
-Operations that need access to an entire book rather than the currently displayed passage, such as full-text extraction and search indexing.
+Operations that need access to an entire book rather than the currently displayed passage. CReader currently avoids whole-book work in product features; import copies the EPUB and the Reading Engine loads content on demand.
 _Avoid_: reader UI work, chapter rendering
-
-**Search Index**:
-A rebuildable local representation of a book's text used to answer search queries without loading the whole book into the WebView.
-_Avoid_: book storage, source of truth
 
 **Generated Location Cache**:
 The removed epubjs-era IndexedDB `locations` store for calculated page/location data. Current CReader treats it as migration-only legacy data; foliate location events drive progress.
-_Avoid_: current progress source, search index
-
-**Search Locator**:
-A search result location that may point to a precise CFI or to a coarser EPUB spine item or href when precise CFI generation is not yet reliable.
-_Avoid_: always-CFI result, rendered selection
+_Avoid_: current progress source
 
 **Reading Context Snapshot**:
 A frozen record of what the reader was looking at or selecting when an AI message was sent.
-_Avoid_: live reader state, search index context
+_Avoid_: live reader state
 
 **AI Provider**:
 A user-configured OpenAI-compatible HTTP endpoint, model, and local API key used by the backend to serve chat and Reading Memory review.
@@ -93,7 +85,7 @@ The left-side library surface for continuing reading, seeing Book Folders, and m
 _Avoid_: bookmark bar, category filter, tag sidebar, file tree
 
 **Reading Chrome**:
-The React-tree UI around the rendered book body — toolbar, TOC drawer, search overlay, progress bar, selection toolbar — as distinct from the book content the Reading Engine renders into its own content tree. Astryx components own chrome; they do not own the engine's rendered body.
+The React-tree UI around the rendered book body — toolbar, TOC drawer, progress bar, selection toolbar — as distinct from the book content the Reading Engine renders into its own content tree. Astryx components own chrome; they do not own the engine's rendered body.
 _Avoid_: "the reader" used to mean both the chrome and the book body interchangeably
 
 **Paper Workspace Palette**:

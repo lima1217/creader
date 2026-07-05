@@ -3,16 +3,12 @@ import { useEffect } from 'react';
 export function useKeyboardShortcuts(params: {
   isSidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
-  isSearchOpen: boolean;
-  setSearchOpen: (open: boolean) => void;
   isAIPanelOpen: boolean;
   setAIPanelOpen: (open: boolean) => void;
 }) {
   const {
     isSidebarOpen,
     setSidebarOpen,
-    isSearchOpen,
-    setSearchOpen,
     isAIPanelOpen,
     setAIPanelOpen,
   } = params;
@@ -33,11 +29,6 @@ export function useKeyboardShortcuts(params: {
       if (!mod) return;
 
       const key = e.key.toLowerCase();
-      if (key === 'f') {
-        e.preventDefault();
-        setSearchOpen(!isSearchOpen);
-        return;
-      }
       if (key === 'b') {
         e.preventDefault();
         setSidebarOpen(!isSidebarOpen);
@@ -54,11 +45,8 @@ export function useKeyboardShortcuts(params: {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     isAIPanelOpen,
-    isSearchOpen,
     isSidebarOpen,
     setAIPanelOpen,
-    setSearchOpen,
     setSidebarOpen,
   ]);
 }
-

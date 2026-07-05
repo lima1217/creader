@@ -5,7 +5,6 @@ import { useSettingsStore } from '../stores/settingsStore';
 import type { NavItem } from '../types';
 import type { ReaderRendition } from '../services/reader/epubAdapter';
 import { tryCopyBookToLibrary } from '../services/BookImportService';
-import { rebuildSearchIndexQuietly, toSearchIndexSummary } from '../services/reader/searchIndex';
 import { createLogger } from '../utils/logger';
 import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import { applyEpubTheme } from './reader/epubTheme';
@@ -15,14 +14,13 @@ import { useReadingChromeSession } from './reader/useReadingChromeSession';
 import './EPUBReader.css';
 import './SelectionToolbar.css';
 import { AILogoIcon, PlusIcon as SelectionPlusIcon } from './ai/icons';
-import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, FileIcon, LayersIcon, SearchIcon } from './icons/icons';
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, FileIcon, LayersIcon } from './icons/icons';
 
 const logger = createLogger('EPUBReader');
 
 export function EPUBReader() {
     const currentBook = useLibraryStore((s) => s.currentBook);
     const updateBookFilePath = useLibraryStore((s) => s.updateBookFilePath);
-    const updateBookSearchIndex = useLibraryStore((s) => s.updateBookSearchIndex);
     const settings = useSettingsStore((s) => s.settings);
     const containerRef = useRef<HTMLDivElement>(null);
     const renditionRef = useRef<ReaderRendition | null>(null);
@@ -117,11 +115,6 @@ export function EPUBReader() {
 
                 // Update the book's file path
                 updateBookFilePath(currentBook.id, finalPath);
-                void rebuildSearchIndexQuietly({
-                    bookId: currentBook.id,
-                    filePath: finalPath,
-                    onStatus: status => updateBookSearchIndex(currentBook.id, toSearchIndexSummary(status)),
-                });
                 // Clear error state to trigger reload
                 setError(null);
                 setIsFileNotFound(false);
@@ -274,68 +267,6 @@ export function EPUBReader() {
             <button className="reader-chrome-control reader-nav reader-nav-next" onClick={chrome.handleNext} aria-label="下一页">
                 <ChevronRightIcon />
             </button>
-
-            {/* Search Panel */}
-            {chrome.search.isOpen && (
-                <div className="reader-search">
-                    <div className="reader-search-header">
-                        <div className="reader-search-input-wrapper">
-                            <SearchIcon />
-                            <input
-                                ref={chrome.search.inputRef}
-                                type="text"
-                                value={chrome.search.searchQuery}
-                                onChange={(e) => chrome.search.setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && chrome.search.handleSearch()}
-                                placeholder="在书中搜索"
-                                className="reader-search-input"
-                            />
-                        </div>
-                        <button className="btn btn-ghost btn-icon" onClick={chrome.search.close}>
-                            <CloseIcon />
-                        </button>
-                    </div>
-                    <div className="reader-search-results">
-                        {chrome.search.isSearching ? (
-                            <div className="reader-search-status">正在搜索...</div>
-                        ) : chrome.search.isRebuildingIndex ? (
-                            <div className="reader-search-status">正在重建搜索索引...</div>
-                        ) : chrome.search.statusText && (Boolean(chrome.search.searchError) || chrome.search.indexState !== 'ready') ? (
-                            <div className="reader-search-status">
-                                <span>{chrome.search.statusText}</span>
-                                {chrome.search.indexNeedsRebuild && (
-                                    <button className="btn btn-secondary reader-search-action" onClick={chrome.search.rebuildCurrentIndex}>
-                                        {chrome.search.indexState === 'failed' ? '重试索引' : '重建索引'}
-                                    </button>
-                                )}
-                            </div>
-                        ) : chrome.search.searchResults.length === 0 && chrome.search.searchQuery ? (
-                            <div className="reader-search-status">没有找到结果</div>
-                        ) : (
-                            <>
-                                {chrome.search.searchResults.length > 0 && (
-                                    <div className="reader-search-meta">共 {chrome.search.searchResults.length} 个结果</div>
-                                )}
-                                {chrome.search.searchResults.map((result, index) => {
-                                    const chapterLabel = chrome.search.resolveChapterLabel(result);
-                                    return (
-                                    <button
-                                        key={index}
-                                        className="reader-search-result"
-                                        onClick={() => chrome.search.handleSearchResultClick(result)}
-                                    >
-                                        {chapterLabel && (
-                                            <span className="reader-search-chapter">{chapterLabel}</span>
-                                        )}
-                                        <span className="reader-search-excerpt">{result.excerpt}</span>
-                                    </button>
-                                    );
-                                })}
-                            </>
-                        )}
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

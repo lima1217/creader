@@ -17,7 +17,6 @@ const INTERACTIVE_SELECTOR = [
     '[role="menuitem"]',
     '.reader-content',
     'foliate-view',
-    '.reader-search',
     '.reader-toc',
     '.reader-loading',
 ].join(', ');

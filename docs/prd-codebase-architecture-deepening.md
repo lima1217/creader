@@ -6,17 +6,17 @@ Draft for architecture planning. No implementation is authorized by this PRD yet
 
 ## Summary
 
-CReader is now past the first wave of Reading Engine, Search Index, AI Provider, and Reading Memory migrations. The next code optimization should not be another broad feature rewrite. It should deepen the modules that already carry product-critical behavior, so future changes have better locality, tests cross the same interface callers use, and agents can navigate the codebase without bouncing through many shallow files.
+CReader is now past the first wave of Reading Engine, AI Provider, and Reading Memory migrations. Whole-book search and the Rust Search Index were removed in ADR-0018. The next code optimization should not be another broad feature rewrite. It should deepen the modules that already carry product-critical behavior, so future changes have better locality, tests cross the same interface callers use, and agents can navigate the codebase without bouncing through many shallow files.
 
-The first recommended track is to create a deeper App Lifecycle module around startup, persistence, hydration, import, and quiet rebuild work. Follow-up tracks should deepen Reading Chrome orchestration and split the native Rust local modules behind the existing Tauri command interface.
+The first recommended track is to deepen the App Lifecycle module around startup, persistence, hydration, and import. Follow-up tracks should deepen Reading Chrome orchestration and split the native Rust local modules behind the existing Tauri command interface.
 
 ## Current Evidence
 
-- `src/App.tsx` is 461 lines and owns theme application, localStorage persistence, cover migration, path validation, Dexie chat hydration, legacy chat migration, file import, drag/drop, search-index rebuild kickoff, lazy panel loading, and app layout.
-- `src/stores/libraryStore.ts` owns library state while also reaching into progress state, cover storage, dynamic Tauri invoke, search-index summary updates, and module-level snapshot mirrors for startup race safety.
-- `src/components/EPUBReader.tsx` is 572 lines and renders Reading Chrome while also orchestrating Reading Engine lifecycle, progress tracking, selection, TOC state, search overlay, file relocation, chapter actions, and AI-panel triggers.
-- `src-tauri/src/lib.rs` is 2489 lines and mixes AI Provider storage, AI streaming, Conversation Memory summarization, Reading Memory review/write, book file validation/import/delete, search command adapters, prompt construction, command registration, and tests.
-- The repo already has ADRs that must remain stable: Search Index is derived data, AI and Reading Memory use the frozen Reading Context Snapshot, TypeScript owns Markdown rendering/rewrite, Rust owns the write safety boundary, foliate-js is the only Reading Engine, and Astryx owns Reading Chrome UI leaves where it fits.
+- `src/appLifecycle.tsx` owns startup hydration, legacy migration, import orchestration, and path validation, while `App.tsx` remains mostly composition.
+- `src/stores/libraryStore.ts` owns library state with module-level snapshot mirrors for startup race safety.
+- `src/components/EPUBReader.tsx` renders Reading Chrome and delegates orchestration to `useReadingChromeSession` and reader hooks.
+- `src-tauri/src/lib.rs` registers Tauri commands; native behavior is split across `ai.rs`, `book_files.rs`, and `reading_memory.rs`.
+- The repo already has ADRs that must remain stable: AI and Reading Memory use the frozen Reading Context Snapshot, TypeScript owns Markdown rendering/rewrite, Rust owns the write safety boundary, foliate-js is the only Reading Engine, whole-book search stays removed (ADR-0018), and Astryx owns Reading Chrome UI leaves where it fits.
 
 ## Problem
 
@@ -30,12 +30,12 @@ The most expensive symptom is low locality. Startup behavior is spread across Re
 2. Improve locality for Reading Chrome orchestration without revisiting the foliate-only Reading Engine decision or the Astryx migration ADR.
 3. Split Rust local behavior into domain modules while preserving the existing Tauri command interface and frontend invoke call shapes.
 4. Keep tests aligned with interfaces: callers and tests should exercise the same seam instead of testing private helper fragments or entire render trees.
-5. Preserve user-visible behavior: reading flow, AI streaming, Reading Memory writes, search-index states, import behavior, and existing settings must not regress.
+5. Preserve user-visible behavior: reading flow, AI streaming, Reading Memory writes, import behavior, and existing settings must not regress.
 
 ## Non-Goals
 
 - Do not add a second Reading Engine adapter. `foliate-js` remains the only Reading Engine.
-- Do not move AI or Reading Memory evidence sourcing to the Search Index.
+- Do not reintroduce whole-book search or Rust indexing without a new ADR.
 - Do not change AI request shape by adding provider or model fields to `buildChatRequest`.
 - Do not redesign Reading Chrome visually; this is architecture work, not an Astryx restyle.
 - Do not replace localStorage, Dexie, or Zustand as a prerequisite. Storage migration can be a later vertical slice.
@@ -55,25 +55,24 @@ Recommendation strength: Strong.
 
 Files involved:
 
-- `src/App.tsx`
+- `src/appLifecycle.tsx`
 - `src/hooks/useDebouncedPersist.ts`
 - `src/services/LocalStore.ts`
 - `src/services/ChatStore.ts`
 - `src/services/CoverStore.ts`
 - `src/services/BookPathValidator.ts`
 - `src/services/BookImportService.ts`
-- `src/services/reader/searchIndex.ts`
 - `src/stores/libraryStore.ts`
 - `src/stores/progressStore.ts`
 - `src/stores/aiStore.ts`
 
 Problem:
 
-`App.tsx` currently acts as a lifecycle script with JSX at the bottom. The interface is wide because callers and tests must understand idle scheduling, cancellation, persistence timing, latest-state snapshots, legacy migrations, path validation, import deduplication, and search-index rebuild side effects. The deletion test says this module is not disposable: deleting it would scatter the same complexity across stores and surfaces.
+`App.tsx` and `appLifecycle.tsx` currently split lifecycle behavior from layout composition. The interface is still wide because callers and tests must understand idle scheduling, cancellation, persistence timing, latest-state snapshots, legacy migrations, path validation, and import deduplication.
 
 Solution:
 
-Create a deeper App Lifecycle module that owns startup tasks, persisted-state hydration, legacy migration, import orchestration, and quiet background rebuilds. `App.tsx` should keep layout composition, lazy panels, and top-level providers. Stores should expose state transitions, while lifecycle side effects live behind the lifecycle module instead of being split between stores and React effects.
+Create a deeper App Lifecycle module that owns startup tasks, persisted-state hydration, legacy migration, and import orchestration. `App.tsx` should keep layout composition, lazy panels, and top-level providers. Stores should expose state transitions, while lifecycle side effects live behind the lifecycle module instead of being split between stores and React effects.
 
 Benefits:
 
@@ -86,9 +85,9 @@ Acceptance criteria:
 
 - `App.tsx` no longer owns cover migration, path validation, chat hydration, or import/index orchestration directly.
 - Legacy chat migration and conversation-memory hydration remain behaviorally identical.
-- Import still deduplicates paths, adds the book, and starts Search Index rebuild as derived data.
+- Import still deduplicates paths and adds the book without background indexing.
 - Progress persistence and library persistence retain their current debounce behavior.
-- Tests cover startup hydration, legacy chat migration, cover migration, path validation race safety, import dedupe, import failure notice, and quiet Search Index status updates.
+- Tests cover startup hydration, legacy chat migration, cover migration, path validation race safety, import dedupe, and import failure notice.
 - `npm run typecheck` and `npm run test` pass for the slice; `npm run check` passes before broad handoff.
 
 ### 2. Reading Chrome Session Module
@@ -101,7 +100,6 @@ Files involved:
 - `src/components/reader/useEpubBookLifecycle.ts`
 - `src/components/reader/useEpubProgressTracking.ts`
 - `src/components/reader/useEpubSelectionTracking.ts`
-- `src/components/reader/useEpubSearch.ts`
 - `src/components/reader/readerNavigation.ts`
 - `src/components/reader/SelectionToolbar.tsx`
 - `src/services/reader/readingEngine.ts`
@@ -109,25 +107,24 @@ Files involved:
 
 Problem:
 
-`EPUBReader.tsx` currently mixes rendering with Reading Engine orchestration. The hooks help, but the reader file still knows too much about search state, selection toolbar state, TOC navigation, chapter actions, relocation, progress, AI triggers, and engine refs. The seam is blurry: some behavior belongs to the Reading Engine Adapter, some to Reading Chrome, and some to AI selection flow.
+`EPUBReader.tsx` currently mixes rendering with Reading Engine orchestration. The hooks help, but the reader file still knows too much about selection toolbar state, TOC navigation, chapter actions, relocation, progress, AI triggers, and engine refs.
 
 Solution:
 
-Introduce a Reading Chrome Session module that owns orchestration state for the current book: engine instance, TOC state, search workflow, selection workflow, progress updates, relocation, and chapter actions. `EPUBReader.tsx` should render Reading Chrome from that session state and dispatch user intentions back to it. The Reading Engine Adapter remains the adapter around foliate and does not become a multi-engine abstraction.
+Introduce a Reading Chrome Session module that owns orchestration state for the current book: engine instance, TOC state, selection workflow, progress updates, relocation, and chapter actions. `EPUBReader.tsx` should render Reading Chrome from that session state and dispatch user intentions back to it.
 
 Benefits:
 
-- Better locality for reader bugs: navigation, search, selection, and progress interactions live in one reader session module.
+- Better locality for reader bugs: navigation, selection, and progress interactions live in one reader session module.
 - Better leverage for tests: session tests can cover workflows without rendering all Reading Chrome markup.
 - Preserves ADR 0011: Astryx can still own UI leaves while the positioning shell and engine-owned content remain custom where required.
 
 Acceptance criteria:
 
 - No new Reading Engine implementation or scripted EPUB support.
-- Search Locator tolerance remains: precise CFI when available, href/spine fallback when not.
 - Reading Context Snapshot still freezes selected text, CFI, accumulated texts, progress, and chapter content at send time.
 - Selection Coordinate behavior remains coordinate-based, not DOM-anchor-based.
-- Tests cover TOC navigation, search panel state, selection add/ask/close behavior, chapter action behavior, relocation success/failure, and progress update routing.
+- Tests cover TOC navigation, selection add/ask/close behavior, chapter action behavior, relocation success/failure, and progress update routing.
 
 ### 3. Native Local Modules
 
@@ -136,16 +133,17 @@ Recommendation strength: Strong, after App Lifecycle.
 Files involved:
 
 - `src-tauri/src/lib.rs`
-- `src-tauri/src/search_index.rs`
-- future Rust modules under `src-tauri/src/`
+- `src-tauri/src/ai.rs`
+- `src-tauri/src/book_files.rs`
+- `src-tauri/src/reading_memory.rs`
 
 Problem:
 
-`src-tauri/src/lib.rs` has become a large native module with many unrelated local responsibilities. It still exposes a useful Tauri command interface, but the implementation lacks locality: AI Provider storage, AI streaming, prompts, Reading Memory repository safety, book files, and command registration all live together.
+`src-tauri/src/lib.rs` registers commands while domain behavior lives in focused modules. Further splits should preserve the current Tauri command interface.
 
 Solution:
 
-Split Rust implementation into native local modules by domain while preserving the current Tauri command names and frontend invoke call shapes. Good candidate modules are AI Provider, AI Chat, Reading Memory repository/write safety, Book Files, and Command Registration. `search_index.rs` can remain its own deep module unless new evidence says otherwise.
+Split Rust implementation into native local modules by domain while preserving the current Tauri command names and frontend invoke call shapes. Good candidate modules are AI Provider, AI Chat, Reading Memory repository/write safety, Book Files, and Command Registration.
 
 Benefits:
 
@@ -157,7 +155,7 @@ Acceptance criteria:
 
 - Existing command names remain stable.
 - API keys still never return to the UI.
-- `async-openai` remains the first typed path with compatibility SSE fallback.
+- `async-openai` is the sole Rust AI HTTP client for OpenAI-compatible Chat Completions and stream parsing.
 - Reading Memory write restrictions remain at the Rust write boundary.
 - Rust tests remain with the module that owns the behavior.
 - `cargo test` from `src-tauri/` passes after native slices; `npm run check` passes before broad handoff.
@@ -198,8 +196,8 @@ Acceptance criteria:
 ## Recommended Sequencing
 
 1. App Lifecycle module test scaffold on current behavior.
-2. Move startup hydration and legacy migrations behind the App Lifecycle module.
-3. Move import and quiet Search Index rebuild orchestration behind the App Lifecycle module.
+2. Move any remaining startup hydration and legacy migrations behind the App Lifecycle module.
+3. Move import orchestration behind the App Lifecycle module.
 4. Move path validation and cover migration behind the App Lifecycle module.
 5. Review whether store side effects can now be reduced safely.
 6. Deepen Reading Chrome Session after lifecycle behavior is stable.

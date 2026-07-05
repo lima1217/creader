@@ -1,5 +1,7 @@
 # Allow Chapter-Level Search Locators in Rust Search
 
+**Status: superseded by ADR-0018.** Whole-book search was removed.
+
 Rust search results may initially return a spine item or href plus an excerpt instead of a precise EPUB CFI. This lets CReader move whole-book search out of the WebView without coupling the first index implementation to renderer-specific CFI generation; precise CFI locators can be added later when they are reliable.
 
 ## Search Locator Contract

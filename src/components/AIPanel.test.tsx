@@ -186,7 +186,7 @@ beforeEach(() => {
     currentBook: null,
   });
   useProgressStore.setState({ bookProgressById: {} });
-  useUIStore.setState({ isSidebarOpen: true, isAIPanelOpen: true, isSearchOpen: false });
+  useUIStore.setState({ isSidebarOpen: true, isAIPanelOpen: true });
 });
 
 afterEach(() => {

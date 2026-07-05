@@ -1,35 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { RefObject } from 'react';
 import { useAIStore } from '../../stores/aiStore';
-import { useLibraryStore } from '../../stores/libraryStore';
 import { useProgressStore } from '../../stores/progressStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useUIStore } from '../../stores/uiStore';
 import type { Book, NavItem } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { createLogger } from '../../utils/logger';
-import { findChapterLabelByHref, isTocItemActive } from './readerNavigation';
+import { isTocItemActive } from './readerNavigation';
 import { useEpubProgressTracking } from './useEpubProgressTracking';
-import { useEpubSearch } from './useEpubSearch';
 import { useEpubSelectionTracking } from './useEpubSelectionTracking';
 import { useReaderKeyboardShortcuts } from './useReaderKeyboardShortcuts';
 
 const logger = createLogger('useReadingChromeSession');
-
-function searchIndexMessage(state: string, error?: string): string {
-  switch (state) {
-    case 'pending':
-      return '搜索索引正在构建，稍后即可搜索。';
-    case 'failed':
-      return error || '搜索索引构建失败，可以重试。';
-    case 'stale':
-      return '书籍文件已变化，需要重建搜索索引。';
-    case 'missing':
-      return '这本书还没有搜索索引。';
-    default:
-      return '';
-  }
-}
 
 export function useReadingChromeSession(params: {
   currentBook: Book | null;
@@ -37,10 +20,7 @@ export function useReadingChromeSession(params: {
   renditionKey: number;
 }) {
   const { currentBook, renditionRef, renditionKey } = params;
-  const updateBookSearchIndex = useLibraryStore((s) => s.updateBookSearchIndex);
   const updateBookProgress = useProgressStore((s) => s.updateBookProgress);
-  const isSearchOpen = useUIStore((s) => s.isSearchOpen);
-  const setSearchOpen = useUIStore((s) => s.setSearchOpen);
   const showToc = useUIStore((s) => s.isTocOpen);
   const setShowToc = useUIStore((s) => s.setTocOpen);
   const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
@@ -51,25 +31,12 @@ export function useReadingChromeSession(params: {
   const addToAccumulatedTexts = useSelectionStore((s) => s.addToAccumulatedTexts);
   const accumulatedTexts = useSelectionStore((s) => s.accumulatedTexts);
 
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const [toc, setToc] = useState<NavItem[]>([]);
   const [currentTocHref, setCurrentTocHref] = useState('');
   const [selectionToolbarPos, setSelectionToolbarPos] = useState<{ x: number; y: number } | null>(null);
   const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
   const [showSelectionHint, setShowSelectionHint] = useState(false);
   const [accumulatedPreviewOpen, setAccumulatedPreviewOpen] = useState(false);
-
-  const handleSearchIndexStatus = useCallback((status: NonNullable<Book['searchIndex']>) => {
-    if (currentBook) updateBookSearchIndex(currentBook.id, status);
-  }, [currentBook, updateBookSearchIndex]);
-
-  const search = useEpubSearch({
-    renditionRef,
-    currentBook,
-    onSearchIndexStatus: handleSearchIndexStatus,
-    onCloseSearch: () => setSearchOpen(false),
-  });
-  const { cancelSearch, refreshIndexStatus } = search;
 
   const closeSelectionToolbar = useCallback(() => {
     setShowSelectionToolbar(false);
@@ -93,11 +60,6 @@ export function useReadingChromeSession(params: {
     closeSelectionToolbar();
   }, [closeSelectionToolbar, renditionRef, setShowToc]);
 
-  const closeSearch = useCallback(() => {
-    cancelSearch();
-    setSearchOpen(false);
-  }, [cancelSearch, setSearchOpen]);
-
   const handleAddSelection = useCallback(() => {
     addToAccumulatedTexts(selectedText);
   }, [addToAccumulatedTexts, selectedText]);
@@ -117,15 +79,6 @@ export function useReadingChromeSession(params: {
     setAccumulatedPreviewOpen(open => !open);
     setAIPanelOpen(true);
   }, [setAIPanelOpen]);
-
-  const resolveChapterLabel = useCallback((result: { section?: string; cfi?: string }) => {
-    const href = (result.cfi || '').split('#')[0].trim();
-    const viaHref = href ? findChapterLabelByHref(toc, href) : undefined;
-    if (viaHref) return viaHref;
-    const section = result.section || '';
-    if (section && !/^(id\d+|.*\.(x?html|htm|xhtml))$/i.test(section)) return section;
-    return '';
-  }, [toc]);
 
   const isTocItemCurrent = useCallback((href: string) => (
     isTocItemActive(href, currentTocHref)
@@ -153,14 +106,11 @@ export function useReadingChromeSession(params: {
     enabled: Boolean(currentBook),
     isEditableTarget: (target) => {
       if (!(target instanceof HTMLElement)) return false;
-      // Cover native inputs plus contentEditable surfaces (e.g. Astryx ChatComposerInput),
-      // including editable child nodes that report isContentEditable unreliably.
       return !!target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]');
     },
     onPrev: handlePrev,
     onNext: handleNext,
     onEscape: () => {
-      closeSearch();
       setShowToc(false);
       closeSelectionToolbar();
     },
@@ -194,17 +144,6 @@ export function useReadingChromeSession(params: {
     };
   }, [renditionKey, renditionRef]);
 
-  useEffect(() => {
-    if (isSearchOpen) {
-      setTimeout(() => searchInputRef.current?.focus(), 50);
-      void refreshIndexStatus().catch(err => logger.warn('Failed to refresh search index status:', err));
-    }
-  }, [isSearchOpen, refreshIndexStatus]);
-
-  const searchIndexState = currentBook?.searchIndex?.state || 'missing';
-  const searchIndexNeedsRebuild = searchIndexState === 'missing' || searchIndexState === 'failed' || searchIndexState === 'stale';
-  const searchStatusText = search.searchError || searchIndexMessage(searchIndexState, currentBook?.searchIndex?.error);
-
   return {
     toc,
     setToc,
@@ -228,15 +167,5 @@ export function useReadingChromeSession(params: {
     accumulatedTexts,
     accumulatedPreviewOpen,
     onAccumulatedTextsClick: handleAccumulatedTextsClick,
-    search: {
-      ...search,
-      inputRef: searchInputRef,
-      isOpen: isSearchOpen,
-      close: closeSearch,
-      indexState: searchIndexState,
-      indexNeedsRebuild: searchIndexNeedsRebuild,
-      statusText: searchStatusText,
-      resolveChapterLabel,
-    },
   };
 }

@@ -260,7 +260,6 @@ export const foliateEngineAdapter: ReadingEngineAdapter = {
     navigation: true,
     selection: true,
     progress: true,
-    searchLocatorNavigation: true,
     theme: true,
     cfi: 'epub-cfi',
   },

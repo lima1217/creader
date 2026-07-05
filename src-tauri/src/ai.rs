@@ -542,104 +542,6 @@ where
     Ok(full_text)
 }
 
-/// Compatibility streaming path over an OpenAI-compatible endpoint. This keeps
-/// endpoints that do not quite match async-openai's typed stream parser working.
-pub(crate) async fn chat_completion_stream_compat<F>(
-    prompt: &str,
-    config: &AIProviderConfig,
-    api_key: &str,
-    mut on_chunk: F,
-) -> Result<String, String>
-where
-    F: FnMut(String),
-{
-    use futures_util::StreamExt;
-
-    let url = chat_completions_url(&config.base_url);
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(AI_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-
-    let body = serde_json::json!({
-        "model": config.model,
-        "messages": [
-            { "role": "system", "content": READING_AI_SYSTEM_PROMPT },
-            { "role": "user", "content": prompt }
-        ],
-        "stream": true,
-        "temperature": 0.7,
-    });
-
-    let response = client
-        .post(&url)
-        .bearer_auth(api_key)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "API error {}: {}",
-            status,
-            truncate_for_prompt(&text, 500)
-        ));
-    }
-
-    let mut stream = response.bytes_stream();
-    let mut full_text = String::new();
-    // Accumulate raw bytes and split on newlines, since SSE events arrive as
-    // `data: <json>\n\n` and a single network chunk may contain partial lines.
-    let mut buffer: Vec<u8> = Vec::new();
-
-    while let Some(chunk_result) = stream.next().await {
-        if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
-            break;
-        }
-        let chunk = chunk_result.map_err(|e| format!("Stream read error: {}", e))?;
-        buffer.extend_from_slice(&chunk);
-
-        // Process every complete line currently in the buffer.
-        while let Some(nl) = buffer.iter().position(|&b| b == b'\n') {
-            let line_bytes: Vec<u8> = buffer.drain(..=nl).collect();
-            let line = String::from_utf8_lossy(&line_bytes);
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let payload = match trimmed.strip_prefix("data:").map(str::trim) {
-                Some("[DONE]") => {
-                    buffer.clear();
-                    return Ok(full_text);
-                }
-                Some(json) => json,
-                None => continue,
-            };
-            let delta = serde_json::from_str::<serde_json::Value>(payload)
-                .ok()
-                .and_then(|v| {
-                    v.get("choices")
-                        .and_then(|c| c.get(0))
-                        .and_then(|c| c.get("delta"))
-                        .and_then(|d| d.get("content"))
-                        .and_then(|t| t.as_str())
-                        .map(|s| s.to_string())
-                });
-            if let Some(piece) = delta {
-                if !piece.is_empty() {
-                    full_text.push_str(&piece);
-                    on_chunk(piece);
-                }
-            }
-        }
-    }
-
-    Ok(full_text)
-}
-
 /// Streaming chat completion over an OpenAI-compatible endpoint. Emits
 /// `StreamEvent`s through the Tauri Channel, honoring the global cancel flag.
 async fn chat_completion_stream(
@@ -652,33 +554,10 @@ async fn chat_completion_stream(
         provider: config.name.clone(),
     });
 
-    let mut emitted_any_chunk = false;
-    let typed_result = chat_completion_stream_typed(prompt, config, api_key, |piece| {
-        emitted_any_chunk = true;
+    chat_completion_stream_typed(prompt, config, api_key, |piece| {
         let _ = on_event.send(StreamEvent::Chunk { text: piece });
     })
-    .await;
-
-    match typed_result {
-        Ok(full_text) => Ok(full_text),
-        Err(typed_error) if !emitted_any_chunk => {
-            eprintln!(
-                "[creader] async-openai stream failed for provider '{}'; falling back to compatibility parser: {}",
-                config.name, typed_error
-            );
-            chat_completion_stream_compat(prompt, config, api_key, |piece| {
-                let _ = on_event.send(StreamEvent::Chunk { text: piece });
-            })
-            .await
-            .map_err(|compat_error| {
-                format!(
-                    "{}; compatibility fallback also failed: {}",
-                    typed_error, compat_error
-                )
-            })
-        }
-        Err(typed_error) => Err(typed_error),
-    }
+    .await
 }
 
 /// One-shot (non-streaming) chat completion. Returns the full assistant text.
@@ -687,24 +566,7 @@ pub(crate) async fn chat_completion_oneshot(
     config: &AIProviderConfig,
     api_key: &str,
 ) -> Result<String, String> {
-    let typed_result = chat_completion_oneshot_typed(prompt, config, api_key).await;
-    match typed_result {
-        Ok(text) => Ok(text),
-        Err(typed_error) => {
-            eprintln!(
-                "[creader] async-openai one-shot failed for provider '{}'; falling back to compatibility request: {}",
-                config.name, typed_error
-            );
-            chat_completion_oneshot_compat(prompt, config, api_key)
-                .await
-                .map_err(|compat_error| {
-                    format!(
-                        "{}; compatibility fallback also failed: {}",
-                        typed_error, compat_error
-                    )
-                })
-        }
-    }
+    chat_completion_oneshot_typed(prompt, config, api_key).await
 }
 
 pub(crate) async fn chat_completion_oneshot_typed(
@@ -726,56 +588,6 @@ pub(crate) async fn chat_completion_oneshot_typed(
         .into_iter()
         .next()
         .and_then(|choice| choice.message.content)
-        .ok_or_else(|| "API response missing choices[0].message.content".to_string())
-}
-
-pub(crate) async fn chat_completion_oneshot_compat(
-    prompt: &str,
-    config: &AIProviderConfig,
-    api_key: &str,
-) -> Result<String, String> {
-    let url = chat_completions_url(&config.base_url);
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(AI_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-
-    let body = serde_json::json!({
-        "model": config.model,
-        "messages": [{ "role": "user", "content": prompt }],
-        "stream": false,
-        "temperature": 0.3,
-    });
-
-    let response = client
-        .post(&url)
-        .bearer_auth(api_key)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "API error {}: {}",
-            status,
-            truncate_for_prompt(&text, 500)
-        ));
-    }
-
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse API response: {}", e))?;
-
-    json.get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|t| t.as_str())
-        .map(|s| s.to_string())
         .ok_or_else(|| "API response missing choices[0].message.content".to_string())
 }
 
@@ -1116,11 +928,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn compatibility_stream_honors_cancellation_before_chunks() {
+    async fn typed_stream_honors_cancellation_before_chunks() {
         let _guard = AI_TEST_LOCK.lock().await;
         AI_CANCEL_FLAG.store(true, Ordering::Relaxed);
         let response_body = concat!(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"ignored\"}}]}\n\n",
+            "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"reader-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ignored\"},\"finish_reason\":null}]}\n\n",
             "data: [DONE]\n\n"
         );
         let (base_url, _request_rx, server) = spawn_chat_completion_server(response_body);
@@ -1133,7 +945,7 @@ mod tests {
         let mut chunks = Vec::new();
 
         let full_text =
-            chat_completion_stream_compat("prompt text", &config, "secret-key", |piece| {
+            chat_completion_stream_typed("prompt text", &config, "secret-key", |piece| {
                 chunks.push(piece)
             })
             .await
@@ -1178,8 +990,7 @@ mod tests {
     }
 
     /// Minimal one-shot (non-streaming) OpenAI-compatible server. Unlike
-    /// `spawn_chat_completion_server`, it replies with `application/json` so the
-    /// one-shot compatibility parser can deserialize the JSON body. Used only by
+    /// `spawn_chat_completion_server`, it replies with `application/json` for
     /// connection-test assertions.
     fn spawn_oneshot_completion_server(
         response_body: &'static str,
@@ -1273,6 +1084,52 @@ mod tests {
 
         assert!(message.contains("连接成功"));
         assert!(message.contains("ok"));
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn typed_stream_fails_on_noncanonical_chunks_without_compat_fallback() {
+        let _guard = AI_TEST_LOCK.lock().await;
+        AI_CANCEL_FLAG.store(false, Ordering::Relaxed);
+        let response_body = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let (base_url, _request_rx, server) = spawn_chat_completion_server(response_body);
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+
+        let err = chat_completion_stream_typed("prompt text", &config, "secret-key", |_| {})
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("failed to deserialize"));
+        assert!(!err.contains("compatibility fallback"));
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn typed_oneshot_fails_on_noncanonical_response_without_compat_fallback() {
+        let _guard = AI_TEST_LOCK.lock().await;
+        let response_body = r#"{"choices":[{"message":{"content":"ok"}}]}"#;
+        let (base_url, server) = spawn_oneshot_completion_server(response_body);
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+
+        let err = chat_completion_oneshot_typed("prompt text", &config, "secret-key")
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("failed to deserialize"));
+        assert!(!err.contains("compatibility fallback"));
         server.join().unwrap();
     }
 }

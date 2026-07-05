@@ -29,7 +29,6 @@ export interface ReadingEngineAdapter {
     navigation: boolean;
     selection: boolean;
     progress: boolean;
-    searchLocatorNavigation: boolean;
     theme: boolean;
     cfi: 'epub-cfi' | 'synthetic-cfi' | 'none';
   };
