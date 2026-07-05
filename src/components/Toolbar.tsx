@@ -58,11 +58,6 @@ export function Toolbar() {
         dark: '暗色',
     };
 
-    const themeDescriptions: Record<Theme, string> = {
-        light: '纸面阅读',
-        dark: '夜间阅读',
-    };
-
     const selectTheme = (theme: Theme) => {
         setSettings({ ...settings, theme });
     };
@@ -196,14 +191,14 @@ export function Toolbar() {
                         }}
                         hasChevron={false}
                         placement="below"
-                        menuWidth={184}
+                        menuWidth={128}
                         aria-label="主题"
                         items={[
                             {
                                 type: 'section',
                                 title: '阅读主题',
                                 items: themes.map(theme => ({
-                                    label: `${themeLabels[theme]} · ${themeDescriptions[theme]}`,
+                                    label: themeLabels[theme],
                                     icon: themeIcons[theme],
                                     onClick: () => selectTheme(theme),
                                 })),
