@@ -1,8 +1,9 @@
 .sidebar {
+    --sidebar-nav-icon-slot: var(--spacing-5, 20px);
+    --sidebar-nav-item-padding-inline: var(--spacing-3, 12px);
     width: var(--sidebar-width);
     height: 100%;
     background: var(--bg-reader);
-    border-right: 1px solid var(--border-secondary);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
@@ -16,7 +17,6 @@
     justify-content: flex-start;
     height: var(--reading-toolbar-height);
     padding: 0 12px;
-    border-bottom: 1px solid var(--border-secondary);
     background: var(--bg-reader);
     flex-shrink: 0;
 }
@@ -26,7 +26,6 @@
     flex-direction: column;
     gap: 6px;
     padding: 10px;
-    border-bottom: 1px solid var(--border-soft);
     background: var(--bg-reader);
     flex-shrink: 0;
 }
@@ -34,6 +33,18 @@
 .sidebar-actions .astryx-button {
     width: 100%;
     justify-content: flex-start;
+}
+
+.sidebar-actions .astryx-button:not([data-icon-only]) {
+    display: grid !important;
+    grid-template-columns: var(--sidebar-nav-icon-slot) minmax(0, 1fr);
+    justify-items: start;
+    column-gap: var(--spacing-2, 8px) !important;
+    padding-inline: var(--sidebar-nav-item-padding-inline) !important;
+}
+
+.sidebar-actions .astryx-button:not([data-icon-only]) > span {
+    justify-self: center;
 }
 
 .sidebar .astryx-button,
@@ -153,17 +164,21 @@
 
 .organizer-group-header {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: var(--sidebar-nav-icon-slot) minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 8px;
     width: 100%;
     min-height: 36px;
-    padding: 0 8px;
+    padding: 0 var(--sidebar-nav-item-padding-inline);
     border: 1px solid transparent;
     border-radius: 6px;
     background: transparent;
     color: var(--text-secondary);
     text-align: left;
+}
+
+.organizer-group-header > .astryx-icon:first-child {
+    justify-self: center;
 }
 
 .organizer-group-header:hover {
@@ -545,8 +560,7 @@ dialog.folder-assign-dialog.sidebar-dialog {
 
 .sidebar-footer {
     padding: 10px;
-    border-top: 1px solid var(--border-soft);
-    background: var(--bg-panel);
+    background: var(--bg-reader);
     color: var(--text-muted);
     font-size: var(--text-xs);
     display: flex;

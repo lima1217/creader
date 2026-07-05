@@ -361,8 +361,7 @@
     display: flex;
     flex-direction: column;
     width: 340px;
-    background: var(--bg-panel);
-    box-shadow: inset -1px 0 0 var(--border-soft);
+    background: var(--bg-reader);
     animation: readerTocIn var(--transition-slow) ease;
 }
 
@@ -384,7 +383,7 @@
     justify-content: space-between;
     height: var(--header-height);
     padding: 0 var(--space-4);
-    background: var(--bg-panel);
+    background: var(--bg-reader);
 }
 
 .reader-toc-header h3 {
