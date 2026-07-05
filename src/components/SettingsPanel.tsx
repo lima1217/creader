@@ -13,7 +13,7 @@ import { ButtonGroup } from '@astryxdesign/core/ButtonGroup';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Tab, TabList } from '@astryxdesign/core/TabList';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
-import { NumberInput } from '@astryxdesign/core/NumberInput';
+import { TextSizeControl } from './TextSizeControl';
 import { useSettingsStore } from '../stores/settingsStore';
 import { ensureReadingMemoryRepository } from '../services/ReadingMemory';
 import { isTauriRuntime } from '../utils/tauri';
@@ -277,13 +277,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             setProviderError('');
         }
     }, []);
-
-    const adjustAITextSize = useCallback((delta: number) => {
-        setSettings({
-            ...settings,
-            aiTextSize: clampAITextSize(settings.aiTextSize + delta),
-        });
-    }, [settings, setSettings]);
 
     return (
         <Dialog
@@ -560,37 +553,16 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                             inputID="settings-ai-text-size"
                                             label="AI 文字大小"
                                         >
-                                            <div className="settings-text-size-control" id="settings-ai-text-size">
-                                                <Button
-                                                    className="settings-text-size-step"
-                                                    variant="secondary"
-                                                    size="sm"
-                                                    label="A-"
-                                                    aria-label="减小 AI 文字大小"
-                                                    onClick={() => adjustAITextSize(-1)}
-                                                    isDisabled={settings.aiTextSize <= AI_TEXT_SIZE_MIN}
-                                                />
-                                                <NumberInput
-                                                    label="AI 文字大小"
-                                                    isLabelHidden
-                                                    value={settings.aiTextSize}
-                                                    onChange={value => setSettings({ ...settings, aiTextSize: clampAITextSize(value) })}
-                                                    min={AI_TEXT_SIZE_MIN}
-                                                    max={AI_TEXT_SIZE_MAX}
-                                                    step={1}
-                                                    isIntegerOnly
-                                                    size="sm"
-                                                />
-                                                <Button
-                                                    className="settings-text-size-step"
-                                                    variant="secondary"
-                                                    size="sm"
-                                                    label="A+"
-                                                    aria-label="增大 AI 文字大小"
-                                                    onClick={() => adjustAITextSize(1)}
-                                                    isDisabled={settings.aiTextSize >= AI_TEXT_SIZE_MAX}
-                                                />
-                                            </div>
+                                            <TextSizeControl
+                                                id="settings-ai-text-size"
+                                                value={settings.aiTextSize}
+                                                min={AI_TEXT_SIZE_MIN}
+                                                max={AI_TEXT_SIZE_MAX}
+                                                onChange={value => setSettings({ ...settings, aiTextSize: clampAITextSize(value) })}
+                                                inputLabel="AI 文字大小"
+                                                decrementAriaLabel="减小 AI 文字大小"
+                                                incrementAriaLabel="增大 AI 文字大小"
+                                            />
                                         </Field>
                                     </div>
                                 </div>

@@ -132,6 +132,18 @@ async function findOrganizerButton(container: HTMLElement, name: string): Promis
   return child!;
 }
 
+/** User-created folders live in `.folder-nav-group-nested`, not the unfiled section. */
+function findUserFolderGroup(container: HTMLElement, folderName?: string): HTMLElement {
+  const groups = container.querySelectorAll('.folder-nav-group-nested');
+  if (!folderName) return groups[0] as HTMLElement;
+  const match = Array.from(groups).find((group) => group.textContent?.includes(folderName));
+  return match as HTMLElement;
+}
+
+function userFolderGroups(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll('.folder-nav-group-nested'));
+}
+
 /**
  * Locate a button inside the sidebar actions block by its visible label.
  * The actions buttons (导入书籍 / 新文件夹) render their `label` as visible
@@ -421,8 +433,9 @@ describe('Sidebar contract — folder nav', () => {
     await settle();
 
     const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
-    dispatchDragEvent(container.querySelector('.folder-nav-group')!, 'dragover', dataTransfer);
-    dispatchDragEvent(container.querySelector('.folder-nav-group')!, 'drop', dataTransfer);
+    const folderTarget = findUserFolderGroup(container, 'Reading');
+    dispatchDragEvent(folderTarget, 'dragover', dataTransfer);
+    dispatchDragEvent(folderTarget, 'drop', dataTransfer);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
@@ -455,7 +468,7 @@ describe('Sidebar contract — folder nav', () => {
     await settle();
 
     const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
-    dispatchDragEvent(container.querySelector('.folder-nav-group')!, 'drop', dataTransfer);
+    dispatchDragEvent(findUserFolderGroup(container, 'Reading'), 'drop', dataTransfer);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
@@ -488,7 +501,7 @@ describe('Sidebar contract — folder nav', () => {
 
     vi.useFakeTimers();
     const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
-    dispatchDragEvent(container.querySelector('.folder-nav-group')!, 'dragover', dataTransfer);
+    dispatchDragEvent(findUserFolderGroup(container, 'Reading'), 'dragover', dataTransfer);
     vi.advanceTimersByTime(500);
     await Promise.resolve();
     vi.useRealTimers();
@@ -632,7 +645,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     const { container } = mountSidebar();
     await settle();
 
-    const groups = container.querySelectorAll('.folder-nav-group');
+    const groups = userFolderGroups(container);
     const { dataTransfer } = dispatchDragEvent(groups[1], 'dragstart');
     dispatchDragEvent(groups[0], 'dragover', dataTransfer);
     dispatchDragEvent(groups[0], 'drop', dataTransfer);

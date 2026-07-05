@@ -7,20 +7,19 @@ import { useAIStore } from '../stores/aiStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
-import { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
+import { DropdownMenu, DropdownMenuItem } from '@astryxdesign/core/DropdownMenu';
 import {
     BookOpenIcon,
     CheckIcon,
     CopyIcon,
     MoreHorizontalIcon,
-    MinusIcon,
     MoonIcon,
-    PlusIcon,
     SearchIcon,
     SunIcon,
     ToolbarAIIcon,
     EpubTocIcon,
 } from './icons/icons';
+import { TextSizeControl } from './TextSizeControl';
 import { createLogger } from '../utils/logger';
 import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import './Toolbar.css';
@@ -60,11 +59,6 @@ export function Toolbar() {
 
     const selectTheme = (theme: Theme) => {
         setSettings({ ...settings, theme });
-    };
-
-    const adjustFontSize = (delta: number) => {
-        const newSize = Math.min(24, Math.max(12, settings.fontSize + delta));
-        setSettings({ ...settings, fontSize: newSize });
     };
 
     const handleUseChapter = () => {
@@ -136,49 +130,37 @@ export function Toolbar() {
                         placement="below"
                         menuWidth={220}
                         aria-label="更多阅读工具"
-                        items={[
-                            {
-                                type: 'section',
-                                title: '字号',
-                                items: [
-                                    {
-                                        label: '减小字号',
-                                        icon: <MinusIcon />,
-                                        isDisabled: settings.fontSize <= 12,
-                                        onClick: () => adjustFontSize(-1),
-                                    },
-                                    {
-                                        label: `当前字号：${settings.fontSize}px`,
-                                        isDisabled: true,
-                                    },
-                                    {
-                                        label: '增大字号',
-                                        icon: <PlusIcon />,
-                                        isDisabled: settings.fontSize >= 24,
-                                        onClick: () => adjustFontSize(1),
-                                    },
-                                ],
-                            },
-                            {
-                                type: 'section',
-                                title: '章节',
-                                items: [
-                                    {
-                                        label: canUseChapter ? `使用本章（约 ${Math.round(currentChapterContent.length / 1000)}k 字）` : '使用本章',
-                                        icon: <BookOpenIcon size={17} strokeWidth={2} />,
-                                        isDisabled: !canUseChapter,
-                                        onClick: handleUseChapter,
-                                    },
-                                    {
-                                        label: chapterCopied ? '已复制章节' : '复制章节',
-                                        icon: chapterCopied ? <CheckIcon /> : <CopyIcon />,
-                                        isDisabled: !canUseChapter,
-                                        onClick: handleCopyChapter,
-                                    },
-                                ],
-                            },
-                        ]}
-                    />
+                    >
+                        <div role="group" aria-label="字号" className="toolbar-more-section">
+                            <div className="toolbar-more-section-title" aria-hidden="true">字号</div>
+                            <div className="toolbar-more-font-size">
+                                <TextSizeControl
+                                    value={settings.fontSize}
+                                    min={12}
+                                    max={24}
+                                    onChange={fontSize => setSettings({ ...settings, fontSize })}
+                                    inputLabel="字号"
+                                    decrementAriaLabel="减小字号"
+                                    incrementAriaLabel="增大字号"
+                                />
+                            </div>
+                        </div>
+                        <div role="group" aria-label="章节" className="toolbar-more-section">
+                            <div className="toolbar-more-section-title" aria-hidden="true">章节</div>
+                            <DropdownMenuItem
+                                label={canUseChapter ? `使用本章（约 ${Math.round(currentChapterContent.length / 1000)}k 字）` : '使用本章'}
+                                icon={<BookOpenIcon size={17} strokeWidth={2} />}
+                                isDisabled={!canUseChapter}
+                                onClick={handleUseChapter}
+                            />
+                            <DropdownMenuItem
+                                label={chapterCopied ? '已复制章节' : '复制章节'}
+                                icon={chapterCopied ? <CheckIcon /> : <CopyIcon />}
+                                isDisabled={!canUseChapter}
+                                onClick={handleCopyChapter}
+                            />
+                        </div>
+                    </DropdownMenu>
 
                     <DropdownMenu
                         button={{

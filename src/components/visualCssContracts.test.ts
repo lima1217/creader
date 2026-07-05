@@ -6,6 +6,7 @@ const componentsDir = join(process.cwd(), 'src/components');
 const aiPanelCss = readFileSync(join(componentsDir, 'AIPanel.css'), 'utf8');
 const aiPanelMarkdownCss = readFileSync(join(componentsDir, 'AIPanelMarkdown.css'), 'utf8');
 const settingsPanelCss = readFileSync(join(componentsDir, 'SettingsPanel.css'), 'utf8');
+const textSizeControlCss = readFileSync(join(componentsDir, 'TextSizeControl.css'), 'utf8');
 
 describe('visual CSS contracts', () => {
   it('centers the first line inside the AI composer shell', () => {
@@ -50,7 +51,8 @@ describe('visual CSS contracts', () => {
   it('groups conversation behavior controls and styles quick prompt edit fields', () => {
     expect(settingsPanelCss).toContain('.settings-conversation-behavior');
     expect(settingsPanelCss).toContain('.settings-text-size-field');
-    expect(settingsPanelCss).toContain('.settings-text-size-step');
+    expect(textSizeControlCss).toContain('.text-size-step');
+    expect(textSizeControlCss).toContain('.text-size-control');
     expect(settingsPanelCss).toContain('.settings-dialog .astryx-switch-field[data-label-spacing="spread"]');
     expect(settingsPanelCss).toContain('.settings-quick-form .astryx-text-input');
     expect(settingsPanelCss).toContain('.settings-quick-form .astryx-textarea');

@@ -1,0 +1,103 @@
+.text-size-control {
+    --text-size-control-surface: var(--bg-control);
+    --text-size-control-border: var(--border-soft);
+    --text-size-control-radius: var(--radius-inner);
+
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: var(--spacing-1);
+    min-width: 0;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.text-size-control .astryx-number-input {
+    display: inline-flex;
+    align-items: center;
+    width: calc(var(--spacing-9) * 1.8);
+    min-height: var(--spacing-8);
+    max-width: 100%;
+    background: var(--text-size-control-surface) !important;
+    border: var(--border-width) solid var(--text-size-control-border) !important;
+    border-radius: var(--text-size-control-radius) !important;
+    box-shadow: none;
+}
+
+.text-size-control .astryx-number-input:focus-within {
+    border-color: var(--text-size-control-border) !important;
+    background: var(--bg-control-hover) !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+.text-size-control .astryx-number-input input {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    color: var(--text-secondary) !important;
+    font: inherit;
+    font-size: var(--font-size-base);
+    font-variant-numeric: tabular-nums;
+    font-weight: 520;
+    outline: 0 !important;
+    text-align: center;
+}
+
+.text-size-control .astryx-number-input input:focus,
+.text-size-control .astryx-number-input input:focus-visible {
+    outline: 0 !important;
+    box-shadow: none !important;
+    color: var(--text-secondary) !important;
+}
+
+.text-size-control .astryx-number-input input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.text-size-control .astryx-number-input input::-webkit-inner-spin-button,
+.text-size-control .astryx-number-input input::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.text-size-control .text-size-step.astryx-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--spacing-8);
+    min-height: var(--spacing-8);
+    padding: 0 var(--spacing-2);
+    background: var(--text-size-control-surface) !important;
+    border: var(--border-width) solid var(--text-size-control-border) !important;
+    border-radius: var(--text-size-control-radius) !important;
+    color: var(--text-secondary) !important;
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-base);
+    font-weight: 560;
+    line-height: 1;
+    box-shadow: none !important;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.text-size-control .text-size-step.astryx-button:hover:not(:disabled) {
+    background: var(--bg-control-hover) !important;
+    border-color: var(--border-soft) !important;
+    color: var(--text-primary) !important;
+}
+
+.text-size-control .text-size-step.astryx-button:focus-visible {
+    outline: none !important;
+    background: var(--bg-control-hover) !important;
+    color: var(--text-primary) !important;
+}
+
+.text-size-control .text-size-step.astryx-button:disabled {
+    color: var(--text-muted) !important;
+    cursor: not-allowed;
+    opacity: 0.55;
+}
