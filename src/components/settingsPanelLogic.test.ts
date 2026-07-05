@@ -26,7 +26,7 @@ function createDraft(overrides: Partial<AIProviderConfig> = {}): AIProviderConfi
 }
 
 function createAction(overrides: Partial<QuickActionConfig> = {}): QuickActionConfig {
-  return { id: 'explain', label: '解释', prompt: '解释选中的内容。', icon: 'explain', ...overrides };
+  return { id: 'explain', label: '解释', prompt: '解释选中的内容。', ...overrides };
 }
 
 function createSettings(overrides: Partial<Settings> = {}): Settings {
@@ -165,7 +165,6 @@ describe('settingsPanelLogic', () => {
       expect(action.id).toBe('custom-1000');
       expect(action.label).toBe('新提示词');
       expect(action.prompt).toBe('请根据当前上下文回答：');
-      expect(action.icon).toBe('explain');
     });
   });
 

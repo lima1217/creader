@@ -340,7 +340,6 @@ describe('AIPanel — quick-action overflow', () => {
       id: `qa-${i}`,
       label: `Action ${i}`,
       prompt: `prompt ${i}`,
-      icon: 'explain' as const,
     }));
     localStorage.setItem('creader-quick-actions', JSON.stringify({ v: 1, data: actions }));
   }

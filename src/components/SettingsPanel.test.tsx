@@ -169,7 +169,6 @@ function seedOrderedActions(labels: string[]) {
     id: `qa-${i}`,
     label,
     prompt: `prompt ${i}`,
-    icon: 'explain' as const,
   }));
   localStorage.setItem('creader-quick-actions', JSON.stringify({ v: 1, data: actions }));
 }

@@ -4,7 +4,6 @@ import type { QuickActionConfig } from './quickActions';
 import {
   defaultQuickActions,
   getMissingDefaultQuickActions,
-  hydrateQuickActions,
   loadQuickActionConfigs,
   normalizeQuickActions,
   QUICK_ACTIONS_CHANGED_EVENT,
@@ -12,7 +11,7 @@ import {
 } from './quickActions';
 
 function validAction(overrides: Partial<QuickActionConfig> = {}): QuickActionConfig {
-  return { id: 'a', label: '解释', prompt: '解释选中的内容。', icon: 'explain', ...overrides };
+  return { id: 'a', label: '解释', prompt: '解释选中的内容。', ...overrides };
 }
 
 beforeEach(() => {
@@ -32,18 +31,26 @@ describe('quickActions pure helpers', () => {
       const result = normalizeQuickActions([
         validAction(),
         { id: 'b', label: 'x', prompt: 'y', icon: 'unknown-icon' },
-        { id: 'c', label: 'x', prompt: 'y' },
+        { id: 'c', label: 'x' },
         'nope',
         null,
       ]);
-      expect(result.map((a) => a.id)).toEqual(['a']);
+      expect(result.map((a) => a.id)).toEqual(['a', 'b']);
+    });
+
+    it('strips legacy icon fields from stored configs', () => {
+      const result = normalizeQuickActions([
+        { id: 'a', label: '解释', prompt: 'prompt', icon: 'explain' },
+      ]);
+      expect(result).toEqual([validAction({ id: 'a', label: '解释', prompt: 'prompt' })]);
+      expect(result[0]).not.toHaveProperty('icon');
     });
 
     it('trims label and prompt and drops entries that become empty', () => {
       const result = normalizeQuickActions([
         validAction({ id: 'a', label: '  解释  ', prompt: '  prompt  ' }),
-        validAction({ id: 'b', label: '   ', prompt: 'y', icon: 'explain' }),
-        validAction({ id: 'c', label: 'x', prompt: '', icon: 'explain' }),
+        validAction({ id: 'b', label: '   ', prompt: 'y' }),
+        validAction({ id: 'c', label: 'x', prompt: '' }),
       ]);
       expect(result.map((a) => a.id)).toEqual(['a']);
       expect(result[0].label).toBe('解释');
@@ -64,15 +71,6 @@ describe('quickActions pure helpers', () => {
 
     it('returns an empty list when all defaults are present', () => {
       expect(getMissingDefaultQuickActions(defaultQuickActions)).toEqual([]);
-    });
-  });
-
-  describe('hydrateQuickActions', () => {
-    it('maps each config to a runtime action with an iconKey and icon node', () => {
-      const hydrated = hydrateQuickActions([validAction({ icon: 'translate' })]);
-      expect(hydrated).toHaveLength(1);
-      expect(hydrated[0].iconKey).toBe('translate');
-      expect(hydrated[0].icon).toBeDefined();
     });
   });
 
@@ -97,11 +95,15 @@ describe('quickActions pure helpers', () => {
       expect(loadQuickActionConfigs()).toEqual(custom);
     });
 
-    it('normalizes on save, dropping invalid entries', () => {
-      const corrupted = { id: 'drop', label: 'x', prompt: 'y', icon: 'bogus' } as unknown as QuickActionConfig;
-      saveQuickActionConfigs([validAction({ id: 'keep' }), corrupted]);
+    it('normalizes on save, dropping invalid entries and legacy icon fields', () => {
+      const invalid = { id: 'drop', label: 'x', prompt: '' } as unknown as QuickActionConfig;
+      saveQuickActionConfigs([validAction({ id: 'keep' }), invalid]);
       const loaded = loadQuickActionConfigs();
       expect(loaded.map((a) => a.id)).toEqual(['keep']);
+      expect(loaded[0]).not.toHaveProperty('icon');
+
+      const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS.quickActions) ?? 'null');
+      expect(raw[0]).not.toHaveProperty('icon');
     });
   });
 });

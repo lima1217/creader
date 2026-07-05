@@ -96,7 +96,6 @@ export function createCustomQuickAction(now: number = Date.now()): QuickActionCo
     id: `custom-${now}`,
     label: '新提示词',
     prompt: '请根据当前上下文回答：',
-    icon: 'explain',
   };
 }
 

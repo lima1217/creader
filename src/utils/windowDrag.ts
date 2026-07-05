@@ -19,6 +19,7 @@ const INTERACTIVE_SELECTOR = [
     'foliate-view',
     '.reader-search',
     '.reader-toc',
+    '.reader-loading',
 ].join(', ');
 
 export function handleWindowDragMouseDown(event: ReactMouseEvent<HTMLElement>) {
