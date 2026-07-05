@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Book, BookFolder } from '../types';
 import {
-  buildVisibleGroups,
-  matchesBookSearch,
+  groupBooksByFolder,
   orderBooks,
   resolveInitialExpandedFolderIds,
 } from './libraryOrganizer';
@@ -34,30 +33,18 @@ describe('libraryOrganizer', () => {
     expect(orderBooks(books, current, {}).map(book => book.id)).toEqual(['b1', 'b2']);
   });
 
-  it('matches title and author search queries', () => {
-    const book = makeBook({ title: 'Deep Work', author: 'Cal Newport' });
-    expect(matchesBookSearch(book, 'deep')).toBe(true);
-    expect(matchesBookSearch(book, 'newport')).toBe(true);
-    expect(matchesBookSearch(book, 'missing')).toBe(false);
-  });
-
-  it('builds search-scoped visible groups without empty folders', () => {
+  it('groups ordered books by unfiled and flat folder membership', () => {
     const folderA = makeFolder({ id: 'folder-a', name: 'Theory' });
     const folderB = makeFolder({ id: 'folder-b', name: 'Practice' });
-    const groups = buildVisibleGroups({
-      folders: [folderA, folderB],
-      groupedBooks: {
-        unfiled: [],
-        'folder-a': [makeBook({ id: 'b1', title: 'Deep Work' })],
-        'folder-b': [makeBook({ id: 'b2', title: 'Ship It' })],
-      },
-      selectedView: 'all',
-      bookSearchQuery: 'deep',
-    });
+    const groups = groupBooksByFolder([
+      makeBook({ id: 'b1', title: 'Deep Work', folderId: 'folder-a' }),
+      makeBook({ id: 'b2', title: 'Loose' }),
+      makeBook({ id: 'b3', title: 'Ship It', folderId: 'folder-b' }),
+    ], [folderA, folderB]);
 
-    expect(groups).toHaveLength(1);
-    expect(groups[0].label).toBe('Theory');
-    expect(groups[0].books).toHaveLength(1);
+    expect(groups.unfiled.map(book => book.id)).toEqual(['b2']);
+    expect(groups['folder-a'].map(book => book.id)).toEqual(['b1']);
+    expect(groups['folder-b'].map(book => book.id)).toEqual(['b3']);
   });
 
   it('expands the current book folder on first load when no persisted state exists', () => {

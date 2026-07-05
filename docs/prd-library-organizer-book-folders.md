@@ -25,10 +25,9 @@ Book Folders are flat, single-owner library groupings. A book can belong to at m
 - Do not support nested folders in the first version.
 - Do not support multi-folder books or tags.
 - Do not support manual book ordering.
-- Do not make `All Books` a drop target.
+- Do not show `All Books` as a sidebar entry or drop target.
 - Do not add a DnD dependency for the first version.
 - Do not move EPUB files on disk when moving books between folders.
-- Do not implement EPUB full-text search inside the Library Organizer search.
 - Do not keep color as part of the folder model.
 
 ## Domain Decisions
@@ -45,18 +44,15 @@ Book Folders are flat, single-owner library groupings. A book can belong to at m
 
 ## Product Shape
 
-The Library Organizer has three conceptual areas:
+The Library Organizer has two conceptual areas:
 
-1. **Continue Reading**  
-   A fixed, minimal entry for the current book or most recently read book. It is an access shortcut, not a folder membership substitute.
+1. **Library Actions**
+   Fixed actions for importing a book and creating a new folder.
 
-2. **Library Search**  
-   A local organizer search over book title and author. It shows matching books inside their folder context, does not search book content, and does not use the Search Index.
+2. **Expandable Folder Tree**
+   A flat list of `未归档` plus Book Folders. Each node expands in place to show its books. Books remain ordered by current/recent reading activity.
 
-3. **Expandable Folder Bookshelf**  
-   A flat list of folders plus `未归档`. Folders can expand to show their books. Books remain ordered by current/recent reading activity.
-
-`全部书籍` remains a view/search entry. It is not a folder and not a drop target.
+`全部书籍` is not shown in the sidebar. Readers see `未归档` and Book Folders as peer expandable nodes, with books revealed directly below the node they belong to.
 
 ## Interaction Rules
 
@@ -72,22 +68,17 @@ The Library Organizer has three conceptual areas:
 - Expanded folders are remembered across app restarts as UI state, not Library domain data.
 - If the current book's folder is not expanded on startup, the Library Organizer still expands it.
 - Deleted folder ids are removed from remembered expansion state.
-- Search does not permanently change remembered expansion state.
-- During search, show only folders that contain matching books.
-- During search, matching folders are expanded and show only matching books.
-- `未归档` appears during search only when it contains matching books.
-- Clearing search restores the previous expansion state.
 - While dragging a book, hovering over a collapsed folder should auto-expand it after a short delay.
 - Dragging a book to a real folder sets that book's `folderId`.
 - Dragging a book to `未归档` clears that book's `folderId`.
 - Dragging a book to its current folder is a no-op.
-- Dragging a book to `全部书籍` is not allowed.
+- There is no `全部书籍` drop target.
 - Dragging a folder changes folder order only.
 - Dragging a book changes folder membership only.
 
 ## Astryx UI Direction
 
-Use Astryx for foundational UI: `Layout`, `SideNav`, `List`, `ListItem`, `Button`, `IconButton`, `MoreMenu`, `Dialog`, and `TextInput` where they fit.
+Use Astryx for foundational UI: `Layout`, `List`, `ListItem`, `Button`, `IconButton`, `MoreMenu`, `Dialog`, and `TextInput` where they fit.
 
 Small custom structures are allowed for:
 
@@ -114,14 +105,10 @@ Acceptance criteria:
 
 ### 2. Library Organizer Base Layout
 
-Replace the old filter-sidebar structure with the Library Organizer shape: continue reading, organizer search, `全部书籍`, `未归档`, and expandable Book Folders.
+Replace the old filter-sidebar structure with the Library Organizer shape: library actions, `未归档`, and expandable Book Folders.
 
 Acceptance criteria:
 
-- The top area shows the current or most recently read book.
-- Search filters by book title and author only.
-- Search results stay grouped by folder context.
-- Clearing search restores the previous expansion state.
 - Folder expansion supports multiple open folders.
 - Current book's folder is expanded on first entry when possible.
 - Existing book open, edit, remove, and settings actions still work.
@@ -135,7 +122,7 @@ Acceptance criteria:
 
 - Book rows are draggable with a `bookId` payload.
 - Real folders and `未归档` are drop targets.
-- `全部书籍` is not a drop target.
+- `全部书籍` is not rendered and has no drop target.
 - Dropping onto the current folder is a no-op.
 - Hovering over a collapsed folder during drag auto-expands it after a short delay.
 - The menu fallback can move a book to any folder or `未归档`.

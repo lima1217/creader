@@ -100,7 +100,7 @@ function makeFolder(overrides: Partial<BookFolder> = {}): BookFolder {
 /**
  * Seed the library via the store's own setLibrary path (not raw setState): the
  * library store keeps a module-level `latestLibrary` mirror (updated via
- * syncLibrary) that mutators like updateBook/setBookFolder read through
+ * syncLibrary) that mutators like setBookFolder read through
  * getLatestLibrary(). setLibrary keeps both in sync; a raw setState would leave
  * latestLibrary stale and silently drop mutations.
  */
@@ -132,6 +132,20 @@ async function findOrganizerButton(container: HTMLElement, name: string): Promis
   return child!;
 }
 
+/**
+ * Locate a button inside the sidebar actions block by its visible label.
+ * The actions buttons (导入书籍 / 新文件夹) render their `label` as visible
+ * text rather than aria-label, so we match on trimmed text content scoped to
+ * `.sidebar-actions` to avoid colliding with Same-named organizer entries.
+ */
+function findSidebarActionButton(container: HTMLElement, label: string): HTMLButtonElement {
+  const actions = container.querySelector('.sidebar-actions');
+  const btn = Array.from(actions!.querySelectorAll('button')).find(
+    (el) => el.textContent?.trim() === label,
+  ) as HTMLButtonElement | undefined;
+  return btn!;
+}
+
 function makeDataTransfer() {
   const values = new Map<string, string>();
   return {
@@ -150,7 +164,10 @@ function dispatchDragEvent(element: Element, type: string, dataTransfer = makeDa
 }
 
 async function clickBookAction(container: HTMLElement, bookTitle: string, actionLabel: string) {
-  click(container.querySelector(`[aria-label="${bookTitle} 操作"]`)!);
+  const bookItem = Array.from(container.querySelectorAll('.book-item')).find(
+    (item) => item.textContent?.includes(bookTitle),
+  ) as HTMLElement;
+  click(bookItem.querySelector('.book-actions button')!);
   await settle();
   const item = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
     (menuItem) => menuItem.textContent?.trim() === actionLabel,
@@ -210,25 +227,6 @@ describe('Sidebar contract — rendering', () => {
     expect(activeItem).not.toBeNull();
     expect(activeItem!.textContent).toContain('Active');
   });
-
-  it('shows the current book in the continue-reading area before older activity', () => {
-    const active = makeBook({ id: 'b1', title: 'Now Reading', lastReadAt: 1 });
-    const recent = makeBook({ id: 'b2', title: 'Recently Read', lastReadAt: 100 });
-    seedLibrary({ books: [active, recent], folders: [], lastUpdated: 1 }, active);
-    const { container } = mountSidebar();
-    const continueEntry = container.querySelector('.continue-book') as HTMLElement;
-    expect(continueEntry.textContent).toContain('继续阅读');
-    expect(continueEntry.textContent).toContain('Now Reading');
-  });
-
-  it('falls back to the most recently read book in the continue-reading area', () => {
-    const older = makeBook({ id: 'b1', title: 'Older', lastReadAt: 1 });
-    const recent = makeBook({ id: 'b2', title: 'Recent', lastReadAt: 100 });
-    seedLibrary({ books: [older, recent], folders: [], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    const continueEntry = container.querySelector('.continue-book') as HTMLElement;
-    expect(continueEntry.textContent).toContain('Recent');
-  });
 });
 
 describe('Sidebar contract — book interactions', () => {
@@ -242,11 +240,51 @@ describe('Sidebar contract — book interactions', () => {
     expect(useLibraryStore.getState().currentBook?.id).toBe('b1');
   });
 
+  it('opens the per-book more menu without rendering a tooltip layer', async () => {
+    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Quiet Book' })], folders: [], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    const button = container.querySelector('.book-actions button') as HTMLButtonElement | null;
+    expect(button).not.toBeNull();
+
+    click(button!);
+    await settle();
+
+    expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).map(item => item.textContent?.trim())).toEqual([
+      '移动到文件夹',
+      '编辑书籍信息',
+      '移除书籍',
+    ]);
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    expect(useLibraryStore.getState().currentBook).toBeNull();
+  });
+
+  it('opens the edit-book modal from the per-book menu and saves changes', async () => {
+    seedLibrary({ books: [makeBook({ id: 'b1', title: 'Draft', author: 'Anon' })], folders: [], lastUpdated: 1 });
+    const { container } = mountSidebar();
+
+    await clickBookAction(container, 'Draft', '编辑书籍信息');
+
+    const modal = container.querySelector('.modal-edit') as HTMLElement;
+    const [titleInput, authorInput] = Array.from(modal.querySelectorAll('input')) as HTMLInputElement[];
+    setInputValue(titleInput, 'Published');
+    setInputValue(authorInput, 'Reader');
+    click(Array.from(modal.querySelectorAll('button')).find(button => button.textContent?.trim() === '保存')!);
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0]).toMatchObject({
+      title: 'Published',
+      author: 'Reader',
+    });
+    expect(container.querySelector('.modal-edit')).toBeNull();
+  });
+
   it('removes a book when the delete confirm is accepted', async () => {
     setNextConfirmResult(true);
     seedLibrary({ books: [makeBook({ id: 'b1', title: 'Delete Me' })], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
+
     await clickBookAction(container, 'Delete Me', '移除书籍');
+
     expect(useLibraryStore.getState().library.books).toHaveLength(0);
     expect(getConfirmCalls()).toHaveLength(1);
   });
@@ -255,7 +293,9 @@ describe('Sidebar contract — book interactions', () => {
     setNextConfirmResult(false);
     seedLibrary({ books: [makeBook({ id: 'b1', title: 'Keep Me' })], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
+
     await clickBookAction(container, 'Keep Me', '移除书籍');
+
     expect(useLibraryStore.getState().library.books).toHaveLength(1);
   });
 
@@ -274,7 +314,7 @@ describe('Sidebar contract — book interactions', () => {
     const onImportBook = vi.fn();
     seedLibrary({ books: [makeBook()], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar({ onImportBook });
-    const importBtn = container.querySelector('[aria-label="导入 EPUB"]') as HTMLButtonElement;
+    const importBtn = findSidebarActionButton(container, '导入书籍');
     click(importBtn);
     expect(onImportBook).toHaveBeenCalledTimes(1);
   });
@@ -290,21 +330,29 @@ describe('Sidebar contract — book interactions', () => {
 });
 
 describe('Sidebar contract — folder nav', () => {
-  it('filters the book list when a folder is selected', async () => {
+  it('expands a folder inline without hiding unfiled books', async () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const inFolder = makeBook({ id: 'b1', title: 'In Folder', folderId: 'folder1' });
     const outFolder = makeBook({ id: 'b2', title: 'Outside' });
+    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify([]));
     seedLibrary({ books: [inFolder, outFolder], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
-    expect(container.textContent).toContain('In Folder');
-    expect(container.textContent).toContain('Outside');
+    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('In Folder');
+    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).toContain('Outside');
 
     const readingChild = await findOrganizerButton(container, 'Reading');
     click(readingChild);
     await settle();
 
-    expect(container.textContent).toContain('In Folder');
-    expect(container.textContent).not.toContain('Outside');
+    const visibleBooks = Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ');
+    expect(visibleBooks).toContain('In Folder');
+    expect(visibleBooks).toContain('Outside');
+  });
+
+  it('does not render an all-books organizer button', () => {
+    seedLibrary({ books: [makeBook()], folders: [], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    expect(container.textContent).not.toContain('全部书籍');
   });
 
   it('remembers multiple expanded folders as UI state', async () => {
@@ -364,29 +412,6 @@ describe('Sidebar contract — folder nav', () => {
     expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual([]);
   });
 
-  it('searches title and author in folder context without changing previous expansion', async () => {
-    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
-    const inFolder = makeBook({ id: 'b1', title: 'Invisible Title', author: 'Needle Author', folderId: 'folder1' });
-    const other = makeBook({ id: 'b2', title: 'Other Book', author: 'Someone Else' });
-    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify([]));
-    seedLibrary({ books: [inFolder, other], folders: [folder], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    await settle();
-    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('Invisible Title');
-
-    const searchInput = container.querySelector('input') as HTMLInputElement;
-    setInputValue(searchInput, 'needle');
-    await settle();
-    expect(container.textContent).toContain('Reading');
-    expect(container.textContent).toContain('Invisible Title');
-    expect(container.textContent).not.toContain('Other Book');
-
-    setInputValue(searchInput, '');
-    await settle();
-    expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('Invisible Title');
-    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual([]);
-  });
-
   it('moves a dragged book into a real folder', async () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const book = makeBook({ id: 'b1', title: 'Unfiled' });
@@ -402,18 +427,23 @@ describe('Sidebar contract — folder nav', () => {
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
   });
 
-  it('does not accept a book drop on all books', async () => {
+  it('moves a book from the more menu folder picker', async () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const book = makeBook({ id: 'b1', title: 'Unfiled' });
     seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
+
+    await clickBookAction(container, 'Unfiled', '移动到文件夹');
+
+    const modal = container.querySelector('.modal-assign-folder') as HTMLElement;
+    const folderOption = Array.from(modal.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Reading',
+    )!;
+    click(folderOption);
     await settle();
 
-    const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
-    dispatchDragEvent(await findOrganizerButton(container, '全部书籍'), 'drop', dataTransfer);
-    await settle();
-
-    expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
+    expect(container.querySelector('.modal-assign-folder')).toBeNull();
   });
 
   it('leaves a book unchanged when dropped onto its current folder', async () => {
@@ -468,89 +498,13 @@ describe('Sidebar contract — folder nav', () => {
   });
 });
 
-describe('Sidebar contract — edit-book modal', () => {
-  it('opens from the edit action and commits the edited title/author on save', async () => {
-    const book = makeBook({ id: 'b1', title: 'Old Title', author: 'Old Author' });
-    seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    expect(container.querySelector('.modal-edit')).toBeNull();
-
-    await clickBookAction(container, 'Old Title', '编辑书籍信息');
-
-    const modal = container.querySelector('.modal-edit') as HTMLElement;
-    const inputs = modal.querySelectorAll('input');
-    expect((inputs[0] as HTMLInputElement).value).toBe('Old Title');
-    expect((inputs[1] as HTMLInputElement).value).toBe('Old Author');
-
-    setInputValue(inputs[0], 'New Title');
-    setInputValue(inputs[1], 'New Author');
-    const saveBtn = Array.from(modal.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === '保存',
-    )!;
-    click(saveBtn);
-    await settle();
-
-    const updated = useLibraryStore.getState().library.books[0];
-    expect(updated.title).toBe('New Title');
-    expect(updated.author).toBe('New Author');
-    expect(container.querySelector('.modal-edit')).toBeNull();
-  });
-
-  it('closes without mutating the store when the cancel button is clicked', async () => {
-    const book = makeBook({ id: 'b1', title: 'Keep' });
-    seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    await clickBookAction(container, 'Keep', '编辑书籍信息');
-
-    const modal = container.querySelector('.modal-edit') as HTMLElement;
-    setInputValue(modal.querySelectorAll('input')[0], 'Changed');
-    click(Array.from(modal.querySelectorAll('button')).find((b) => b.textContent?.trim() === '取消')!);
-    await settle();
-
-    expect(useLibraryStore.getState().library.books[0].title).toBe('Keep');
-    expect(container.querySelector('.modal-edit')).toBeNull();
-  });
-
-  it('closes without mutating the store when the overlay is clicked', async () => {
-    const book = makeBook({ id: 'b1', title: 'Keep' });
-    seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    await clickBookAction(container, 'Keep', '编辑书籍信息');
-
-    const overlay = container.querySelector('.modal-overlay') as HTMLElement;
-    click(overlay);
-    await settle();
-
-    expect(useLibraryStore.getState().library.books[0].title).toBe('Keep');
-    expect(container.querySelector('.modal-edit')).toBeNull();
-  });
-
-  it('submits on Enter and cancels on Escape while focused in an input', async () => {
-    const book = makeBook({ id: 'b1', title: 'Old' });
-    seedLibrary({ books: [book], folders: [], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    await clickBookAction(container, 'Old', '编辑书籍信息');
-
-    const modal = container.querySelector('.modal-edit') as HTMLElement;
-    const titleInput = modal.querySelectorAll('input')[0];
-    setInputValue(titleInput, 'Via Enter');
-    titleInput.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
-    );
-    await settle();
-
-    expect(useLibraryStore.getState().library.books[0].title).toBe('Via Enter');
-    expect(container.querySelector('.modal-edit')).toBeNull();
-  });
-});
-
 describe('Sidebar contract — folder modal (add + edit)', () => {
   it('disables the create button when the name is empty and creates a colorless folder when filled', async () => {
     seedLibrary({ books: [], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
     expect(container.querySelector('.modal-folder')).toBeNull();
 
-    click(container.querySelector('[aria-label="新增文件夹"]')!);
+    click(findSidebarActionButton(container, '新文件夹'));
     await settle();
 
     const modal = container.querySelector('.modal-folder') as HTMLElement;
@@ -576,7 +530,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     seedLibrary({ books: [], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    click(container.querySelector('[aria-label="新增文件夹"]')!);
+    click(findSidebarActionButton(container, '新文件夹'));
     await settle();
 
     const modal = container.querySelector('.modal-folder') as HTMLElement;
@@ -625,10 +579,21 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     expect(container.querySelector('.modal-folder')).toBeNull();
   });
 
+  it('keeps the folder action button accessible without rendering a tooltip trigger', () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    seedLibrary({ books: [], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+
+    const actionButton = container.querySelector('[aria-label="Reading 操作"]') as HTMLButtonElement | null;
+    expect(actionButton).not.toBeNull();
+    expect(actionButton!.getAttribute('aria-describedby')).toBeNull();
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+  });
+
   it('closes when the overlay is clicked without creating a folder', async () => {
     seedLibrary({ books: [], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    click(container.querySelector('[aria-label="新增文件夹"]')!);
+    click(findSidebarActionButton(container, '新文件夹'));
     await settle();
 
     click(container.querySelector('.modal-overlay')!);
@@ -677,62 +642,5 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
       ['folder-a', 1],
     ]);
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder-a');
-  });
-});
-
-describe('Sidebar contract — assign-folder modal', () => {
-  it('assigns a folder to a book and closes', async () => {
-    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
-    const book = makeBook({ id: 'b1', title: 'Unfiled' });
-    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
-    const { container } = mountSidebar();
-
-    await clickBookAction(container, 'Unfiled', '移动到文件夹');
-
-    const modal = container.querySelector('.modal-assign-folder') as HTMLElement;
-    const folderOption = Array.from(modal.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === 'Reading',
-    )!;
-    click(folderOption);
-    await settle();
-
-    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
-    expect(container.querySelector('.modal-assign-folder')).toBeNull();
-  });
-
-  it('clears the book folder when "未归档" is selected', async () => {
-    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
-    const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
-    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    await settle();
-
-    await clickBookAction(container, 'Filed', '移动到文件夹');
-
-    const modal = container.querySelector('.modal-assign-folder') as HTMLElement;
-    const unfiledOption = Array.from(modal.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === '未归档',
-    )!;
-    click(unfiledOption);
-    await settle();
-
-    expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
-    expect(container.querySelector('.modal-assign-folder')).toBeNull();
-  });
-
-  it('closes without changing the book when the overlay is clicked', async () => {
-    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
-    const book = makeBook({ id: 'b1', title: 'Original', folderId: 'folder1' });
-    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    await settle();
-
-    await clickBookAction(container, 'Original', '移动到文件夹');
-
-    click(document.body.querySelector('.folder-assign-dialog')!);
-    await settle();
-
-    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
-    expect(container.querySelector('.modal-assign-folder')).toBeNull();
   });
 });

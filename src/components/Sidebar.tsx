@@ -9,10 +9,8 @@ import { useAppDialog } from './AppDialog';
 import { openBookThroughLifecycle, removeBookThroughLifecycle } from '../appLifecycle';
 import { isDuplicateFolderName, normalizeFolderName } from '../domain/libraryFolders';
 import {
-    buildVisibleGroups,
     groupBooksByFolder,
     orderBooks,
-    type OrganizerView,
 } from '../domain/libraryOrganizer';
 import { useLibraryOrganizerExpandedFolders } from '../hooks/useLibraryOrganizerExpandedFolders';
 import { Button } from '@astryxdesign/core/Button';
@@ -22,8 +20,9 @@ import { IconButton } from '@astryxdesign/core/IconButton';
 import { Icon } from '@astryxdesign/core/Icon';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { List, ListItem } from '@astryxdesign/core/List';
+import { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
+import type { DropdownMenuOption } from '@astryxdesign/core/DropdownMenu';
 import { MoreMenu } from '@astryxdesign/core/MoreMenu';
-import { SideNav, SideNavItem, SideNavSection } from '@astryxdesign/core/SideNav';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import {
     CloseIcon,
@@ -96,19 +95,20 @@ function AstryxMutedDotIcon(props: SVGProps<SVGSVGElement>) {
     );
 }
 
-function AstryxSearchIcon(props: SVGProps<SVGSVGElement>) {
-    return (
-        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-        </svg>
-    );
-}
-
 function AstryxChevronIcon(props: SVGProps<SVGSVGElement>) {
     return (
         <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path d="m9 18 6-6-6-6" />
+        </svg>
+    );
+}
+
+function AstryxMoreHorizontalIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="5" cy="12" r="1.7" />
+            <circle cx="12" cy="12" r="1.7" />
+            <circle cx="19" cy="12" r="1.7" />
         </svg>
     );
 }
@@ -128,6 +128,28 @@ type EditBookState = {
 const BOOK_DRAG_TYPE = 'application/x-creader-book-id';
 const FOLDER_DRAG_TYPE = 'application/x-creader-folder-id';
 const FOLDER_AUTO_EXPAND_MS = 500;
+
+function FolderMoreMenu({
+    label,
+    items,
+}: {
+    label: string;
+    items: DropdownMenuOption[];
+}) {
+    return (
+        <DropdownMenu
+            button={{
+                label,
+                icon: <Icon icon={AstryxMoreHorizontalIcon} size="sm" />,
+                variant: 'ghost',
+                size: 'sm',
+                isIconOnly: true,
+            }}
+            items={items}
+            hasChevron={false}
+        />
+    );
+}
 
 function getBookDragId(event: React.DragEvent): string {
     return event.dataTransfer.getData(BOOK_DRAG_TYPE);
@@ -209,13 +231,12 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
     const [bookToEdit, setBookToEdit] = useState<EditBookState | null>(null);
-    const [selectedView, setSelectedView] = useState<OrganizerView>('all');
+    const [isUnfiledExpanded, setIsUnfiledExpanded] = useState(true);
     const [showFolderModal, setShowFolderModal] = useState(false);
     const [editingFolder, setEditingFolder] = useState<BookFolder | null>(null);
     const [newFolderName, setNewFolderName] = useState('');
     const [folderNameError, setFolderNameError] = useState('');
     const [bookForFolder, setBookForFolder] = useState<string | null>(null);
-    const [bookSearchQuery, setBookSearchQuery] = useState('');
     const autoExpandTimerRef = useRef<number | null>(null);
 
     const folders = useMemo(
@@ -228,7 +249,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         currentBook,
         bookProgressById,
     });
-    const hasSearch = bookSearchQuery.trim().length > 0;
     const trimmedFolderName = normalizeFolderName(newFolderName);
     const hasDuplicateFolderName = isDuplicateFolderName(trimmedFolderName, folders, editingFolder?.id);
     const canSubmitFolder = trimmedFolderName.length > 0 && !hasDuplicateFolderName;
@@ -238,24 +258,12 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         [currentBook, library.books, bookProgressById],
     );
 
-    const continueBook = currentBook ?? orderedBooks[0] ?? null;
-
     const groupedBooks = useMemo(
         () => groupBooksByFolder(orderedBooks, folders),
         [orderedBooks, folders],
     );
 
-    const visibleGroups = useMemo(
-        () => buildVisibleGroups({
-            folders,
-            groupedBooks,
-            selectedView,
-            bookSearchQuery,
-        }),
-        [bookSearchQuery, folders, groupedBooks, selectedView],
-    );
-
-    const visibleBookCount = visibleGroups.reduce((count, group) => count + group.books.length, 0);
+    const visibleBookCount = library.books.length;
 
     useEffect(() => () => {
         if (autoExpandTimerRef.current !== null) {
@@ -335,9 +343,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
 
         if (shouldDelete) {
             removeFolder(folderId);
-            if (selectedView === folderId) {
-                setSelectedView('all');
-            }
         }
     };
 
@@ -458,11 +463,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 description={
                     <span className="book-info">
                         <span className="book-author">{book.author || 'Unknown'}</span>
-                        {book.folderId && (
-                            <span className="book-folder-badge">
-                                {folders.find(folder => folder.id === book.folderId)?.name || ''}
-                            </span>
-                        )}
                         {percentage > 0 && (
                             <div className="book-progress">
                                 <div
@@ -474,7 +474,11 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     </span>
                 }
                 endContent={
-                    <span className="book-actions">
+                    <span
+                        className="book-actions"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                    >
                         <MoreMenu
                             label={`${book.title} 操作`}
                             size="sm"
@@ -666,124 +670,25 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     icon={<Icon icon={AstryxSidebarPanelIcon} size="md" />}
                     onClick={() => setSidebarOpen(false)}
                 />
-                <div className="sidebar-header-actions">
-                    <IconButton
-                        variant="ghost"
-                        size="sm"
-                        label="新增文件夹"
-                        icon={<Icon icon={AstryxFolderIcon} size="sm" />}
-                        onClick={handleAddFolder}
-                    />
-                    <IconButton
-                        variant="ghost"
-                        size="sm"
-                        label="导入 EPUB"
-                        icon={<Icon icon={AstryxPlusIcon} size="sm" />}
-                        onClick={onImportBook}
-                    />
-                </div>
             </div>
 
-            <div className="sidebar-continue">
-                {continueBook ? (
-                    <button
-                        className="continue-book"
-                        onMouseEnter={() => void onPreloadReader()}
-                        onClick={() => handleBookClick(continueBook)}
-                    >
-                        <span className="continue-book-label">继续阅读</span>
-                        <span className="continue-book-title">{continueBook.title}</span>
-                        <span className="continue-book-author">{continueBook.author || 'Unknown'}</span>
-                    </button>
-                ) : (
-                    <div className="continue-book empty">
-                        <span className="continue-book-label">继续阅读</span>
-                        <span className="continue-book-title">暂无书籍</span>
-                    </div>
-                )}
-            </div>
-
-            <div className="sidebar-search">
-                <TextInput
-                    label="搜索书库"
-                    isLabelHidden
-                    value={bookSearchQuery}
-                    onChange={setBookSearchQuery}
-                    placeholder="搜索书名或作者"
-                    startIcon={AstryxSearchIcon}
-                    hasClear
-                    size="sm"
+            <div className="sidebar-actions">
+                <Button
+                    variant="ghost"
+                    label="导入书籍"
+                    icon={<Icon icon={AstryxPlusIcon} size="sm" />}
+                    onClick={onImportBook}
+                />
+                <Button
+                    variant="ghost"
+                    label="新文件夹"
+                    icon={<Icon icon={AstryxFolderIcon} size="sm" />}
+                    onClick={handleAddFolder}
                 />
             </div>
 
-            <div className="sidebar-organizer-nav">
-                <SideNav>
-                    <SideNavSection title="书库整理" isHeaderHidden>
-                        <SideNavItem
-                            label="全部书籍"
-                            icon={AstryxBookIcon}
-                            isSelected={selectedView === 'all'}
-                            onClick={() => setSelectedView('all')}
-                            endContent={<span className="organizer-count">{library.books.length}</span>}
-                        />
-                        <div
-                            className="folder-drop-target"
-                            onDragOver={(event) => handleFolderDropTargetDragOver(event, undefined)}
-                            onDragLeave={handleFolderDropTargetDragLeave}
-                            onDrop={(event) => handleFolderDropTargetDrop(event, undefined)}
-                        >
-                            <SideNavItem
-                                label="未归档"
-                                icon={AstryxMutedDotIcon}
-                                isSelected={selectedView === 'unfiled'}
-                                onClick={() => setSelectedView('unfiled')}
-                                endContent={<span className="organizer-count">{groupedBooks.unfiled.length}</span>}
-                            />
-                        </div>
-                        {folders.map(folder => (
-                            <div
-                                key={folder.id}
-                                className="folder-nav-group"
-                                draggable
-                                onDragStart={(event) => handleFolderDragStart(event, folder)}
-                                onDragOver={(event) => {
-                                    handleFolderDropTargetDragOver(event, folder.id);
-                                    handleFolderReorderDragOver(event);
-                                }}
-                                onDragLeave={handleFolderDropTargetDragLeave}
-                                onDrop={(event) => {
-                                    handleFolderDropTargetDrop(event, folder.id);
-                                    handleFolderReorderDrop(event, folder.id);
-                                }}
-                            >
-                                <SideNavItem
-                                    label={folder.name}
-                                    icon={AstryxFolderIcon}
-                                    isSelected={selectedView === folder.id}
-                                    onClick={() => {
-                                        setSelectedView(folder.id);
-                                        if (!expandedFolderIds.has(folder.id)) toggleFolder(folder.id);
-                                    }}
-                                    endContent={<span className="organizer-count">{groupedBooks[folder.id]?.length || 0}</span>}
-                                />
-                                <div className="folder-actions">
-                                    <MoreMenu
-                                        label={`${folder.name} 操作`}
-                                        size="sm"
-                                        items={[
-                                            { label: '编辑文件夹', icon: AstryxEditIcon, onClick: () => openEditFolder(folder) },
-                                            { label: '删除文件夹', icon: AstryxTrashIcon, onClick: () => void handleDeleteFolderAction(folder.id) },
-                                        ]}
-                                    />
-                                </div>
-                            </div>
-                        ))}
-                    </SideNavSection>
-                </SideNav>
-            </div>
-
             <div className="sidebar-content">
-                {library.books.length === 0 ? (
+                {library.books.length === 0 && folders.length === 0 ? (
                     <div className="sidebar-empty">
                         <EmptyState
                             isCompact
@@ -801,45 +706,73 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                             }
                         />
                     </div>
-                ) : visibleBookCount === 0 ? (
-                    <div className="sidebar-empty compact">
-                        <EmptyState
-                            isCompact
-                            headingLevel={4}
-                            title="没有匹配书籍"
-                            description="试试书名或作者里的其他字词"
-                            icon={<Icon icon={AstryxSearchIcon} />}
-                        />
-                    </div>
                 ) : (
                     <div className="organizer-bookshelf">
-                        {visibleGroups.map((group) => {
-                            const isExpanded = hasSearch || !group.isFolder || expandedFolderIds.has(group.id);
+                        <section className="organizer-group">
+                            <button
+                                className={`organizer-group-header ${isUnfiledExpanded ? 'expanded' : ''}`}
+                                onDragOver={(event) => handleFolderDropTargetDragOver(event, undefined)}
+                                onDragLeave={handleFolderDropTargetDragLeave}
+                                onDrop={(event) => handleFolderDropTargetDrop(event, undefined)}
+                                onClick={() => setIsUnfiledExpanded((expanded) => !expanded)}
+                            >
+                                <Icon icon={AstryxMutedDotIcon} size="sm" />
+                                <span className="organizer-group-title">未归档</span>
+                                <span className="organizer-count">{groupedBooks.unfiled.length}</span>
+                                <Icon icon={AstryxChevronIcon} size="sm" />
+                            </button>
+                            {isUnfiledExpanded && groupedBooks.unfiled.length > 0 && (
+                                <List density="compact" className="book-list">
+                                    {groupedBooks.unfiled.map(renderBookItem)}
+                                </List>
+                            )}
+                        </section>
+
+                        {folders.map((folder) => {
+                            const isExpanded = expandedFolderIds.has(folder.id);
+                            const books = groupedBooks[folder.id] || [];
                             return (
-                                <section key={group.id} className="organizer-group">
-                                    <button
-                                        className={`organizer-group-header ${isExpanded ? 'expanded' : ''}`}
-                                        onDragOver={(event) => handleFolderDropTargetDragOver(event, group.isFolder ? group.id : undefined)}
-                                        onDragLeave={handleFolderDropTargetDragLeave}
-                                        onDrop={(event) => handleFolderDropTargetDrop(event, group.isFolder ? group.id : undefined)}
-                                        onClick={() => {
-                                            if (group.isFolder && !hasSearch) {
-                                                toggleFolder(group.id);
-                                            } else {
-                                                setSelectedView(group.id);
-                                            }
-                                        }}
-                                    >
-                                        <Icon icon={group.isFolder ? AstryxFolderIcon : AstryxMutedDotIcon} size="sm" />
-                                        <span className="organizer-group-title">{group.label}</span>
-                                        <span className="organizer-count">{group.books.length}</span>
-                                        {group.isFolder && (
+                                <section
+                                    key={folder.id}
+                                    className="organizer-group folder-nav-group"
+                                    draggable
+                                    onDragStart={(event) => {
+                                        if ((event.target as HTMLElement).closest('.book-item')) return;
+                                        handleFolderDragStart(event, folder);
+                                    }}
+                                    onDragOver={(event) => {
+                                        handleFolderDropTargetDragOver(event, folder.id);
+                                        handleFolderReorderDragOver(event);
+                                    }}
+                                    onDragLeave={handleFolderDropTargetDragLeave}
+                                    onDrop={(event) => {
+                                        handleFolderDropTargetDrop(event, folder.id);
+                                        handleFolderReorderDrop(event, folder.id);
+                                    }}
+                                >
+                                    <div className="organizer-group-header-row">
+                                        <button
+                                            className={`organizer-group-header ${isExpanded ? 'expanded' : ''}`}
+                                            onClick={() => toggleFolder(folder.id)}
+                                        >
+                                            <Icon icon={AstryxFolderIcon} size="sm" />
+                                            <span className="organizer-group-title">{folder.name}</span>
+                                            <span className="organizer-count">{books.length}</span>
                                             <Icon icon={AstryxChevronIcon} size="sm" />
-                                        )}
-                                    </button>
-                                    {isExpanded && (
+                                        </button>
+                                        <div className="folder-actions">
+                                            <FolderMoreMenu
+                                                label={`${folder.name} 操作`}
+                                                items={[
+                                                    { label: '编辑文件夹', icon: AstryxEditIcon, onClick: () => openEditFolder(folder) },
+                                                    { label: '删除文件夹', icon: AstryxTrashIcon, onClick: () => void handleDeleteFolderAction(folder.id) },
+                                                ]}
+                                            />
+                                        </div>
+                                    </div>
+                                    {isExpanded && books.length > 0 && (
                                         <List density="compact" className="book-list">
-                                            {group.books.map(renderBookItem)}
+                                            {books.map(renderBookItem)}
                                         </List>
                                     )}
                                 </section>

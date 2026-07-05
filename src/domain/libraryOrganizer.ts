@@ -1,14 +1,5 @@
 import type { Book, BookFolder } from '../types';
 
-export type OrganizerView = 'all' | 'unfiled' | string;
-
-export interface BookGroup {
-  id: string;
-  label: string;
-  books: Book[];
-  isFolder: boolean;
-}
-
 export function getBookActivity(
   book: Book,
   bookProgressById: Record<string, { lastReadAt?: number }>,
@@ -32,13 +23,6 @@ export function orderBooks(
   return [activeBook, ...nextBooks];
 }
 
-export function matchesBookSearch(book: Book, query: string): boolean {
-  const normalized = query.trim().toLocaleLowerCase();
-  if (!normalized) return true;
-  return book.title.toLocaleLowerCase().includes(normalized)
-    || (book.author || '').toLocaleLowerCase().includes(normalized);
-}
-
 export function groupBooksByFolder(
   orderedBooks: Book[],
   folders: BookFolder[],
@@ -55,38 +39,6 @@ export function groupBooksByFolder(
     }
   });
   return groups;
-}
-
-export function buildVisibleGroups(options: {
-  folders: BookFolder[];
-  groupedBooks: Record<string, Book[]>;
-  selectedView: OrganizerView;
-  bookSearchQuery: string;
-}): BookGroup[] {
-  const { folders, groupedBooks, selectedView, bookSearchQuery } = options;
-  const hasSearch = bookSearchQuery.trim().length > 0;
-  const allGroups: BookGroup[] = [
-    { id: 'unfiled', label: '未归档', books: groupedBooks.unfiled || [], isFolder: false },
-    ...folders.map(folder => ({
-      id: folder.id,
-      label: folder.name,
-      books: groupedBooks[folder.id] || [],
-      isFolder: true,
-    })),
-  ];
-
-  const scopedGroups = selectedView === 'all'
-    ? allGroups
-    : allGroups.filter(group => group.id === selectedView);
-
-  if (!hasSearch) return scopedGroups;
-
-  return allGroups
-    .map(group => ({
-      ...group,
-      books: group.books.filter(book => matchesBookSearch(book, bookSearchQuery)),
-    }))
-    .filter(group => group.books.length > 0);
 }
 
 export function resolveMostRecentFolderId(

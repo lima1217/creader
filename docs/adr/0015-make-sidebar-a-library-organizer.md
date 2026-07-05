@@ -4,4 +4,4 @@ CReader's left sidebar will become a **Library Organizer**: a surface for contin
 
 Folders can be manually ordered and expanded, while books remain system-ordered by current/recent reading activity. Dragging a book changes folder membership only; dragging a folder changes folder order only.
 
-This replaces the earlier Sidebar-as-filter model because organizing books should make placement visible immediately after a move. `All Books` remains a view/search entry rather than a drop target or folder container.
+This replaces the earlier Sidebar-as-filter model because organizing books should make placement visible immediately after a move. The sidebar no longer exposes an `All Books` button; `未归档` and each Book Folder are peer nodes that expand in place to show their books.
