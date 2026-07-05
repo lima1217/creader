@@ -16,7 +16,7 @@ import { createLogger } from '../utils/logger';
 import type { AIProviderStatus } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
 import {
-    SendIcon, AILogoIcon, TrashIcon, BookIcon,
+    SendIcon, TrashIcon,
     QuoteIcon, CopyIcon, CheckIcon, StopIcon, CloseIcon,
 } from './ai/icons';
 import { FormatMessage } from './ai/MarkdownRenderer';
@@ -361,10 +361,9 @@ export function AIPanel() {
                 onMouseDown={handleResizeMouseDown}
             />
             <div className="ai-panel-header">
-                <div className="ai-panel-title">
-                    <AILogoIcon size={28} />
+                <div className="ai-panel-current-book">
+                    {currentBook ? currentBook.title : ''}
                 </div>
-                <div className="ai-panel-motto">原本山川&nbsp;&nbsp;极命草木</div>
                 <div className="ai-panel-actions">
                     <button
                         className="btn btn-ghost btn-icon"
@@ -378,14 +377,8 @@ export function AIPanel() {
             </div>
 
             {/* Source indicator */}
-            {(currentBook || selectedText || accumulatedTexts.length > 0) && (
+            {(selectedText || accumulatedTexts.length > 0) && (
                 <div className="ai-source-bar">
-                    {currentBook && (
-                        <div className="ai-source-item">
-                            <BookIcon />
-                            <span>{currentBook.title}</span>
-                        </div>
-                    )}
                     {selectedText && (
                         <div className="ai-source-item ai-source-quote">
                             <QuoteIcon />

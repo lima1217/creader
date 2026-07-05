@@ -13,6 +13,8 @@ type UIState = {
   setAIPanelOpen: (open: boolean) => void;
   isSearchOpen: boolean;
   setSearchOpen: (open: boolean) => void;
+  isTocOpen: boolean;
+  setTocOpen: (open: boolean) => void;
 };
 
 export const useUIStore = create<UIState>((set) => ({
@@ -22,4 +24,6 @@ export const useUIStore = create<UIState>((set) => ({
   setAIPanelOpen: (open) => set({ isAIPanelOpen: open }),
   isSearchOpen: false,
   setSearchOpen: (open) => set({ isSearchOpen: open }),
+  isTocOpen: false,
+  setTocOpen: (open) => set({ isTocOpen: open }),
 }));

@@ -128,12 +128,21 @@
 }
 
 .settings-tabs-row .astryx-tab {
+    height: var(--spacing-9) !important;
     justify-content: center;
-    min-height: var(--spacing-9);
     padding-inline: var(--spacing-4) !important;
     color: var(--text-secondary) !important;
     font-size: var(--font-size-base) !important;
     font-weight: 560 !important;
+    line-height: 1 !important;
+}
+
+.settings-tabs-row .astryx-tab > span[aria-hidden="true"]:first-child {
+    height: 100% !important;
+}
+
+.settings-tabs-row .astryx-tab > span:not([aria-hidden="true"]) {
+    align-items: center;
 }
 
 .settings-tabs-row .astryx-tab[data-selected] {

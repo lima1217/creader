@@ -41,6 +41,8 @@ export function useReadingChromeSession(params: {
   const updateBookProgress = useProgressStore((s) => s.updateBookProgress);
   const isSearchOpen = useUIStore((s) => s.isSearchOpen);
   const setSearchOpen = useUIStore((s) => s.setSearchOpen);
+  const showToc = useUIStore((s) => s.isTocOpen);
+  const setShowToc = useUIStore((s) => s.setTocOpen);
   const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
   const currentChapterContent = useAIStore((s) => s.currentChapterContent);
   const setCurrentChapterContent = useAIStore((s) => s.setCurrentChapterContent);
@@ -52,7 +54,6 @@ export function useReadingChromeSession(params: {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [toc, setToc] = useState<NavItem[]>([]);
-  const [showToc, setShowToc] = useState(false);
   const [currentTocHref, setCurrentTocHref] = useState('');
   const [selectionToolbarPos, setSelectionToolbarPos] = useState<{ x: number; y: number } | null>(null);
   const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
@@ -92,7 +93,7 @@ export function useReadingChromeSession(params: {
     void Promise.resolve(displayResult).catch((err: unknown) => logger.warn('TOC navigation failed:', err));
     setShowToc(false);
     closeSelectionToolbar();
-  }, [closeSelectionToolbar, renditionRef]);
+  }, [closeSelectionToolbar, renditionRef, setShowToc]);
 
   const closeSearch = useCallback(() => {
     cancelSearch();
@@ -232,7 +233,7 @@ export function useReadingChromeSession(params: {
     setToc,
     showToc,
     setShowToc,
-    toggleToc: () => setShowToc(open => !open),
+    toggleToc: () => setShowToc(!showToc),
     handleTocClick,
     isTocItemCurrent,
     handlePrev,

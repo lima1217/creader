@@ -11,6 +11,7 @@ import { isTauriRuntime } from './utils/tauri';
 import { createLogger } from './utils/logger';
 import { useUIStore } from './stores/uiStore';
 import { useAppLifecycleBootstrap, useAppLifecycleImport } from './appLifecycle';
+import { SidebarPanelIcon } from './components/icons/icons';
 import './index.css';
 import './App.css';
 import './components/ErrorBoundary.css';
@@ -27,6 +28,8 @@ function AppBootstrap() {
 
 function AppContent() {
   const isAIPanelOpen = useUIStore((s) => s.isAIPanelOpen);
+  const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const { notice } = useAppDialog();
   const { isImporting, importBook } = useAppLifecycleImport({ notice });
   const [isDragging, setIsDragging] = useState(false);
@@ -108,7 +111,7 @@ function AppContent() {
   }, [importBook]);
 
   return (
-    <div className={`app ${isDragging ? 'dragging' : ''} ${isImporting ? 'importing' : ''}`}>
+    <div className={`app ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isDragging ? 'dragging' : ''} ${isImporting ? 'importing' : ''}`}>
       {/* Import Loading Overlay */}
       {isImporting && (
         <div className="import-overlay">
@@ -132,6 +135,15 @@ function AppContent() {
           </div>
         </div>
       )}
+      <div className="window-sidebar-toggle-region" data-tauri-drag-region>
+        <button
+          className={`window-sidebar-toggle btn btn-ghost btn-icon ${isSidebarOpen ? 'active' : ''}`}
+          onClick={() => setSidebarOpen(!isSidebarOpen)}
+          aria-label={isSidebarOpen ? '隐藏侧栏' : '显示侧栏'}
+        >
+          <SidebarPanelIcon size={22} strokeWidth={1.75} />
+        </button>
+      </div>
       <div className="app-body">
         <ErrorBoundary>
           <Sidebar

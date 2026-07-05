@@ -14,7 +14,7 @@ import { useReadingChromeSession } from './reader/useReadingChromeSession';
 import './EPUBReader.css';
 import './SelectionToolbar.css';
 import { AILogoIcon, CheckIcon, CopyIcon, PlusIcon as SelectionPlusIcon } from './ai/icons';
-import { BookOpenIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, EpubTocIcon, FileIcon, LayersIcon, SearchIcon } from './icons/icons';
+import { BookOpenIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, FileIcon, LayersIcon, SearchIcon } from './icons/icons';
 
 const logger = createLogger('EPUBReader');
 
@@ -209,15 +209,6 @@ export function EPUBReader() {
                     </ul>
                 </div>
             )}
-
-            {/* TOC Toggle */}
-            <button
-                className="reader-chrome-control reader-toc-toggle btn btn-ghost btn-icon"
-                onClick={chrome.toggleToc}
-                aria-label="目录"
-            >
-                <EpubTocIcon size={18} />
-            </button>
 
             {/* Navigation */}
             <button className="reader-chrome-control reader-nav reader-nav-prev" onClick={chrome.handlePrev} aria-label="上一页">

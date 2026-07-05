@@ -9,12 +9,13 @@
     grid-template-columns: minmax(0, 1fr) max-content max-content;
     align-items: center;
     gap: 8px;
-    height: 52px;
+    height: var(--reading-toolbar-height);
     padding: 0 10px;
     overflow: visible;
     flex-shrink: 0;
-    background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-primary));
+    background: var(--bg-reader);
     border-bottom: 1px solid var(--border-secondary);
+    user-select: none;
 }
 
 .toolbar-left,
@@ -28,6 +29,7 @@
 .toolbar-left {
     justify-content: flex-start;
     overflow: hidden;
+    padding-left: 0;
 }
 
 .toolbar-center,
@@ -36,8 +38,11 @@
     overflow: visible;
 }
 
-.toolbar-sidebar-restore {
-    flex: 0 0 auto;
+.toolbar-book-cluster {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
 }
 
 .toolbar-book-info {
@@ -97,7 +102,13 @@
     gap: 5px;
     padding: 0;
     background: transparent;
-    border-color: transparent;
+    border: 0;
+}
+
+.toolbar-reading-group {
+    padding: 0;
+    background: transparent;
+    border: 0;
 }
 
 .toolbar .btn-icon,
@@ -111,17 +122,28 @@
     min-height: 34px;
     padding: 0;
     border-radius: 4px;
+    border-color: transparent;
     color: var(--text-secondary);
+    box-shadow: none;
     transform-origin: center;
     transition: background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
     will-change: scale, opacity;
 }
 
+.toolbar .toolbar-action.btn-secondary {
+    background: transparent;
+    border: 0 !important;
+    box-shadow: none;
+}
+
 .toolbar .btn-icon:hover,
 .toolbar-group .btn-icon:hover,
-.toolbar-action:hover {
+.toolbar-action:hover,
+.toolbar .toolbar-action.btn-secondary:hover {
     background: var(--bg-control-hover);
+    border-color: transparent;
     color: var(--text-primary);
+    box-shadow: none;
 }
 
 .toolbar .btn-icon:active {
@@ -129,33 +151,10 @@
     filter: none;
 }
 
-.toolbar .toolbar-sidebar-restore.btn-icon {
-    width: 30px;
-    min-width: 30px;
-    height: 30px;
-    min-height: 30px;
-    border-color: transparent;
-    border-radius: 6px;
-    background: transparent;
-    box-shadow: none;
-    color: var(--text-muted);
-    opacity: 0.9;
-}
-
-.toolbar .toolbar-sidebar-restore.btn-icon:hover {
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-    opacity: 1;
-}
-
-.toolbar .toolbar-sidebar-restore.btn-icon:active {
-    transform: none;
-}
-
 .toolbar .btn-icon.active,
 .toolbar-action.active.btn-secondary {
     background: var(--accent-soft);
-    border-color: var(--border-accent);
+    border: 0;
     color: var(--accent);
 }
 
@@ -194,13 +193,13 @@
 
 .toolbar .toolbar-theme-button.astryx-button {
     background: transparent;
-    border-color: var(--border-primary);
+    border-color: transparent;
     color: var(--text-secondary);
 }
 
 .toolbar .toolbar-theme-button.astryx-button:hover {
     background: var(--bg-control-hover);
-    border-color: var(--border-accent);
+    border-color: transparent;
     color: var(--text-primary);
 }
 
@@ -257,6 +256,10 @@
 
     .toolbar-book-info {
         display: none;
+    }
+
+    .toolbar-book-cluster {
+        gap: 6px;
     }
 
     .toolbar-center {

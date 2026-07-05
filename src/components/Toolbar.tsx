@@ -10,9 +10,9 @@ import {
     MoonIcon,
     PlusIcon,
     SearchIcon,
-    SidebarPanelIcon,
     SunIcon,
     ToolbarAIIcon,
+    EpubTocIcon,
 } from './icons/icons';
 import './Toolbar.css';
 
@@ -27,6 +27,8 @@ export function Toolbar() {
     const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
     const isSearchOpen = useUIStore((s) => s.isSearchOpen);
     const setSearchOpen = useUIStore((s) => s.setSearchOpen);
+    const isTocOpen = useUIStore((s) => s.isTocOpen);
+    const setTocOpen = useUIStore((s) => s.setTocOpen);
 
     const displayProgress = currentBook ? (bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage ?? 0) : 0;
 
@@ -65,23 +67,24 @@ export function Toolbar() {
     });
 
     return (
-        <header className="toolbar">
+        <header className="toolbar" data-tauri-drag-region>
             <div className="toolbar-left">
-                {!isSidebarOpen && (
-                    <button
-                        className="btn btn-ghost btn-icon toolbar-sidebar-restore"
-                        onClick={() => setSidebarOpen(true)}
-                        aria-label="显示侧栏"
-                    >
-                        <SidebarPanelIcon size={23} strokeWidth={1.7} />
-                    </button>
-                )}
                 {currentBook && (
-                    <div className="toolbar-book-info">
-                        <span className="toolbar-book-title">{currentBook.title}</span>
-                        <span className="toolbar-book-progress">
-                            {Math.round(displayProgress)}%
-                        </span>
+                    <div className="toolbar-book-cluster">
+                        <button
+                            className={`btn btn-ghost btn-icon toolbar-action toolbar-toc-action ${isTocOpen ? 'active' : ''}`}
+                            onClick={() => setTocOpen(!isTocOpen)}
+                            aria-label={isTocOpen ? '隐藏目录' : '查看章节'}
+                            aria-pressed={isTocOpen}
+                        >
+                            <EpubTocIcon size={18} />
+                        </button>
+                        <div className="toolbar-book-info">
+                            <span className="toolbar-book-title">{currentBook.title}</span>
+                            <span className="toolbar-book-progress">
+                                {Math.round(displayProgress)}%
+                            </span>
+                        </div>
                     </div>
                 )}
             </div>

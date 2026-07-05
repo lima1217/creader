@@ -183,7 +183,6 @@
 .reader-chrome-control:hover,
 .reader-chrome-control:focus-visible,
 .reader-search,
-.reader.toc-open .reader-toc-toggle,
 .reader.toc-open .reader-chapter-action .reader-chrome-control {
     opacity: 1;
 }
@@ -223,16 +222,6 @@
 
 .reader-nav-next {
     right: var(--space-6);
-}
-
-.reader-toc-toggle {
-    position: absolute;
-    top: calc(var(--header-height) + 10px);
-    left: var(--space-4);
-    z-index: 40;
-    width: var(--control-size);
-    height: var(--control-size);
-    padding: 0;
 }
 
 .reader-chapter-action {
@@ -464,7 +453,6 @@
     left: calc(340px + var(--space-6));
 }
 
-.reader.toc-open .reader-toc-toggle,
 .reader.toc-open .reader-chapter-action {
     left: calc(340px + var(--space-4));
 }

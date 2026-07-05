@@ -16,7 +16,6 @@ import { useLibraryOrganizerExpandedFolders } from '../hooks/useLibraryOrganizer
 import { Button } from '@astryxdesign/core/Button';
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
-import { IconButton } from '@astryxdesign/core/IconButton';
 import { Icon } from '@astryxdesign/core/Icon';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { List, ListItem } from '@astryxdesign/core/List';
@@ -29,15 +28,6 @@ import {
     SidebarBookIcon as BookIcon,
 } from './icons/icons';
 import './Sidebar.css';
-
-function AstryxSidebarPanelIcon(props: SVGProps<SVGSVGElement>) {
-    return (
-        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-            <rect x="5" y="4" width="14" height="16" rx="3.2" />
-            <line x1="10" y1="7" x2="10" y2="17" />
-        </svg>
-    );
-}
 
 function AstryxFolderIcon(props: SVGProps<SVGSVGElement>) {
     return (
@@ -227,7 +217,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const setBookFolder = useLibraryStore((s) => s.setBookFolder);
     const bookProgressById = useProgressStore((s) => s.bookProgressById);
     const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
-    const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
     const [bookToEdit, setBookToEdit] = useState<EditBookState | null>(null);
     const [isUnfiledExpanded, setIsUnfiledExpanded] = useState(true);
@@ -667,15 +656,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 </Dialog>
             )}
 
-            <div className="sidebar-header">
-                <IconButton
-                    variant="ghost"
-                    size="sm"
-                    label="隐藏侧栏"
-                    icon={<Icon icon={AstryxSidebarPanelIcon} size="md" />}
-                    onClick={() => setSidebarOpen(false)}
-                />
-            </div>
+            <div className="sidebar-header" />
 
             <div className="sidebar-actions">
                 <Button
