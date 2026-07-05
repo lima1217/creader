@@ -64,6 +64,22 @@
 - Search index data is rebuildable derived data. Do not treat it as the source of truth for book content, AI context, or Reading Memory evidence.
 - Search Locators may be precise CFI or coarser href/spine locations; preserve that tolerance in UI and command contracts.
 
+## UI Palette & Theme
+
+- Two themes only: `light` (亮色) and `dark` (暗色). The `Theme` type in `src/types/index.ts` is `'light' | 'dark'`. Sepia/护眼 was retired in Astryx Phase 1; do not reintroduce a third theme or a `sepia` value.
+- One warm "Paper Workspace" palette feeds two token systems. Keep them in sync from the same colors; do not fork a second palette.
+  - Native CReader chrome consumes CReader's own tokens in `src/index.css` under `[data-theme="light"]` / `[data-theme="dark"]` (`--bg-*`, `--text-*`, `--accent`, `--border-*`, `--success/--warning/--error`, shadows).
+  - Astryx components consume `--color-*` tokens defined once in `src/theme/paperTheme.ts` via `defineTheme`, as `[light, dark]` tuples that Astryx compiles to CSS `light-dark()`. Never override `--color-*` in `:root` (Astryx rule) — edit `paperTheme.ts` instead.
+- Book-body colors have a single source of truth: `paperBodyPalette` in `src/theme/paperTheme.ts` holds the three book-body colors (background / text / link) per mode. Both the Astryx body tokens (`--color-background-body`, `--color-text-primary`, `--color-accent`) and the reading-engine bridge `src/components/reader/epubTheme.ts` draw from it. The engine bridge injects literal color values (not `var(--color-*)`) because foliate section documents do not inherit the host `:root`. Edit the palette in one place so chrome and book body stay in sync. See ADR-0011 and ADR-0017.
+- Layer surfaces by background tone step, not by borders (Epic #72 / issues #68–#71). Semantics: `--bg-primary` (also `--bg-reader` / `--bg-panel`) is the base, `--bg-secondary` is inputs, `--bg-elevated` is cards / popovers / dropdowns / overlays, `--bg-tertiary` is the deepest hover / secondary-button step.
+- The tonal direction flips per theme:
+  - Dark: raised layers get **brighter** — brightness increases monotonically `--bg-primary` `#1A1B1E` < `--bg-secondary` `#212226` < `--bg-elevated` `#26272B` < `--bg-tertiary` `#2D2E33`. Text is neutral gray (`--text-primary` `#D4D4D4`), no blue cast.
+  - Light: raised layers get **darker** — brightness decreases monotonically `--bg-primary` `#FBF9F4` (warm white, base) > `--bg-elevated` `#F4F1E9` > `--bg-secondary` `#EFEBE1` > `--bg-tertiary` `#E7E2D6`. Text is warm near-black (`--text-primary` `#2B2B2B`). The book reading surface is `#F7F3EA` (from `paperBodyPalette`), distinct from the chrome base.
+- Borders do not carry layering. `--border-*` are weak (translucent white in dark, translucent near-black in light) and reserved for focus rings, input affordance, and the occasional `--border-soft` hairline separator. Never pair a visible divider border with a tone step for the same layer (no double emphasis).
+- Accent stays hue-consistent (blue) across themes but is tuned per theme: light is lower-saturation and deeper so it is not harsh on warm white (`--accent` `#33526E`, ink blue); dark stays vivid (`--accent` `#7EB0E0`, sky blue). Semantic colors (success/warning/error) follow the same "light is deeper/less saturated, dark stays vivid" rule. The dark primary button uses `#1A1B1E` as its on-accent text color.
+- Keep the book-body background opaque so foliate's white iframe canvas never shows through in dark mode.
+- The A-/number/A+ text-size stepper is shared as `src/components/TextSizeControl.tsx`, used by both the reader toolbar more menu (`fontSize`) and the AI settings panel (`aiTextSize`). Reuse it instead of rebuilding a stepper.
+
 ## Astryx UI
 
 <!-- ASTRYX:START -->

@@ -96,6 +96,14 @@ _Avoid_: bookmark bar, category filter, tag sidebar, file tree
 The React-tree UI around the rendered book body — toolbar, TOC drawer, search overlay, progress bar, selection toolbar — as distinct from the book content the Reading Engine renders into its own content tree. Astryx components own chrome; they do not own the engine's rendered body.
 _Avoid_: "the reader" used to mean both the chrome and the book body interchangeably
 
+**Paper Workspace Palette**:
+CReader's single warm color palette, mapped onto two token systems from the same colors: native chrome tokens in `src/index.css` (`--bg-*`, `--text-*`, `--accent`, …) and Astryx `--color-*` tokens defined once in `src/theme/paperTheme.ts`. There are only two modes, `light` (亮色) and `dark` (暗色).
+_Avoid_: sepia/护眼 theme, a second parallel palette, overriding `--color-*` in `:root`
+
+**Book-Body Palette**:
+The three colors the reading engine injects into the rendered EPUB body — background, text, link — held as the single source of truth in `paperBodyPalette` (`src/theme/paperTheme.ts`) and consumed by both the Astryx body tokens and the reading-engine theme bridge (`epubTheme.ts`). The bridge injects literal values because foliate section documents do not inherit the host `:root`.
+_Avoid_: hard-coded body colors in the engine bridge, `var(--color-*)` inside foliate section docs
+
 **Selection Coordinate**:
 An `{x, y}` pixel position produced by the reading engine's selection listeners and consumed by the SelectionToolbar. The Reading Engine Adapter emits coordinates, never a DOM anchor node; this is why the selection toolbar cannot use trigger-anchored overlays like Astryx `Popover`/`Tooltip`.
 _Avoid_: selection anchor, selection ref

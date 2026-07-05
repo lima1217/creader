@@ -74,6 +74,6 @@ The AIPanel decomposition landed as three test-gated slices, all keeping the #26
 
 ## Consequences
 
-- The reader body's visual theming remains driven by the engine theme injection path (`epubTheme.ts` and the foliate theme bridge), not Astryx tokens. A future ADR may bridge engine theme tokens to Astryx paper-theme tokens if the book body should *visually* belong to the same system (that is a token-level concern, separate from this component-level migration).
+- The reader body's visual theming remains driven by the engine theme injection path (`epubTheme.ts` and the foliate theme bridge), not Astryx tokens. A future ADR may bridge engine theme tokens to Astryx paper-theme tokens if the book body should *visually* belong to the same system (that is a token-level concern, separate from this component-level migration). *(Realized in [ADR-0017](0017-unify-chrome-and-book-body-from-one-paper-palette.md): the book body now draws from the shared `paperBodyPalette` source.)*
 - `@testing-library/react` is deliberately not adopted; the contract-mock style is the project's testing convention for Astryx-touching surfaces.
 - No `ChatLayout` adoption means CReader forgoes Astryx's chat a11y/keyboard model in exchange for keeping its scroll/resize/quiet-state behavior. This is the explicit trade.
