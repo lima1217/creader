@@ -111,6 +111,11 @@
     pointer-events: auto;
 }
 
+.folder-actions-placeholder {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 .sidebar-content {
     flex: 1;
     min-height: 0;

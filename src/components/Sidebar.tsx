@@ -694,19 +694,34 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                     </div>
                 ) : (
                     <div className="organizer-bookshelf">
-                        <section className="organizer-group">
-                            <button
-                                className={`organizer-group-header ${isUnfiledExpanded ? 'expanded' : ''}`}
-                                onDragOver={(event) => handleFolderDropTargetDragOver(event, undefined)}
-                                onDragLeave={handleFolderDropTargetDragLeave}
-                                onDrop={(event) => handleFolderDropTargetDrop(event, undefined)}
-                                onClick={() => setIsUnfiledExpanded((expanded) => !expanded)}
-                            >
-                                <Icon icon={AstryxMutedDotIcon} size="sm" />
-                                <span className="organizer-group-title">未归档</span>
-                                <span className="organizer-count">{groupedBooks.unfiled.length}</span>
-                                <Icon icon={AstryxChevronIcon} size="sm" />
-                            </button>
+                        <section className="organizer-group folder-nav-group">
+                            <div className="organizer-group-header-row">
+                                <button
+                                    className={`organizer-group-header ${isUnfiledExpanded ? 'expanded' : ''}`}
+                                    onDragOver={(event) => handleFolderDropTargetDragOver(event, undefined)}
+                                    onDragLeave={handleFolderDropTargetDragLeave}
+                                    onDrop={(event) => handleFolderDropTargetDrop(event, undefined)}
+                                    onClick={() => setIsUnfiledExpanded((expanded) => !expanded)}
+                                >
+                                    <Icon icon={AstryxMutedDotIcon} size="sm" />
+                                    <span className="organizer-group-title">未归档</span>
+                                    <span className="organizer-count">{groupedBooks.unfiled.length}</span>
+                                    <Icon icon={AstryxChevronIcon} size="sm" />
+                                </button>
+                                <div className="folder-actions folder-actions-placeholder" aria-hidden="true">
+                                    <DropdownMenu
+                                        button={{
+                                            label: '未归档占位',
+                                            icon: <Icon icon={AstryxMoreHorizontalIcon} size="sm" />,
+                                            variant: 'ghost',
+                                            size: 'sm',
+                                            isIconOnly: true,
+                                        }}
+                                        items={[]}
+                                        hasChevron={false}
+                                    />
+                                </div>
+                            </div>
                             {isUnfiledExpanded && groupedBooks.unfiled.length > 0 && (
                                 <List density="compact" className="book-list">
                                     {groupedBooks.unfiled.map(renderBookItem)}
