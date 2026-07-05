@@ -473,16 +473,17 @@ dialog.sidebar-dialog::backdrop {
 }
 
 .sidebar-dialog .modal-form .astryx-text-input {
-    background: transparent !important;
+    background: var(--bg-secondary) !important;
     border: 0 !important;
-    box-shadow: none !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-sm) !important;
 }
 
 .sidebar-dialog .modal-form .astryx-text-input:hover,
 .sidebar-dialog .modal-form .astryx-text-input:focus-within {
-    background: transparent !important;
+    background: var(--bg-secondary) !important;
     border: 0 !important;
-    box-shadow: none !important;
+    box-shadow: var(--shadow-md) !important;
     outline: none !important;
 }
 
@@ -554,12 +555,12 @@ dialog.sidebar-dialog::backdrop {
     flex-direction: column;
     gap: var(--spacing-1, 4px);
     max-height: 224px;
-    padding: 2px;
     overflow-y: auto;
 }
 
 .folder-assign-item {
     min-height: 38px;
+    padding-inline: var(--spacing-3, 12px) !important;
     border: 1px solid transparent;
     border-radius: 8px;
     color: var(--text-primary);
@@ -574,7 +575,7 @@ dialog.sidebar-dialog::backdrop {
 .folder-assign-item[aria-selected="true"],
 .folder-assign-item[data-selected="true"] {
     background: var(--accent-soft);
-    border-color: var(--border-accent);
+    border-color: transparent;
     color: var(--accent);
 }
 
@@ -594,7 +595,7 @@ dialog.folder-assign-dialog.sidebar-dialog {
 }
 
 .folder-assign-dialog .sidebar-dialog-content {
-    padding-top: var(--spacing-2, 8px) !important;
+    padding: var(--spacing-2, 8px) var(--spacing-5, 20px) var(--spacing-4, 16px) !important;
 }
 
 .folder-assign-dialog .modal-actions {

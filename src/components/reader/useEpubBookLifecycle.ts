@@ -7,15 +7,11 @@ import { applyEpubTheme } from './epubTheme';
 import { foliateEngineAdapter } from '../../services/reader/foliateEngine';
 import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
 import { createLogger } from '../../utils/logger';
-import { isNotFoundErrorMessage, toUserMessage } from '../../utils/errors';
+import { classifyBookOpenError, toBookOpenUserMessage } from '../../utils/errors';
 import { perfSpan } from '../../utils/perf';
 import { uint8ArrayToArrayBuffer } from '../../utils/arrayBuffer';
 
 const logger = createLogger('useEpubBookLifecycle');
-
-function unsupportedBookMessage(): string {
-  return '无法打开书籍：这本 EPUB 可能使用了 CReader 当前不支持的格式或脚本内容。请尝试换一本标准 EPUB 文件。';
-}
 
 export function useEpubBookLifecycle(params: {
   currentBook: Book | null;
@@ -26,6 +22,7 @@ export function useEpubBookLifecycle(params: {
   setIsLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setIsFileNotFound: (isNotFound: boolean) => void;
+  setIsEngineLoadError: (isEngineLoadError: boolean) => void;
   onRenditionCreated?: (rendition: ReaderRendition) => void;
 }) {
   const {
@@ -37,6 +34,7 @@ export function useEpubBookLifecycle(params: {
     setIsLoading,
     setError,
     setIsFileNotFound,
+    setIsEngineLoadError,
     onRenditionCreated,
   } = params;
 
@@ -50,6 +48,7 @@ export function useEpubBookLifecycle(params: {
       setIsLoading(true);
       setError(null);
       setIsFileNotFound(false);
+      setIsEngineLoadError(false);
       setToc([]);
 
       // Yield to allow the loading UI to paint before heavy work.
@@ -100,10 +99,10 @@ export function useEpubBookLifecycle(params: {
       } catch (err) {
         logger.error('Failed to load book:', err);
         if (!cancelled) {
-          const errorMessage = err instanceof Error ? err.message : (typeof err === 'string' ? err : '未知错误');
-          const isNotFound = isNotFoundErrorMessage(errorMessage);
-          setIsFileNotFound(isNotFound);
-          setError(isNotFound ? toUserMessage(errorMessage) : unsupportedBookMessage());
+          const kind = classifyBookOpenError(err);
+          setIsFileNotFound(kind === 'not-found');
+          setIsEngineLoadError(kind === 'engine-load');
+          setError(toBookOpenUserMessage(err));
           setIsLoading(false);
         }
       }

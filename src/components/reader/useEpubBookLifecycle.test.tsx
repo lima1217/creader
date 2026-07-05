@@ -54,10 +54,12 @@ function Harness({
   onLoadingChange,
   onError,
   onFileNotFound,
+  onEngineLoadError,
 }: {
   onLoadingChange: (loading: boolean) => void;
   onError?: (error: string | null) => void;
   onFileNotFound?: (isNotFound: boolean) => void;
+  onEngineLoadError?: (isEngineLoadError: boolean) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<ReaderRendition | null>(null);
@@ -84,6 +86,7 @@ function Harness({
     },
     setError: onError ?? (() => {}),
     setIsFileNotFound: onFileNotFound ?? (() => {}),
+    setIsEngineLoadError: onEngineLoadError ?? (() => {}),
   });
 
   return <div ref={containerRef} />;
@@ -99,6 +102,35 @@ describe('useEpubBookLifecycle opening critical path', () => {
     vi.clearAllMocks();
     mocks.readFile.mockResolvedValue(new Uint8Array([1, 2, 3]));
     adapterMocks.foliateOpen.mockResolvedValue(foliateInstance());
+  });
+
+  it('surfaces an engine-load message when foliate cannot be imported', async () => {
+    adapterMocks.foliateOpen.mockRejectedValue(
+      new Error('Failed to fetch dynamically imported module: foliate-js/view.js'),
+    );
+
+    const onError = vi.fn();
+    const onEngineLoadError = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    flushSync(() => root.render(
+      <Harness
+        onLoadingChange={() => {}}
+        onError={onError}
+        onEngineLoadError={onEngineLoadError}
+      />,
+    ));
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+
+    expect(onEngineLoadError).toHaveBeenLastCalledWith(true);
+    expect(onError).toHaveBeenLastCalledWith(expect.stringContaining('无法加载阅读引擎'));
+
+    flushSync(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
   });
 
   it('surfaces an unsupported EPUB message when foliate fails to open the book', async () => {

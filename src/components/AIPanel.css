@@ -16,11 +16,6 @@
     border-left: 0;
 }
 
-.ai-panel:has(.ai-panel-resize-handle:hover),
-.ai-panel-resizing {
-    background: color-mix(in srgb, var(--bg-secondary) 92%, var(--accent) 4%);
-}
-
 .ai-panel-resizing {
     user-select: none;
     transition: none !important;
@@ -35,11 +30,6 @@
     width: 8px;
     cursor: col-resize;
     background: transparent;
-    transition: background-color var(--transition-fast);
-}
-
-.ai-panel-resize-handle:hover {
-    background: var(--bg-control-hover);
 }
 
 /* Header */

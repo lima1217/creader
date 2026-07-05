@@ -14,17 +14,6 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react()],
 
-  build: {
-    rollupOptions: {
-      // foliate-js is written for native ES-module consumption (it uses
-      // `import.meta.url` + relative glob imports in pdf.js) and does not
-      // survive rollup's commonjs/glob transform. It is loaded at runtime
-      // via the dynamic `import('foliate-js/view.js')` in foliateEngine.ts,
-      // so externalize it here rather than bundling it.
-      external: ['foliate-js/view.js'],
-    },
-  },
-
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

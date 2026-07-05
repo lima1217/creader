@@ -31,6 +31,7 @@ export function EPUBReader() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isFileNotFound, setIsFileNotFound] = useState(false);
+    const [isEngineLoadError, setIsEngineLoadError] = useState(false);
     const [isRelocating, setIsRelocating] = useState(false);
 
     const chrome = useReadingChromeSession({
@@ -48,6 +49,7 @@ export function EPUBReader() {
         setIsLoading,
         setError,
         setIsFileNotFound,
+        setIsEngineLoadError,
         onRenditionCreated: () => setRenditionKey(k => k + 1),
     });
 
@@ -123,6 +125,7 @@ export function EPUBReader() {
                 // Clear error state to trigger reload
                 setError(null);
                 setIsFileNotFound(false);
+                setIsEngineLoadError(false);
             }
         } catch (err) {
             logger.error('Failed to relocate file:', err);
@@ -166,6 +169,14 @@ export function EPUBReader() {
                             </div>
                             <p className="reader-error-hint">
                                 如果文件被移动或重命名，可以重新选择本地 EPUB。
+                            </p>
+                        </>
+                    ) : isEngineLoadError ? (
+                        <>
+                            <h2>无法加载阅读引擎</h2>
+                            <p>{error}</p>
+                            <p className="reader-error-hint">
+                                这通常是应用打包不完整导致的，与 EPUB 文件本身无关。
                             </p>
                         </>
                     ) : (
