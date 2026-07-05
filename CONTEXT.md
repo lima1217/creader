@@ -17,8 +17,16 @@ An EPUB that depends on embedded book scripts for its reading behavior. CReader 
 _Avoid_: safe mode, fallback renderer support
 
 **Whole-Book Work**:
-Operations that need access to an entire book rather than the currently displayed passage. CReader currently avoids whole-book work in product features; import copies the EPUB and the Reading Engine loads content on demand.
-_Avoid_: reader UI work, chapter rendering
+Operations that need access to an entire book rather than the currently displayed passage. CReader avoids whole-book reader features such as search indexing, import-time rebuilds, and search panels. AI tools may fetch a specific chapter on demand through Rust text extraction, but that is not a reader search surface.
+_Avoid_: reader UI work, chapter rendering, search index lifecycle
+
+**Chapter Text Retrieval**:
+A Rust-local AI tool capability that extracts plain text for a requested EPUB chapter on demand. It supports source-grounded AI answers without rendering book content or building a whole-book index.
+_Avoid_: Reading Engine, search index, import-time extraction
+
+**AI Tool Loop**:
+The bounded Rust orchestration loop that receives model tool calls, executes local tools such as chapter retrieval or Reading Memory writes, appends tool results, and resumes streaming.
+_Avoid_: frontend tool executor, Node runtime, unbounded agent loop
 
 **Generated Location Cache**:
 The removed epubjs-era IndexedDB `locations` store for calculated page/location data. Current CReader treats it as migration-only legacy data; foliate location events drive progress.

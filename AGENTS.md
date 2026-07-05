@@ -43,6 +43,8 @@
 - The active OpenAI-compatible provider is resolved by the backend from `ai_providers.json` plus `ai_keys.env` in the app config dir. API keys never return to the UI or enter the repo.
 - Streaming uses Tauri `Channel<StreamEvent>` with `started`, `chunk`, `done`, and `error`. Keep frontend chunk buffering on the `requestAnimationFrame` path.
 - The Rust AI path uses `async-openai` for OpenAI-compatible Chat Completions and stream parsing.
+- AI tool calling is orchestrated in Rust inside the `async-openai` path. The frontend may display tool activity, but it does not execute tools or drive the loop.
+- Keep the tool loop bounded, using a small maximum round count plus the existing cancellation and timeout behavior.
 - Auto summarization is hidden `ConversationMemory`; never render it as a chat message or ingest it directly into Reading Memory.
 - AI requests and Reading Memory ingestion must use the frozen `ReadingContextSnapshot` from `src/domain/readingSource.ts`, not live reader state after send.
 - Keep EPUB CFI range tracing separate from plain text context: `selectedCfiRange` becomes `ChatMessage.contextCfi`.
@@ -61,6 +63,7 @@
 ## Reading Engine
 
 - Use `src/services/reader/readingEngine.ts` as the adapter boundary around the single `foliate-js` Reading Engine. Do not reintroduce an `epubjs` fallback or scripted-EPUB compatibility UI.
+- Rust chapter text extraction for AI tools belongs outside the Reading Engine Adapter. Text extraction does not render EPUB content and must not become a second Reading Engine.
 - CReader does not ship whole-book search. Do not reintroduce Rust indexing, import-time rebuild, or a reader search panel without an explicit new ADR.
 
 ## UI Palette & Theme
