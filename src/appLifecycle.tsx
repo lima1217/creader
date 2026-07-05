@@ -1,19 +1,40 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { importBookFromPath } from './services/BookImportService';
 import { dataUrlToBlob, deleteCover, revokeCoverUrl, saveCover } from './services/CoverStore';
 import { loadChatMessages, loadConversationMemory, replaceChatMessages } from './services/ChatStore';
 import { validateAndFixLibraryPaths } from './services/BookPathValidator';
 import { STORAGE_KEYS, loadStored } from './services/LocalStore';
-import { useDebouncedPersist } from './hooks/useDebouncedPersist';
-import { useSettingsStore } from './stores/settingsStore';
-import { useLibraryStore, getLatestCurrentBook, getLatestLibrary } from './stores/libraryStore';
-import { useProgressStore } from './stores/progressStore';
+import { APP_PREF_KEYS } from './services/DexieDb';
+import { loadAppPrefWithLegacyMigration } from './services/AppPrefsStore';
+import { isIndexedDbAvailable } from './services/indexedDbAvailability';
+import { writeThemePlaceholder } from './services/themePlaceholder';
+import {
+  markAppPrefsHydrated,
+  markAppPrefsHydrationFailed,
+  wasPrefEditedBeforeHydration,
+} from './services/appPrefsHydration';
+import { useDebouncedDexiePersist } from './hooks/useDebouncedDexiePersist';
+import { useDebouncedLocalStoragePersist } from './hooks/useDebouncedLocalStoragePersist';
+import { useCanPersistAppPrefs } from './hooks/useCanPersistAppPrefs';
+import { useSettingsStore, hydrateSettings } from './stores/settingsStore';
+import { useLibraryStore, getLatestCurrentBook, getLatestLibrary, hydrateLibrary } from './stores/libraryStore';
+import { useProgressStore, hydrateProgress } from './stores/progressStore';
 import { hydrateChatMessages, hydrateConversationMemory } from './stores/aiStore';
+import { hydrateQuickActionConfigs } from './components/ai/quickActionStorage';
+import { defaultQuickActions } from './components/ai/quickActions';
+import { hydrateExpandedFolderIds } from './hooks/expandedFoldersStorage';
 import { MAX_CHAT_MESSAGES_STORED } from './constants';
 import { createLogger } from './utils/logger';
 import { perfSpan } from './utils/perf';
 import type { Book, ChatMessage, ConversationMemory, Library, Settings } from './types';
-import type { BookProgressById } from './stores/app/initialState';
+import {
+  type BookProgressById,
+  DEFAULT_SETTINGS,
+  getEmptyLibrary,
+  resolveBookProgressById,
+  resolveSettings,
+} from './stores/app/initialState';
+import { normalizeLibrary } from './domain/libraryNormalization';
 
 const importLogger = createLogger('Import');
 const lifecycleLogger = createLogger('AppLifecycle');
@@ -88,6 +109,90 @@ export async function hydrateChatMessagesFromStorage(params: {
     }
   } catch (error) {
     lifecycleLogger.warn('Failed to hydrate chat messages:', error);
+  }
+}
+
+export async function hydrateAppPrefsFromStorage(params: {
+  loadAppPrefWithLegacyMigration?: typeof loadAppPrefWithLegacyMigration;
+  removeLegacy?: (key: string) => void;
+  hydrateSettings?: (settings: Settings) => void;
+  hydrateLibrary?: (library: Library) => void;
+  hydrateProgress?: (bookProgressById: BookProgressById) => void;
+  hydrateQuickActionConfigs?: (actions: typeof defaultQuickActions) => void;
+  hydrateExpandedFolderIds?: (ids: string[], persisted: boolean) => void;
+  isCancelled?: () => boolean;
+} = {}): Promise<void> {
+  const loadPref = params.loadAppPrefWithLegacyMigration ?? loadAppPrefWithLegacyMigration;
+  const removeLegacy = params.removeLegacy ?? ((key) => localStorage.removeItem(key));
+  const applySettings = params.hydrateSettings ?? hydrateSettings;
+  const applyLibrary = params.hydrateLibrary ?? hydrateLibrary;
+  const applyProgress = params.hydrateProgress ?? hydrateProgress;
+  const applyQuickActions = params.hydrateQuickActionConfigs ?? hydrateQuickActionConfigs;
+  const applyExpandedFolders = params.hydrateExpandedFolderIds ?? hydrateExpandedFolderIds;
+
+  try {
+    const [settingsResult, libraryResult, progressResult, quickActionsResult, expandedFoldersResult] = await Promise.all([
+      loadPref(APP_PREF_KEYS.settings, DEFAULT_SETTINGS, removeLegacy),
+      loadPref(APP_PREF_KEYS.library, getEmptyLibrary(), removeLegacy),
+      loadPref(APP_PREF_KEYS.progress, {} as Record<string, unknown>, removeLegacy),
+      loadPref(APP_PREF_KEYS.quickActions, defaultQuickActions, removeLegacy),
+      loadPref(APP_PREF_KEYS.libraryOrganizerExpandedFolders, [] as string[], removeLegacy),
+    ]);
+    if (params.isCancelled?.()) return;
+
+    const settings = resolveSettings(settingsResult.value, DEFAULT_SETTINGS);
+    const library = normalizeLibrary(libraryResult.value);
+    const bookProgressById = resolveBookProgressById(progressResult.value, library);
+
+    applySettings(settings);
+    applyLibrary(library);
+    applyProgress(bookProgressById);
+    applyQuickActions(quickActionsResult.value);
+    applyExpandedFolders(expandedFoldersResult.value, expandedFoldersResult.persisted);
+    markAppPrefsHydrated();
+  } catch (error) {
+    lifecycleLogger.warn('Failed to hydrate app prefs:', error);
+    markAppPrefsHydrationFailed();
+  }
+}
+
+export function hydrateAppPrefsFromLocalStorage(params: {
+  loadStored?: <T>(key: string, defaultValue: T) => T;
+  hydrateSettings?: (settings: Settings) => void;
+  hydrateLibrary?: (library: Library) => void;
+  hydrateProgress?: (bookProgressById: BookProgressById) => void;
+  hydrateQuickActionConfigs?: (actions: typeof defaultQuickActions) => void;
+  hydrateExpandedFolderIds?: (ids: string[], persisted: boolean) => void;
+  isCancelled?: () => boolean;
+} = {}): void {
+  const loadLegacy = params.loadStored ?? loadStored;
+  const applySettings = params.hydrateSettings ?? hydrateSettings;
+  const applyLibrary = params.hydrateLibrary ?? hydrateLibrary;
+  const applyProgress = params.hydrateProgress ?? hydrateProgress;
+  const applyQuickActions = params.hydrateQuickActionConfigs ?? hydrateQuickActionConfigs;
+  const applyExpandedFolders = params.hydrateExpandedFolderIds ?? hydrateExpandedFolderIds;
+
+  try {
+    const settings = resolveSettings(loadLegacy(STORAGE_KEYS.settings, DEFAULT_SETTINGS), DEFAULT_SETTINGS);
+    const library = normalizeLibrary(loadLegacy(STORAGE_KEYS.library, getEmptyLibrary()));
+    const bookProgressById = resolveBookProgressById(
+      loadLegacy(STORAGE_KEYS.progress, {} as Record<string, unknown>),
+      library,
+    );
+    const quickActions = loadLegacy(STORAGE_KEYS.quickActions, defaultQuickActions);
+    const expandedFolders = loadLegacy(STORAGE_KEYS.libraryOrganizerExpandedFolders, [] as string[]);
+
+    if (params.isCancelled?.()) return;
+
+    applySettings(settings);
+    applyLibrary(library);
+    applyProgress(bookProgressById);
+    applyQuickActions(quickActions);
+    applyExpandedFolders(expandedFolders, localStorage.getItem(STORAGE_KEYS.libraryOrganizerExpandedFolders) !== null);
+    markAppPrefsHydrated();
+  } catch (error) {
+    lifecycleLogger.warn('Failed to hydrate app prefs from localStorage:', error);
+    markAppPrefsHydrationFailed();
   }
 }
 
@@ -338,9 +443,34 @@ export function useAppLifecycleBootstrap(): void {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', settings.theme);
+    writeThemePlaceholder(settings.theme);
   }, [settings.theme]);
 
   useAppLifecyclePersistence({ settings, library, bookProgressById });
+
+  useEffect(() => {
+    let cancelled = false;
+    let cancelValidation: (() => void) | undefined;
+
+    if (isIndexedDbAvailable()) {
+      void hydrateAppPrefsFromStorage({ isCancelled: () => cancelled }).then(() => {
+        if (cancelled) return;
+        cancelValidation = scheduleIdleTask(() => {
+          void validateStartupBookPaths({ isCancelled: () => cancelled });
+        }, { timeout: 2000, fallbackMs: 200 });
+      });
+    } else {
+      hydrateAppPrefsFromLocalStorage({ isCancelled: () => cancelled });
+      cancelValidation = scheduleIdleTask(() => {
+        void validateStartupBookPaths({ isCancelled: () => cancelled });
+      }, { timeout: 2000, fallbackMs: 200 });
+    }
+
+    return () => {
+      cancelled = true;
+      cancelValidation?.();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -356,24 +486,6 @@ export function useAppLifecycleBootstrap(): void {
       cancel();
     };
   }, [library.books]);
-
-  const pathValidationRan = useRef(false);
-  useEffect(() => {
-    if (pathValidationRan.current) return;
-    pathValidationRan.current = true;
-
-    let cancelled = false;
-    const cancel = scheduleIdleTask(() => {
-      void validateStartupBookPaths({
-        isCancelled: () => cancelled,
-      });
-    }, { timeout: 2000, fallbackMs: 1200 });
-
-    return () => {
-      cancelled = true;
-      cancel();
-    };
-  }, []);
 
   useEffect(() => {
     if (typeof indexedDB === 'undefined') return;
@@ -403,9 +515,35 @@ export function useAppLifecyclePersistence(params: {
   library: Library;
   bookProgressById: BookProgressById;
 }): void {
-  useDebouncedPersist(STORAGE_KEYS.settings, params.settings, 500, { skipInitial: true });
-  useDebouncedPersist(STORAGE_KEYS.library, params.library, 800, { skipInitial: true });
-  useDebouncedPersist(STORAGE_KEYS.progress, params.bookProgressById, 800, { skipInitial: true });
+  const canPersist = useCanPersistAppPrefs();
+  const useDexie = isIndexedDbAvailable();
+  const enabled = canPersist;
+
+  useDebouncedDexiePersist(APP_PREF_KEYS.settings, params.settings, 500, {
+    skipInitial: !wasPrefEditedBeforeHydration('settings'),
+    enabled: enabled && useDexie,
+  });
+  useDebouncedDexiePersist(APP_PREF_KEYS.library, params.library, 800, {
+    skipInitial: !wasPrefEditedBeforeHydration('library'),
+    enabled: enabled && useDexie,
+  });
+  useDebouncedDexiePersist(APP_PREF_KEYS.progress, params.bookProgressById, 800, {
+    skipInitial: !wasPrefEditedBeforeHydration('progress'),
+    enabled: enabled && useDexie,
+  });
+
+  useDebouncedLocalStoragePersist(STORAGE_KEYS.settings, params.settings, 500, {
+    skipInitial: !wasPrefEditedBeforeHydration('settings'),
+    enabled: enabled && !useDexie,
+  });
+  useDebouncedLocalStoragePersist(STORAGE_KEYS.library, params.library, 800, {
+    skipInitial: !wasPrefEditedBeforeHydration('library'),
+    enabled: enabled && !useDexie,
+  });
+  useDebouncedLocalStoragePersist(STORAGE_KEYS.progress, params.bookProgressById, 800, {
+    skipInitial: !wasPrefEditedBeforeHydration('progress'),
+    enabled: enabled && !useDexie,
+  });
 }
 
 export function useAppLifecycleImport(params: {

@@ -17,6 +17,7 @@ describe('ChatStore Dexie persistence', () => {
   it('has an explicit Dexie schema version for chat and conversation memory', () => {
     expect(db.verno).toBe(DB_VERSION);
     expect(db.tables.map(table => table.name).sort()).toEqual([
+      'appPrefs',
       'chatMessages',
       'conversationMemory',
       'covers',

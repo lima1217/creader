@@ -4,9 +4,9 @@ import App from "./App";
 import "./index.css";
 import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
+import { readThemePlaceholder } from "./services/themePlaceholder";
 
-// Set default theme synchronously to avoid a flash before React mounts.
-document.documentElement.setAttribute('data-theme', 'light');
+document.documentElement.setAttribute('data-theme', readThemePlaceholder() ?? 'light');
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

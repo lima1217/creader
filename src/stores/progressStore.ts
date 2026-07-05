@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import type { BookProgressUpdate, ReadingProgress } from '../types';
 import { BookProgressById, getInitialBookProgressById } from './app/initialState';
+import { markUserEditedPref, shouldSkipPrefHydrate } from '../services/appPrefsHydration';
 
 /**
- * Reading progress map (issue #13), persisted via debounced localStorage.
+ * Reading progress map (issue #13), persisted via debounced Dexie writes.
  *
  * `updateBookProgress` is the public mutator (driven by page-turn events).
  * `setEntry` / `removeEntry` are internal seams used by the library store to
@@ -25,6 +26,7 @@ type ProgressState = {
 export const useProgressStore = create<ProgressState>((set) => ({
   bookProgressById: getInitialBookProgressById(),
   updateBookProgress: (id, update) => {
+    markUserEditedPref('progress');
     const lastReadAt = Date.now();
     const progress: ReadingProgress = {
       currentCfi: update.currentCfi,
@@ -37,16 +39,26 @@ export const useProgressStore = create<ProgressState>((set) => ({
       },
     }));
   },
-  setEntry: (id, entry) =>
+  setEntry: (id, entry) => {
+    markUserEditedPref('progress');
     set((state) => ({
       bookProgressById: { ...state.bookProgressById, [id]: entry },
-    })),
-  removeEntry: (id) =>
+    }));
+  },
+  removeEntry: (id) => {
+    markUserEditedPref('progress');
     set((state) => {
       if (!(id in state.bookProgressById)) return state;
       const next = { ...state.bookProgressById };
       delete next[id];
       return { bookProgressById: next };
-    }),
+    });
+  },
   replaceAll: (next) => set({ bookProgressById: next }),
 }));
+
+/** Seed progress from Dexie at startup (no extra write). */
+export function hydrateProgress(bookProgressById: BookProgressById): void {
+  if (shouldSkipPrefHydrate('progress')) return;
+  useProgressStore.getState().replaceAll(bookProgressById);
+}

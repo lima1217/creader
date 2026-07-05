@@ -7,6 +7,7 @@ import { useProgressStore } from '../stores/progressStore';
 import { useUIStore } from '../stores/uiStore';
 
 import { click, installIntersectionObserverStub, mount, settle } from './testUtils';
+import { hydrateQuickActionConfigs, resetQuickActionConfigsCache } from './ai/quickActionStorage';
 
 /**
  * AIPanel contract tests — issue #26 (Astryx Phase 2 prefactor).
@@ -163,6 +164,7 @@ beforeEach(() => {
 
   resetChannelCapture();
   resetIngestCalls();
+  resetQuickActionConfigsCache();
   useAIStore.setState({ chatMessages: [], conversationMemory: null });
   // Settings live under state.settings (not at the top level) — writing them
   // flat would silently no-op the gating reads in AIPanel.
@@ -341,7 +343,7 @@ describe('AIPanel — quick-action overflow', () => {
       label: `Action ${i}`,
       prompt: `prompt ${i}`,
     }));
-    localStorage.setItem('creader-quick-actions', JSON.stringify({ v: 1, data: actions }));
+    hydrateQuickActionConfigs(actions);
   }
 
   it('renders up to 6 quick actions as direct buttons', () => {

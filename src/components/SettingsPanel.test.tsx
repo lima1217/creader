@@ -4,6 +4,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { useSettingsStore } from '../stores/settingsStore';
 
 import { installDialogElementStub, installResizeObserverStub } from './testUtils';
+import 'fake-indexeddb/auto';
+import { APP_PREF_KEYS } from '../services/DexieDb';
+import { loadAppPref } from '../services/AppPrefsStore';
+import { resetIndexedDb } from '../services/indexedDbTestUtils';
+import { hydrateQuickActionConfigs, resetQuickActionConfigsCache } from './ai/quickActionStorage';
 
 const {
   invokeCalls,
@@ -170,14 +175,16 @@ function seedOrderedActions(labels: string[]) {
     label,
     prompt: `prompt ${i}`,
   }));
-  localStorage.setItem('creader-quick-actions', JSON.stringify({ v: 1, data: actions }));
+  hydrateQuickActionConfigs(actions);
 }
 
 describe('SettingsPanel — 三项一级菜单 (#62-#65)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await resetIndexedDb();
     installDialogElementStub();
     installResizeObserverStub();
     localStorage.clear();
+    resetQuickActionConfigsCache();
     resetSettings();
     resetInvokeCapture();
     clearTestResult();
@@ -324,9 +331,8 @@ describe('SettingsPanel — 三项一级菜单 (#62-#65)', () => {
     upBtn.click();
     await settle();
 
-    const raw = JSON.parse(localStorage.getItem('creader-quick-actions') ?? 'null');
-    const actions = Array.isArray(raw) ? raw : raw?.data;
-    expect(actions.map((a: { label: string }) => a.label)).toEqual(['二', '一', '三']);
+    const stored = await loadAppPref<Array<{ label: string }>>(APP_PREF_KEYS.quickActions);
+    expect(stored?.map((a) => a.label)).toEqual(['二', '一', '三']);
   });
 });
 

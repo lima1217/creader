@@ -50,7 +50,7 @@ CReader 不提供全书搜索。在书中定位内容时，使用目录跳转、
 
 ## 本地数据
 
-CReader 使用 IndexedDB/Dexie 保存封面、聊天消息和 Conversation Memory。旧版本为 epubjs generated locations 建过 `locations` object store；现在阅读进度来自 foliate-js 的位置事件，Dexie v7 会在迁移时删除旧 `locations` store。不要把 IndexedDB cache 当成书籍内容来源。
+CReader 使用 IndexedDB/Dexie 保存封面、设置、书库、阅读进度、快捷提示词、书库文件夹展开状态、聊天消息和 Conversation Memory。旧版本为 epubjs generated locations 建过 `locations` object store；现在阅读进度来自 foliate-js 的位置事件，Dexie v7 会在迁移时删除旧 `locations` store。启动时会一次性把遗留的 localStorage 偏好设置迁入 Dexie。不要把 IndexedDB cache 当成书籍内容来源。
 
 ## AI
 

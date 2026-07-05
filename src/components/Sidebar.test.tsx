@@ -1,5 +1,16 @@
+import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Book, BookFolder, Library } from '../types';
+import { APP_PREF_KEYS, db } from '../services/DexieDb';
+import { loadAppPref } from '../services/AppPrefsStore';
+import { hydrateAppPrefsFromLocalStorage, hydrateAppPrefsFromStorage } from '../appLifecycle';
+import { loadStored, STORAGE_KEYS } from '../services/LocalStore';
+import { resetAppPrefsHydrationForTests } from '../services/appPrefsHydration';
+import {
+  getCachedExpandedFolderIds,
+  hydrateExpandedFolderIds,
+  resetExpandedFolderIdsCache,
+} from '../hooks/expandedFoldersStorage';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useProgressStore } from '../stores/progressStore';
 import { useUIStore } from '../stores/uiStore';
@@ -188,12 +199,37 @@ async function clickBookAction(container: HTMLElement, bookTitle: string, action
   await settle();
 }
 
+function seedExpandedFolders(ids: string[]) {
+  hydrateExpandedFolderIds(ids, true);
+}
+
+async function readExpandedFolders(): Promise<string[]> {
+  return (await loadAppPref<string[]>(APP_PREF_KEYS.libraryOrganizerExpandedFolders)) ?? [];
+}
+
+async function mountSidebarAndHydrate(handlers: Handlers = {}) {
+  await hydrateAppPrefsFromStorage({
+    hydrateSettings: () => {},
+    hydrateLibrary: () => {},
+    hydrateProgress: () => {},
+    hydrateQuickActionConfigs: () => {},
+    hydrateExpandedFolderIds: () => {},
+  });
+  const result = mountSidebar(handlers);
+  await settle();
+  await settle();
+  return result;
+}
+
 // --- Setup ---------------------------------------------------------------
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.unstubAllGlobals();
+  resetExpandedFolderIdsCache();
+  resetAppPrefsHydrationForTests();
+  await db.appPrefs.delete(APP_PREF_KEYS.libraryOrganizerExpandedFolders).catch(() => {});
   installIntersectionObserverStub();
   installDialogElementStub();
-  localStorage.removeItem('creader-library-organizer-expanded-folders');
   resetConfirmState();
   useLibraryStore.setState({
     library: { books: [], folders: [], lastUpdated: 1 },
@@ -347,7 +383,7 @@ describe('Sidebar contract — folder nav', () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const inFolder = makeBook({ id: 'b1', title: 'In Folder', folderId: 'folder1' });
     const outFolder = makeBook({ id: 'b2', title: 'Outside' });
-    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify([]));
+    seedExpandedFolders([]);
     seedLibrary({ books: [inFolder, outFolder], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
     expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('In Folder');
@@ -373,7 +409,7 @@ describe('Sidebar contract — folder nav', () => {
     const folderB = makeFolder({ id: 'folder-b', name: 'Practice', sortOrder: 1 });
     const theoryBook = makeBook({ id: 'b1', title: 'Deep Work', folderId: 'folder-a' });
     const practiceBook = makeBook({ id: 'b2', title: 'Ship It', folderId: 'folder-b' });
-    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify(['folder-b']));
+    seedExpandedFolders(['folder-b']);
     seedLibrary({ books: [theoryBook, practiceBook], folders: [folderA, folderB], lastUpdated: 1 });
 
     const { container } = mountSidebar();
@@ -383,20 +419,19 @@ describe('Sidebar contract — folder nav', () => {
 
     click(await findOrganizerButton(container, 'Theory'));
     await settle();
-    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]').sort()).toEqual(['folder-a', 'folder-b']);
+    expect((await readExpandedFolders()).sort()).toEqual(['folder-a', 'folder-b']);
   });
 
   it('expands the current book folder on first entry when remembered state is empty', async () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const current = makeBook({ id: 'b1', title: 'Current Folder Book', folderId: 'folder1' });
-    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify([]));
+    seedExpandedFolders([]);
     seedLibrary({ books: [current], folders: [folder], lastUpdated: 1 }, current);
 
-    const { container } = mountSidebar();
-    await settle();
+    const { container } = await mountSidebarAndHydrate();
 
     expect(container.querySelector('.book-item')?.textContent).toContain('Current Folder Book');
-    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual(['folder1']);
+    expect(await readExpandedFolders()).toEqual(['folder1']);
   });
 
   it('expands only the current book folder on first load when no persisted expansion exists', async () => {
@@ -404,25 +439,44 @@ describe('Sidebar contract — folder nav', () => {
     const folderB = makeFolder({ id: 'folder-b', name: 'Practice', sortOrder: 1 });
     const current = makeBook({ id: 'b1', title: 'Current Folder Book', folderId: 'folder-b' });
     const other = makeBook({ id: 'b2', title: 'Other Book', folderId: 'folder-a' });
-    localStorage.removeItem('creader-library-organizer-expanded-folders');
     seedLibrary({ books: [current, other], folders: [folderA, folderB], lastUpdated: 1 }, current);
 
-    const { container } = mountSidebar();
-    await settle();
-
-    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual(['folder-b']);
+    const { container } = await mountSidebarAndHydrate();
+    expect(getCachedExpandedFolderIds()?.ids).toEqual(['folder-b']);
     expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).toContain('Current Folder Book');
     expect(Array.from(container.querySelectorAll('.book-item')).map(el => el.textContent).join(' ')).not.toContain('Other Book');
   });
 
   it('removes deleted folder ids from remembered expansion state', async () => {
-    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify(['deleted-folder']));
+    seedExpandedFolders(['deleted-folder']);
     seedLibrary({ books: [], folders: [], lastUpdated: 1 });
 
     mountSidebar();
     await settle();
 
-    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual([]);
+    expect(await readExpandedFolders()).toEqual([]);
+  });
+
+  it('persists expanded folders to localStorage when IndexedDB is unavailable', async () => {
+    vi.stubGlobal('indexedDB', undefined);
+    localStorage.clear();
+    hydrateAppPrefsFromLocalStorage({
+      hydrateSettings: () => {},
+      hydrateLibrary: () => {},
+      hydrateProgress: () => {},
+      hydrateQuickActionConfigs: () => {},
+      hydrateExpandedFolderIds,
+    });
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
+
+    const { container } = mountSidebar();
+    await settle();
+    click(await findOrganizerButton(container, 'Reading'));
+    await settle();
+
+    expect(loadStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, [])).toEqual(['folder1']);
   });
 
   it('moves a dragged book into a real folder', async () => {
@@ -463,9 +517,9 @@ describe('Sidebar contract — folder nav', () => {
   it('leaves a book unchanged when dropped onto its current folder', async () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
-    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    await settle();
+    seedExpandedFolders(['folder1']);
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 }, book);
+    const { container } = await mountSidebarAndHydrate();
 
     const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
     dispatchDragEvent(findUserFolderGroup(container, 'Reading'), 'drop', dataTransfer);
@@ -478,9 +532,9 @@ describe('Sidebar contract — folder nav', () => {
   it('moves a dragged book back to unfiled', async () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
-    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
-    const { container } = mountSidebar();
-    await settle();
+    seedExpandedFolders(['folder1']);
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 }, book);
+    const { container } = await mountSidebarAndHydrate();
 
     const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
     dispatchDragEvent(await findOrganizerButton(container, '未归档书籍'), 'drop', dataTransfer);
@@ -493,7 +547,7 @@ describe('Sidebar contract — folder nav', () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
     const unfiled = makeBook({ id: 'b2', title: 'Loose' });
-    localStorage.setItem('creader-library-organizer-expanded-folders', JSON.stringify([]));
+    seedExpandedFolders([]);
     seedLibrary({ books: [book, unfiled], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
     await settle();
@@ -508,7 +562,7 @@ describe('Sidebar contract — folder nav', () => {
     await settle();
 
     expect(container.textContent).toContain('Filed');
-    expect(JSON.parse(localStorage.getItem('creader-library-organizer-expanded-folders') || '[]')).toEqual(['folder1']);
+    expect(await readExpandedFolders()).toEqual(['folder1']);
   });
 });
 

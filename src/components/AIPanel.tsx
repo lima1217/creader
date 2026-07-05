@@ -116,10 +116,8 @@ export function AIPanel() {
     useEffect(() => {
         const reloadQuickActions = () => setQuickActionConfigs(loadQuickActionConfigs());
         window.addEventListener(QUICK_ACTIONS_CHANGED_EVENT, reloadQuickActions);
-        window.addEventListener('storage', reloadQuickActions);
         return () => {
             window.removeEventListener(QUICK_ACTIONS_CHANGED_EVENT, reloadQuickActions);
-            window.removeEventListener('storage', reloadQuickActions);
         };
     }, []);
 

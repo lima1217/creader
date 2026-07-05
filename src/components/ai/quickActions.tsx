@@ -1,5 +1,3 @@
-import { loadStored, saveStored, STORAGE_KEYS } from '../../services/LocalStore';
-
 export type QuickActionConfig = {
   id: string;
   label: string;
@@ -54,17 +52,14 @@ export function normalizeQuickActions(value: unknown): QuickActionConfig[] {
     .filter(action => action.id && action.label && action.prompt);
 }
 
-export function loadQuickActionConfigs(): QuickActionConfig[] {
-  const stored = loadStored<unknown>(STORAGE_KEYS.quickActions, defaultQuickActions);
-  return normalizeQuickActions(stored);
-}
-
-export function saveQuickActionConfigs(actions: QuickActionConfig[]): void {
-  saveStored(STORAGE_KEYS.quickActions, normalizeQuickActions(actions));
-  window.dispatchEvent(new CustomEvent(QUICK_ACTIONS_CHANGED_EVENT));
-}
-
 export function getMissingDefaultQuickActions(actions: QuickActionConfig[]): QuickActionConfig[] {
   const actionIds = new Set(actions.map(action => action.id));
   return defaultQuickActions.filter(action => !actionIds.has(action.id));
 }
+
+export {
+  hydrateQuickActionConfigs,
+  loadQuickActionConfigs,
+  resetQuickActionConfigsCache,
+  saveQuickActionConfigs,
+} from './quickActionStorage';

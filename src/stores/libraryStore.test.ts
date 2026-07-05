@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Book, Library } from '../types';
-import { STORAGE_KEYS } from '../services/LocalStore';
+import { normalizeLibrary } from '../domain/libraryNormalization';
+import type { BookProgressById } from './app/initialState';
 
 /**
  * Progress / currentBook semantics, ported from the old AppProvider-based test.
  *
- * The Zustand stores are module singletons that hydrate once from localStorage
- * at import time. To exercise hydration for each scenario we re-import the
- * store modules fresh (vi.resetModules + dynamic import) after seeding
- * localStorage, so each test starts from a clean, hydrated state.
+ * The Zustand stores are module singletons with empty sync defaults. To exercise
+ * hydration for each scenario we re-import the store modules fresh and seed them
+ * through the same hydrate helpers the App Lifecycle seam uses at startup.
  */
 async function loadFreshStores() {
   vi.resetModules();
@@ -18,6 +18,8 @@ async function loadFreshStores() {
     useLibraryStore: libraryModule.useLibraryStore,
     useProgressStore: progressModule.useProgressStore,
     getLatestLibrary: libraryModule.getLatestLibrary,
+    hydrateLibrary: libraryModule.hydrateLibrary,
+    hydrateProgress: progressModule.hydrateProgress,
   } as const;
 }
 
@@ -37,21 +39,15 @@ describe('libraryStore pure state transitions', () => {
     };
 
     const library: Library = { books: [book], folders: [], lastUpdated: 1 };
-    localStorage.setItem(STORAGE_KEYS.library, JSON.stringify({ v: 1, data: library }));
-    localStorage.setItem(
-      STORAGE_KEYS.progress,
-      JSON.stringify({
-        v: 1,
-        data: {
-          [book.id]: { currentCfi: 'epubcfi(/6/2[chap]!/4/2/14)', percentage: 55, lastReadAt: 123 },
-        },
-      }),
-    );
+    const progress: BookProgressById = {
+      [book.id]: { currentCfi: 'epubcfi(/6/2[chap]!/4/2/14)', percentage: 55, lastReadAt: 123 },
+    };
 
-    const { useLibraryStore, useProgressStore } = await loadFreshStores();
+    const { useLibraryStore, useProgressStore, hydrateLibrary, hydrateProgress } = await loadFreshStores();
+    hydrateLibrary(library);
+    hydrateProgress(progress);
 
     expect(useLibraryStore.getState().library.books[0].progress.currentCfi).toBe('');
-    // The stored progress map hydrated independently into the progress store.
     expect(useProgressStore.getState().bookProgressById[book.id].percentage).toBe(55);
 
     useLibraryStore.getState().setCurrentBook(useLibraryStore.getState().library.books[0]);
@@ -74,9 +70,8 @@ describe('libraryStore pure state transitions', () => {
     };
 
     const library: Library = { books: [book], folders: [], lastUpdated: 1 };
-    localStorage.setItem(STORAGE_KEYS.library, JSON.stringify({ v: 1, data: library }));
-
-    const { useLibraryStore, useProgressStore } = await loadFreshStores();
+    const { useLibraryStore, useProgressStore, hydrateLibrary } = await loadFreshStores();
+    hydrateLibrary(library);
 
     useLibraryStore.getState().addBook({ ...book, id: 'b2' });
     expect(useProgressStore.getState().bookProgressById.b2).toBeUndefined();
@@ -98,19 +93,12 @@ describe('libraryStore pure state transitions', () => {
       progress: { currentCfi: '', percentage: 0 },
       categoryId: 'cat1',
     };
-    localStorage.setItem(
-      STORAGE_KEYS.library,
-      JSON.stringify({
-        v: 1,
-        data: {
-          books: [legacyBook],
-          categories: [{ id: 'cat1', name: 'Reading', color: '#ff0000', createdAt: 2 }],
-          lastUpdated: 3,
-        },
-      }),
-    );
-
-    const { useLibraryStore } = await loadFreshStores();
+    const { useLibraryStore, hydrateLibrary } = await loadFreshStores();
+    hydrateLibrary(normalizeLibrary({
+      books: [legacyBook],
+      categories: [{ id: 'cat1', name: 'Reading', color: '#ff0000', createdAt: 2 }],
+      lastUpdated: 3,
+    } as unknown as Library));
 
     expect(useLibraryStore.getState().library).toEqual({
       books: [{
@@ -139,12 +127,8 @@ describe('libraryStore pure state transitions', () => {
       addedAt: 1,
       progress: { currentCfi: '', percentage: 0 },
     };
-    localStorage.setItem(
-      STORAGE_KEYS.library,
-      JSON.stringify({ v: 1, data: { books: [book], folders: [], lastUpdated: 1 } }),
-    );
-
-    const { useLibraryStore } = await loadFreshStores();
+    const { useLibraryStore, hydrateLibrary } = await loadFreshStores();
+    hydrateLibrary({ books: [book], folders: [], lastUpdated: 1 });
 
     const folder = useLibraryStore.getState().addFolder('Reading');
     expect(folder).toEqual({ id: `${now}`, name: 'Reading', sortOrder: 0, createdAt: now });
@@ -174,15 +158,8 @@ describe('libraryStore pure state transitions', () => {
       progress: { currentCfi: '', percentage: 0 },
       folderId: 'folder-b',
     };
-    localStorage.setItem(
-      STORAGE_KEYS.library,
-      JSON.stringify({
-        v: 1,
-        data: { books: [book], folders: [folderA, folderB, folderC], lastUpdated: 1 },
-      }),
-    );
-
-    const { useLibraryStore } = await loadFreshStores();
+    const { useLibraryStore, hydrateLibrary } = await loadFreshStores();
+    hydrateLibrary({ books: [book], folders: [folderA, folderB, folderC], lastUpdated: 1 });
 
     useLibraryStore.getState().reorderFolder('folder-c', 'folder-a');
 
@@ -198,12 +175,8 @@ describe('libraryStore pure state transitions', () => {
     const now = 1_700_000_000_000;
     vi.spyOn(Date, 'now').mockReturnValue(now);
     const folder = { id: 'folder1', name: 'Reading', sortOrder: 0, createdAt: 1 };
-    localStorage.setItem(
-      STORAGE_KEYS.library,
-      JSON.stringify({ v: 1, data: { books: [], folders: [folder], lastUpdated: 1 } }),
-    );
-
-    const { useLibraryStore } = await loadFreshStores();
+    const { useLibraryStore, hydrateLibrary } = await loadFreshStores();
+    hydrateLibrary({ books: [], folders: [folder], lastUpdated: 1 });
 
     useLibraryStore.getState().updateFolder('folder1', { name: '  Deep Work  ' });
     expect(useLibraryStore.getState().library.folders[0]).toEqual({
@@ -219,12 +192,8 @@ describe('libraryStore pure state transitions', () => {
 
   it('rejects duplicate folder names and empty names at the store boundary', async () => {
     const folder = { id: 'folder1', name: 'Reading', sortOrder: 0, createdAt: 1 };
-    localStorage.setItem(
-      STORAGE_KEYS.library,
-      JSON.stringify({ v: 1, data: { books: [], folders: [folder], lastUpdated: 1 } }),
-    );
-
-    const { useLibraryStore } = await loadFreshStores();
+    const { useLibraryStore, hydrateLibrary } = await loadFreshStores();
+    hydrateLibrary({ books: [], folders: [folder], lastUpdated: 1 });
 
     expect(useLibraryStore.getState().addFolder('reading')).toBeNull();
     expect(useLibraryStore.getState().addFolder('   ')).toBeNull();
@@ -241,12 +210,9 @@ describe('libraryStore pure state transitions', () => {
       addedAt: 1,
       progress: { currentCfi: '', percentage: 0 },
     };
-    localStorage.setItem(
-      STORAGE_KEYS.library,
-      JSON.stringify({ v: 1, data: { books: [book], folders: [], lastUpdated: 1 } }),
-    );
+    const { useLibraryStore, hydrateLibrary } = await loadFreshStores();
+    hydrateLibrary({ books: [book], folders: [], lastUpdated: 1 });
 
-    const { useLibraryStore } = await loadFreshStores();
     const folder = useLibraryStore.getState().addFolder('Reading');
     expect(folder).not.toBeNull();
     useLibraryStore.getState().setCurrentBook({ ...book, folderId: folder!.id });
@@ -267,12 +233,9 @@ describe('libraryStore pure state transitions', () => {
       addedAt: 1,
       progress: { currentCfi: '', percentage: 0 },
     };
-    localStorage.setItem(
-      STORAGE_KEYS.library,
-      JSON.stringify({ v: 1, data: { books: [book], folders: [], lastUpdated: 1 } }),
-    );
+    const { useLibraryStore, hydrateLibrary } = await loadFreshStores();
+    hydrateLibrary({ books: [book], folders: [], lastUpdated: 1 });
 
-    const { useLibraryStore } = await loadFreshStores();
     useLibraryStore.getState().setBookFolder(book.id, 'missing-folder');
     expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
   });

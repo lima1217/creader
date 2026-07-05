@@ -1,16 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { saveStored } from '../services/LocalStore';
 
-export function useDebouncedPersist<T>(
+export function useDebouncedLocalStoragePersist<T>(
   key: string,
   value: T,
   delayMs: number,
-  options?: { skipInitial?: boolean }
+  options?: { skipInitial?: boolean; enabled?: boolean },
 ): void {
   const skipInitial = options?.skipInitial === true;
+  const enabled = options?.enabled !== false;
   const isFirstRunRef = useRef(true);
 
   useEffect(() => {
+    if (!enabled) return;
+
     if (isFirstRunRef.current) {
       isFirstRunRef.current = false;
       if (skipInitial) return;
@@ -23,6 +26,5 @@ export function useDebouncedPersist<T>(
     return () => {
       window.clearTimeout(timer);
     };
-  }, [key, value, delayMs, skipInitial]);
+  }, [key, value, delayMs, skipInitial, enabled]);
 }
-

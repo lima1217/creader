@@ -1,9 +1,11 @@
 import 'fake-indexeddb/auto';
 import { DB_NAME, deleteCReaderDbForTests } from './DexieDb';
+import { resetAppPrefsHydrationForTests } from './appPrefsHydration';
 
 export async function resetIndexedDb(): Promise<void> {
   await deleteCReaderDbForTests();
   localStorage.clear();
+  resetAppPrefsHydrationForTests();
 }
 
 export async function seedRawIndexedDb(
@@ -14,7 +16,7 @@ export async function seedRawIndexedDb(
     const request = indexedDB.open(DB_NAME, version);
     request.onupgradeneeded = () => {
       const db = request.result;
-      for (const name of ['covers', 'chatMessages', 'conversationMemory']) {
+      for (const name of ['covers', 'chatMessages', 'conversationMemory', 'appPrefs']) {
         if (!db.objectStoreNames.contains(name)) {
           db.createObjectStore(name);
         }

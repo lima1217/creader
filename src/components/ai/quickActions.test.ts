@@ -1,21 +1,27 @@
+import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { STORAGE_KEYS } from '../../services/LocalStore';
+import { APP_PREF_KEYS } from '../../services/DexieDb';
+import { loadAppPref } from '../../services/AppPrefsStore';
+import { resetIndexedDb } from '../../services/indexedDbTestUtils';
+import { loadStored, STORAGE_KEYS } from '../../services/LocalStore';
 import type { QuickActionConfig } from './quickActions';
 import {
   defaultQuickActions,
   getMissingDefaultQuickActions,
-  loadQuickActionConfigs,
+  hydrateQuickActionConfigs,
   normalizeQuickActions,
   QUICK_ACTIONS_CHANGED_EVENT,
-  saveQuickActionConfigs,
+  resetQuickActionConfigsCache,
 } from './quickActions';
+import { loadQuickActionConfigs, saveQuickActionConfigs } from './quickActionStorage';
 
 function validAction(overrides: Partial<QuickActionConfig> = {}): QuickActionConfig {
   return { id: 'a', label: '解释', prompt: '解释选中的内容。', ...overrides };
 }
 
-beforeEach(() => {
-  localStorage.clear();
+beforeEach(async () => {
+  await resetIndexedDb();
+  resetQuickActionConfigsCache();
   vi.unstubAllGlobals();
 });
 
@@ -79,7 +85,7 @@ describe('quickActions pure helpers', () => {
       expect(loadQuickActionConfigs()).toEqual(defaultQuickActions);
     });
 
-    it('round-trips a saved config list and dispatches the change event', () => {
+    it('round-trips a saved config list and dispatches the change event', async () => {
       const dispatched = vi.fn();
       window.addEventListener(QUICK_ACTIONS_CHANGED_EVENT, dispatched);
 
@@ -89,21 +95,54 @@ describe('quickActions pure helpers', () => {
       expect(dispatched).toHaveBeenCalledTimes(1);
       window.removeEventListener(QUICK_ACTIONS_CHANGED_EVENT, dispatched);
 
-      const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS.quickActions) ?? 'null');
-      expect(raw).toEqual(custom);
-
+      await expect(loadAppPref<QuickActionConfig[]>(APP_PREF_KEYS.quickActions)).resolves.toEqual(custom);
       expect(loadQuickActionConfigs()).toEqual(custom);
     });
 
-    it('normalizes on save, dropping invalid entries and legacy icon fields', () => {
+    it('normalizes on save, dropping invalid entries and legacy icon fields', async () => {
       const invalid = { id: 'drop', label: 'x', prompt: '' } as unknown as QuickActionConfig;
       saveQuickActionConfigs([validAction({ id: 'keep' }), invalid]);
       const loaded = loadQuickActionConfigs();
       expect(loaded.map((a) => a.id)).toEqual(['keep']);
       expect(loaded[0]).not.toHaveProperty('icon');
 
-      const raw = JSON.parse(localStorage.getItem(STORAGE_KEYS.quickActions) ?? 'null');
-      expect(raw[0]).not.toHaveProperty('icon');
+      const stored = await loadAppPref<QuickActionConfig[]>(APP_PREF_KEYS.quickActions);
+      expect(stored?.map((a) => a.id)).toEqual(['keep']);
+      expect(stored?.[0]).not.toHaveProperty('icon');
+    });
+
+    it('hydrates the in-memory cache without scheduling another Dexie write', () => {
+      const custom = [validAction({ id: 'hydrated', label: 'Hydrated', prompt: 'Go' })];
+      hydrateQuickActionConfigs(custom);
+      expect(loadQuickActionConfigs()).toEqual(custom);
+    });
+
+    it('dispatches a change event when hydration updates custom quick actions', () => {
+      const dispatched = vi.fn();
+      window.addEventListener(QUICK_ACTIONS_CHANGED_EVENT, dispatched);
+
+      const custom = [validAction({ id: 'hydrated', label: 'Hydrated', prompt: 'Go' })];
+      hydrateQuickActionConfigs(custom);
+
+      expect(dispatched).toHaveBeenCalledTimes(1);
+      window.removeEventListener(QUICK_ACTIONS_CHANGED_EVENT, dispatched);
+    });
+
+    it('does not overwrite quick actions saved before hydration completes', () => {
+      const custom = [validAction({ id: 'user', label: 'User', prompt: 'Mine' })];
+      saveQuickActionConfigs(custom);
+      hydrateQuickActionConfigs([validAction({ id: 'stale', label: 'Stale', prompt: 'Old' })]);
+      expect(loadQuickActionConfigs()).toEqual(custom);
+    });
+
+    it('falls back to localStorage when IndexedDB is unavailable', () => {
+      vi.stubGlobal('indexedDB', undefined);
+      const custom = [validAction({ id: 'local', label: 'Local', prompt: 'Save locally' })];
+
+      saveQuickActionConfigs(custom);
+
+      expect(loadStored(STORAGE_KEYS.quickActions, [])).toEqual(custom);
+      expect(loadQuickActionConfigs()).toEqual(custom);
     });
   });
 });

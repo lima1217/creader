@@ -2,10 +2,11 @@ import { create } from 'zustand';
 import type { Book, BookFolder, Library } from '../types';
 import { normalizeLibrary } from '../domain/libraryNormalization';
 import { folderExists, validateFolderName } from '../domain/libraryFolders';
-import { getInitialLibrary } from './app/initialState';
+import { getEmptyLibrary } from './app/initialState';
+import { markUserEditedPref, shouldSkipPrefHydrate } from '../services/appPrefsHydration';
 
 /**
- * Library + current book (issue #13), persisted via debounced localStorage.
+ * Library + current book (issue #13), persisted via debounced Dexie writes.
  *
  * Mutators here are in-memory library state transitions. Cross-store progress
  * updates, cover cleanup, native file deletion, and open-book orchestration
@@ -16,7 +17,7 @@ import { getInitialLibrary } from './app/initialState';
  * `latestCurrentBookRef`); the one-shot path-validation effect in
  * `AppBootstrap` reads them after an idle delay.
  */
-let latestLibrary: Library = getInitialLibrary();
+let latestLibrary: Library = getEmptyLibrary();
 let latestCurrentBook: Book | null = null;
 
 /** Read-only snapshot of the most recent library (mirrors the old ref). */
@@ -59,12 +60,14 @@ function syncCurrentBook(next: Book | null) {
 export const useLibraryStore = create<LibraryState>((set) => ({
   library: latestLibrary,
   setLibrary: (library) => {
+    markUserEditedPref('library');
     const next = normalizeLibrary(library);
     syncLibrary(next);
     set({ library: next });
   },
 
   addBook: (book) => {
+    markUserEditedPref('library');
     const next: Library = {
       ...latestLibrary,
       books: [...latestLibrary.books, book],
@@ -75,6 +78,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   removeBook: (id) => {
+    markUserEditedPref('library');
     const next: Library = {
       ...latestLibrary,
       books: latestLibrary.books.filter((b) => b.id !== id),
@@ -85,6 +89,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   updateBook: (id, updates) => {
+    markUserEditedPref('library');
     const next: Library = {
       ...latestLibrary,
       books: latestLibrary.books.map((b) => (b.id === id ? { ...b, ...updates } : b)),
@@ -97,6 +102,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   updateBookFilePath: (id, newFilePath) => {
+    markUserEditedPref('library');
     const next: Library = {
       ...latestLibrary,
       books: latestLibrary.books.map((b) =>
@@ -114,6 +120,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   addFolder: (name) => {
+    markUserEditedPref('library');
     const trimmedName = validateFolderName(name, latestLibrary.folders);
     if (!trimmedName) return null;
 
@@ -138,6 +145,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   removeFolder: (id) => {
+    markUserEditedPref('library');
     const next: Library = {
       ...latestLibrary,
       folders: latestLibrary.folders.filter((folder) => folder.id !== id),
@@ -154,6 +162,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   updateFolder: (id, updates) => {
+    markUserEditedPref('library');
     const existing = latestLibrary.folders.find(folder => folder.id === id);
     if (!existing) return;
 
@@ -174,6 +183,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   reorderFolder: (sourceId, targetId) => {
+    markUserEditedPref('library');
     if (sourceId === targetId) return;
 
     const orderedFolders = [...latestLibrary.folders]
@@ -199,6 +209,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   },
 
   setBookFolder: (bookId, folderId) => {
+    markUserEditedPref('library');
     const book = latestLibrary.books.find((b) => b.id === bookId);
     if (!book || book.folderId === folderId) return;
     if (folderId !== undefined && !folderExists(folderId, latestLibrary.folders)) return;
@@ -225,3 +236,12 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     set({ currentBook: book });
   },
 }));
+
+/** Seed library from Dexie at startup (no extra write). */
+export function hydrateLibrary(library: Library): void {
+  if (shouldSkipPrefHydrate('library')) return;
+
+  const next = normalizeLibrary(library);
+  syncLibrary(next);
+  useLibraryStore.setState({ library: next });
+}

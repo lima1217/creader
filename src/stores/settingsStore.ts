@@ -1,30 +1,30 @@
 import { create } from 'zustand';
 import type { Settings } from '../types';
-import { getInitialSettings } from './app/initialState';
+import { DEFAULT_SETTINGS, getInitialSettings } from './app/initialState';
+import { markUserEditedPref, shouldSkipPrefHydrate } from '../services/appPrefsHydration';
+import { writeThemePlaceholder } from '../services/themePlaceholder';
 
 /**
- * Persisted app settings. Hydrated synchronously from localStorage via
- * `getInitialSettings`; persistence is driven externally by the debounced
- * write in `AppBootstrap` (same `useDebouncedPersist` path as before).
+ * Persisted app settings. Hydrated asynchronously from Dexie on startup;
+ * persistence is driven externally by the debounced write in `AppBootstrap`.
  */
-const defaultSettings: Settings = {
-  theme: 'light',
-  fontSize: 16,
-  fontFamily: 'Georgia',
-  lineHeight: 1.6,
-  readingMemoryPath: undefined,
-  readingMemoryAutoIngest: true,
-  aiTextSize: 14,
-  aiContextWindow: 20,
-  aiAutoSummarize: true,
-};
-
 type SettingsState = {
   settings: Settings;
   setSettings: (settings: Settings) => void;
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({
-  settings: getInitialSettings(defaultSettings),
-  setSettings: (settings) => set({ settings }),
+  settings: getInitialSettings(DEFAULT_SETTINGS),
+  setSettings: (settings) => {
+    markUserEditedPref('settings');
+    writeThemePlaceholder(settings.theme);
+    set({ settings });
+  },
 }));
+
+/** Seed settings from Dexie at startup (no extra write). */
+export function hydrateSettings(settings: Settings): void {
+  if (shouldSkipPrefHydrate('settings')) return;
+  writeThemePlaceholder(settings.theme);
+  useSettingsStore.setState({ settings });
+}

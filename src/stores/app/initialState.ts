@@ -1,8 +1,22 @@
-import type { Settings, Library, ChatMessage, ReadingProgress } from '../../types';
+import type { Settings, Library, ReadingProgress } from '../../types';
 import { loadStored, STORAGE_KEYS } from '../../services/LocalStore';
-import { normalizeLibrary } from '../../domain/libraryNormalization';
+import { readThemePlaceholder } from '../../services/themePlaceholder';
 
 export type BookProgressById = Record<string, ReadingProgress & { lastReadAt: number }>;
+
+export const DEFAULT_SETTINGS: Settings = {
+  theme: 'light',
+  fontSize: 16,
+  fontFamily: 'Georgia',
+  lineHeight: 1.6,
+  readingMemoryPath: undefined,
+  readingMemoryAutoIngest: true,
+  aiTextSize: 14,
+  aiContextWindow: 20,
+  aiAutoSummarize: true,
+};
+
+const EMPTY_LIBRARY: Library = { books: [], folders: [], lastUpdated: Date.now() };
 
 function normalizeProgress(progress: ReadingProgress): ReadingProgress {
   const cfi = progress.currentCfi;
@@ -44,8 +58,11 @@ function normalizeAIContextWindow(value: unknown, fallback: Settings['aiContextW
 
 export { normalizeLibrary } from '../../domain/libraryNormalization';
 
-export function getInitialSettings(defaultSettings: Settings): Settings {
-  const stored = loadStored(STORAGE_KEYS.settings, defaultSettings);
+export function getEmptyLibrary(): Library {
+  return { ...EMPTY_LIBRARY, lastUpdated: Date.now() };
+}
+
+export function resolveSettings(stored: Partial<Settings>, defaultSettings: Settings): Settings {
   return {
     ...defaultSettings,
     ...stored,
@@ -61,19 +78,10 @@ export function getInitialSettings(defaultSettings: Settings): Settings {
   };
 }
 
-export function getInitialLibrary(): Library {
-  const fallback: Library = { books: [], folders: [], lastUpdated: Date.now() };
-  return normalizeLibrary(loadStored(STORAGE_KEYS.library, fallback));
-}
-
-export function getInitialChatMessages(): ChatMessage[] {
-  // Chat messages are now persisted in IndexedDB and hydrated asynchronously.
-  // Keep the synchronous initial state lightweight.
-  return [];
-}
-
-export function getInitialBookProgressById(): BookProgressById {
-  const stored = loadStored<Record<string, unknown>>(STORAGE_KEYS.progress, {});
+export function resolveBookProgressById(
+  stored: Record<string, unknown>,
+  legacyLibrary?: Library,
+): BookProgressById {
   const migrated: BookProgressById = {};
   for (const [id, raw] of Object.entries(stored)) {
     const entry = asStoredEntry(raw);
@@ -81,9 +89,9 @@ export function getInitialBookProgressById(): BookProgressById {
   }
   if (Object.keys(migrated).length > 0) return migrated;
 
-  const legacyLibrary = normalizeLibrary(loadStored<Library>(STORAGE_KEYS.library, { books: [], folders: [], lastUpdated: Date.now() }));
+  const library = legacyLibrary ?? getEmptyLibrary();
   const seeded: BookProgressById = {};
-  for (const book of legacyLibrary.books) {
+  for (const book of library.books) {
     const normalized = normalizeProgress(book.progress);
     seeded[book.id] = {
       ...normalized,
@@ -91,4 +99,28 @@ export function getInitialBookProgressById(): BookProgressById {
     };
   }
   return seeded;
+}
+
+/** Sync placeholder for first paint — Dexie hydration replaces persisted values. */
+export function getInitialSettings(defaultSettings: Settings): Settings {
+  if (typeof localStorage === 'undefined') {
+    return resolveSettings({}, defaultSettings);
+  }
+
+  const legacy = loadStored<Partial<Settings>>(STORAGE_KEYS.settings, {});
+  const placeholderTheme = readThemePlaceholder();
+  const merged = placeholderTheme && legacy.theme === undefined
+    ? { ...legacy, theme: placeholderTheme }
+    : legacy;
+  return resolveSettings(merged, defaultSettings);
+}
+
+/** @deprecated Sync init only — startup hydration from Dexie replaces persisted values. */
+export function getInitialLibrary(): Library {
+  return getEmptyLibrary();
+}
+
+/** @deprecated Sync init only — startup hydration from Dexie replaces persisted values. */
+export function getInitialBookProgressById(): BookProgressById {
+  return {};
 }

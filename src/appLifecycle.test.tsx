@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -5,6 +6,8 @@ import { flushSync } from 'react-dom';
 import {
   hydrateChatMessagesFromStorage,
   hydrateConversationMemoryFromStorage,
+  hydrateAppPrefsFromStorage,
+  hydrateAppPrefsFromLocalStorage,
   importBookThroughLifecycle,
   migrateInlineCovers,
   openBookThroughLifecycle,
@@ -14,8 +17,12 @@ import {
   validateStartupBookPaths,
 } from './appLifecycle';
 import { STORAGE_KEYS } from './services/LocalStore';
+import { APP_PREF_KEYS } from './services/DexieDb';
+import { loadAppPref, saveAppPref } from './services/AppPrefsStore';
+import { resetIndexedDb } from './services/indexedDbTestUtils';
+import { markAppPrefsHydrated, markUserEditedPref } from './services/appPrefsHydration';
 import type { Book, ChatMessage, ConversationMemory, Library, Settings } from './types';
-import type { BookProgressById } from './stores/app/initialState';
+import { DEFAULT_SETTINGS, type BookProgressById } from './stores/app/initialState';
 
 const roots: Root[] = [];
 
@@ -43,17 +50,7 @@ function book(overrides: Partial<Book> = {}): Book {
 }
 
 function settings(overrides: Partial<Settings> = {}): Settings {
-  return {
-    theme: 'light',
-    fontSize: 16,
-    fontFamily: 'Georgia',
-    lineHeight: 1.6,
-    readingMemoryAutoIngest: true,
-    aiTextSize: 14,
-    aiContextWindow: 20,
-    aiAutoSummarize: true,
-    ...overrides,
-  };
+  return { ...DEFAULT_SETTINGS, ...overrides };
 }
 
 function message(id: string): ChatMessage {
@@ -75,8 +72,8 @@ function PersistenceHarness(params: {
 }
 
 describe('App Lifecycle contract', () => {
-  beforeEach(() => {
-    localStorage.clear();
+  beforeEach(async () => {
+    await resetIndexedDb();
   });
 
   afterEach(() => {
@@ -144,16 +141,159 @@ describe('App Lifecycle contract', () => {
     expect(hydrateChat).not.toHaveBeenCalled();
   });
 
-  it('persists settings, library, and progress through the lifecycle seam with skip-initial debounce', () => {
-    vi.useFakeTimers();
+  it('hydrates settings, library, progress, and quick actions from Dexie with legacy localStorage migration', async () => {
+    const libraryA: Library = { books: [book()], folders: [], lastUpdated: 2 };
+    const progressA: BookProgressById = {
+      'book-1': { currentCfi: 'epubcfi(/6/2)', percentage: 42, lastReadAt: 3 },
+    };
+    const customQuickActions = [{ id: 'custom', label: 'Mine', prompt: 'Go' }];
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ v: 1, data: settings({ theme: 'dark' }) }));
+    localStorage.setItem(STORAGE_KEYS.library, JSON.stringify({ v: 1, data: libraryA }));
+    localStorage.setItem(STORAGE_KEYS.progress, JSON.stringify({ v: 1, data: progressA }));
+    localStorage.setItem(STORAGE_KEYS.quickActions, JSON.stringify({ v: 1, data: customQuickActions }));
+
+    const applySettings = vi.fn();
+    const applyLibrary = vi.fn();
+    const applyProgress = vi.fn();
+    const applyQuickActions = vi.fn();
+    const removed: string[] = [];
+
+    await hydrateAppPrefsFromStorage({
+      hydrateSettings: applySettings,
+      hydrateLibrary: applyLibrary,
+      hydrateProgress: applyProgress,
+      hydrateQuickActionConfigs: applyQuickActions,
+      removeLegacy: (key) => removed.push(key),
+    });
+
+    expect(applySettings).toHaveBeenCalledWith(expect.objectContaining({ theme: 'dark' }));
+    expect(applyLibrary).toHaveBeenCalledWith(libraryA);
+    expect(applyProgress).toHaveBeenCalledWith(progressA);
+    expect(applyQuickActions).toHaveBeenCalledWith(customQuickActions);
+    expect(removed.sort()).toEqual([
+      STORAGE_KEYS.library,
+      STORAGE_KEYS.progress,
+      STORAGE_KEYS.quickActions,
+      STORAGE_KEYS.settings,
+    ]);
+  });
+
+  it('does not overwrite settings edited before hydration completes', async () => {
+    localStorage.setItem(
+      STORAGE_KEYS.settings,
+      JSON.stringify({ v: 1, data: settings({ theme: 'dark' }) }),
+    );
+
+    const { useSettingsStore } = await import('./stores/settingsStore');
+
+    useSettingsStore.getState().setSettings(settings({ theme: 'light', fontSize: 20 }));
+
+    await hydrateAppPrefsFromStorage({
+      hydrateLibrary: vi.fn(),
+      hydrateProgress: vi.fn(),
+      hydrateQuickActionConfigs: vi.fn(),
+      hydrateExpandedFolderIds: vi.fn(),
+    });
+
+    expect(useSettingsStore.getState().settings).toMatchObject({ theme: 'light', fontSize: 20 });
+  });
+
+  it('does not overwrite library edited before hydration completes', async () => {
+    const storedLibrary: Library = { books: [book()], folders: [], lastUpdated: 2 };
+    localStorage.setItem(STORAGE_KEYS.library, JSON.stringify({ v: 1, data: storedLibrary }));
+
+    const { useLibraryStore } = await import('./stores/libraryStore');
+    const edited: Library = { books: [], folders: [], lastUpdated: 99 };
+    useLibraryStore.getState().setLibrary(edited);
+
+    await hydrateAppPrefsFromStorage({
+      hydrateSettings: vi.fn(),
+      hydrateProgress: vi.fn(),
+      hydrateQuickActionConfigs: vi.fn(),
+      hydrateExpandedFolderIds: vi.fn(),
+    });
+
+    expect(useLibraryStore.getState().library).toEqual(edited);
+  });
+
+  it('does not overwrite progress edited before hydration completes', async () => {
+    const storedProgress: BookProgressById = {
+      'book-1': { currentCfi: 'epubcfi(/6/1)', percentage: 10, lastReadAt: 1 },
+    };
+    localStorage.setItem(STORAGE_KEYS.progress, JSON.stringify({ v: 1, data: storedProgress }));
+
+    const { useProgressStore } = await import('./stores/progressStore');
+    const edited: BookProgressById = {
+      'book-1': { currentCfi: 'epubcfi(/6/9)', percentage: 90, lastReadAt: 9 },
+    };
+    useProgressStore.getState().setEntry('book-1', edited['book-1']);
+
+    await hydrateAppPrefsFromStorage({
+      hydrateSettings: vi.fn(),
+      hydrateLibrary: vi.fn(),
+      hydrateQuickActionConfigs: vi.fn(),
+      hydrateExpandedFolderIds: vi.fn(),
+    });
+
+    expect(useProgressStore.getState().bookProgressById).toEqual(edited);
+  });
+
+  it('hydrates app prefs from localStorage when IndexedDB is unavailable', async () => {
+    const libraryA: Library = { books: [book()], folders: [], lastUpdated: 2 };
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ v: 1, data: settings({ theme: 'dark' }) }));
+    localStorage.setItem(STORAGE_KEYS.library, JSON.stringify({ v: 1, data: libraryA }));
+
+    const applySettings = vi.fn();
+    const applyLibrary = vi.fn();
+
+    hydrateAppPrefsFromLocalStorage({
+      hydrateSettings: applySettings,
+      hydrateLibrary: applyLibrary,
+      hydrateProgress: vi.fn(),
+      hydrateQuickActionConfigs: vi.fn(),
+      hydrateExpandedFolderIds: vi.fn(),
+    });
+
+    expect(applySettings).toHaveBeenCalledWith(expect.objectContaining({ theme: 'dark' }));
+    expect(applyLibrary).toHaveBeenCalledWith(libraryA);
+  });
+
+  it('does not persist settings when hydration fails', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const storedSettings = settings({ theme: 'dark', fontSize: 18 });
+    await saveAppPref(APP_PREF_KEYS.settings, storedSettings);
+
+    const loadPref = vi.fn().mockRejectedValue(new Error('idb unavailable'));
+    await hydrateAppPrefsFromStorage({
+      loadAppPrefWithLegacyMigration: loadPref,
+      hydrateSettings: vi.fn(),
+      hydrateLibrary: vi.fn(),
+      hydrateProgress: vi.fn(),
+      hydrateQuickActionConfigs: vi.fn(),
+      hydrateExpandedFolderIds: vi.fn(),
+    });
+
+    const root = mount(<PersistenceHarness settings={settings({ theme: 'light' })} library={{ books: [], folders: [], lastUpdated: 1 }} bookProgressById={{}} />);
+    await vi.advanceTimersByTimeAsync(900);
+
+    await expect(loadAppPref(APP_PREF_KEYS.settings)).resolves.toEqual(storedSettings);
+    root.unmount();
+    vi.useRealTimers();
+  });
+
+  it('persists settings, library, and progress through the lifecycle seam with skip-initial debounce', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    flushSync(() => {
+      markAppPrefsHydrated();
+    });
     const libraryA: Library = { books: [], folders: [], lastUpdated: 1 };
     const progressA: BookProgressById = {};
     const root = mount(<PersistenceHarness settings={settings()} library={libraryA} bookProgressById={progressA} />);
 
-    vi.advanceTimersByTime(900);
-    expect(localStorage.getItem(STORAGE_KEYS.settings)).toBeNull();
-    expect(localStorage.getItem(STORAGE_KEYS.library)).toBeNull();
-    expect(localStorage.getItem(STORAGE_KEYS.progress)).toBeNull();
+    await vi.advanceTimersByTimeAsync(900);
+    await expect(loadAppPref(APP_PREF_KEYS.settings)).resolves.toBeUndefined();
+    await expect(loadAppPref(APP_PREF_KEYS.library)).resolves.toBeUndefined();
+    await expect(loadAppPref(APP_PREF_KEYS.progress)).resolves.toBeUndefined();
 
     const libraryB: Library = { books: [book()], folders: [], lastUpdated: 2 };
     const progressB: BookProgressById = { 'book-1': { currentCfi: 'epubcfi(/6/2)', percentage: 42, lastReadAt: 3 } };
@@ -162,14 +302,47 @@ describe('App Lifecycle contract', () => {
       root.render(<PersistenceHarness settings={settings({ theme: 'dark' })} library={libraryB} bookProgressById={progressB} />);
     });
 
-    vi.advanceTimersByTime(499);
-    expect(localStorage.getItem(STORAGE_KEYS.settings)).toBeNull();
-    vi.advanceTimersByTime(1);
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings) ?? 'null')).toMatchObject({ theme: 'dark' });
+    await vi.advanceTimersByTimeAsync(499);
+    await expect(loadAppPref(APP_PREF_KEYS.settings)).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(loadAppPref(APP_PREF_KEYS.settings)).resolves.toMatchObject({ theme: 'dark' });
 
-    vi.advanceTimersByTime(300);
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.library) ?? 'null')).toMatchObject({ lastUpdated: 2 });
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.progress) ?? 'null')).toMatchObject(progressB);
+    await vi.advanceTimersByTimeAsync(300);
+    await expect(loadAppPref(APP_PREF_KEYS.library)).resolves.toMatchObject({ lastUpdated: 2 });
+    await expect(loadAppPref(APP_PREF_KEYS.progress)).resolves.toEqual(progressB);
+  });
+
+  it('persists values edited before hydration on the first post-hydration pass', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    markUserEditedPref('settings');
+    markUserEditedPref('library');
+    markUserEditedPref('progress');
+    const editedLibrary: Library = { books: [book()], folders: [], lastUpdated: 7 };
+    const editedProgress: BookProgressById = {
+      'book-1': { currentCfi: 'epubcfi(/6/8)', percentage: 80, lastReadAt: 8 },
+    };
+
+    const root = mount(
+      <PersistenceHarness
+        settings={settings({ theme: 'dark', fontSize: 20 })}
+        library={editedLibrary}
+        bookProgressById={editedProgress}
+      />,
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(900);
+    await expect(loadAppPref(APP_PREF_KEYS.settings)).resolves.toBeUndefined();
+
+    flushSync(() => {
+      markAppPrefsHydrated();
+    });
+    await vi.advanceTimersByTimeAsync(800);
+
+    await expect(loadAppPref(APP_PREF_KEYS.settings)).resolves.toMatchObject({ theme: 'dark', fontSize: 20 });
+    await expect(loadAppPref(APP_PREF_KEYS.library)).resolves.toMatchObject({ lastUpdated: 7 });
+    await expect(loadAppPref(APP_PREF_KEYS.progress)).resolves.toEqual(editedProgress);
+    root.unmount();
   });
 
   it('surfaces import failures as a notice and does not add a book', async () => {
