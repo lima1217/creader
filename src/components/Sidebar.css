@@ -160,6 +160,27 @@
     gap: 6px;
 }
 
+.all-folders-group {
+    gap: 4px;
+}
+
+.organizer-folders-nested {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 14px;
+    border-left: 1px solid var(--border-soft);
+    margin-left: calc(var(--sidebar-nav-item-padding-inline) + var(--sidebar-nav-icon-slot) / 2);
+}
+
+.folder-nav-group-nested .organizer-group-header {
+    min-height: 34px;
+}
+
+.folder-nav-group-nested .organizer-group-title {
+    font-weight: 560;
+}
+
 .organizer-group-header-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -538,14 +559,6 @@ dialog.sidebar-dialog::backdrop {
     color: var(--accent);
     font-size: 11px;
     font-weight: 600;
-}
-
-.folder-muted-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: var(--text-muted);
 }
 
 dialog.folder-assign-dialog.sidebar-dialog {

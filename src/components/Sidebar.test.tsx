@@ -470,7 +470,7 @@ describe('Sidebar contract — folder nav', () => {
     await settle();
 
     const { dataTransfer } = dispatchDragEvent(container.querySelector('.book-item')!, 'dragstart');
-    dispatchDragEvent(await findOrganizerButton(container, '未归档'), 'drop', dataTransfer);
+    dispatchDragEvent(await findOrganizerButton(container, '未归档书籍'), 'drop', dataTransfer);
     await settle();
 
     expect(useLibraryStore.getState().library.books[0].folderId).toBeUndefined();
