@@ -803,12 +803,6 @@
     transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
-.settings-quick-select svg {
-    width: var(--spacing-3);
-    height: var(--spacing-3);
-    flex-shrink: 0;
-}
-
 .settings-quick-select span {
     min-width: 0;
     overflow: hidden;

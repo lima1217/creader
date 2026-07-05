@@ -28,6 +28,7 @@ import {
     SidebarBookIcon as BookIcon,
 } from './icons/icons';
 import './Sidebar.css';
+import { handleWindowDragMouseDown } from '../utils/windowDrag';
 
 function AstryxFolderIcon(props: SVGProps<SVGSVGElement>) {
     return (
@@ -656,7 +657,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 </Dialog>
             )}
 
-            <div className="sidebar-header" />
+            <div className="sidebar-header" onMouseDown={handleWindowDragMouseDown} />
 
             <div className="sidebar-actions">
                 <Button

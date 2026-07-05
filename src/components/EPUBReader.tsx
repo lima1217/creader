@@ -7,6 +7,7 @@ import type { ReaderRendition } from '../services/reader/epubAdapter';
 import { tryCopyBookToLibrary } from '../services/BookImportService';
 import { rebuildSearchIndexQuietly, toSearchIndexSummary } from '../services/reader/searchIndex';
 import { createLogger } from '../utils/logger';
+import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import { applyEpubTheme } from './reader/epubTheme';
 import { SelectionToolbar } from './reader/SelectionToolbar';
 import { useEpubBookLifecycle } from './reader/useEpubBookLifecycle';
@@ -132,7 +133,7 @@ export function EPUBReader() {
 
     if (!currentBook) {
         return (
-            <div className="reader-empty">
+            <div className="reader-empty" onMouseDown={handleWindowDragMouseDown}>
                 <div className="reader-empty-content">
                     <h2>选择一本书开始阅读</h2>
                     <p>从左侧书库打开 EPUB，或导入一本新书。</p>
@@ -143,7 +144,7 @@ export function EPUBReader() {
 
     if (error) {
         return (
-            <div className="reader-empty">
+            <div className="reader-empty" onMouseDown={handleWindowDragMouseDown}>
                 <div className="reader-empty-content">
                     {isFileNotFound ? (
                         <>
@@ -182,7 +183,7 @@ export function EPUBReader() {
     }
 
     return (
-        <div className={`reader ${chrome.showToc ? 'toc-open' : ''}`}>
+        <div className={`reader ${chrome.showToc ? 'toc-open' : ''}`} onMouseDown={handleWindowDragMouseDown}>
             {/* Loading indicator */}
             {isLoading && (
                 <div className="reader-loading">

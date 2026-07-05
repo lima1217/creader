@@ -22,6 +22,7 @@ import {
     EpubTocIcon,
 } from './icons/icons';
 import { createLogger } from '../utils/logger';
+import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import './Toolbar.css';
 
 const logger = createLogger('Toolbar');
@@ -103,7 +104,7 @@ export function Toolbar() {
     });
 
     return (
-        <header className="toolbar" data-tauri-drag-region>
+        <header className="toolbar" onMouseDown={handleWindowDragMouseDown}>
             <div className="toolbar-left">
                 {currentBook && (
                     <div className="toolbar-book-cluster">

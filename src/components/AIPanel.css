@@ -83,13 +83,34 @@
 }
 
 .ai-panel-current-book {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: var(--space-2);
+    min-width: 0;
+    max-width: 100%;
+    width: fit-content;
+    overflow: hidden;
+    padding: var(--space-1) var(--space-2);
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--bg-control) 74%, transparent);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-sm);
+    font-size: var(--text-sm);
+    font-style: italic;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    text-align: left;
+}
+
+.ai-panel-current-book .astryx-icon {
+    flex-shrink: 0;
+    opacity: 0.86;
+}
+
+.ai-panel-current-book span {
     min-width: 0;
     overflow: hidden;
-    color: var(--text-primary);
-    font-size: var(--text-sm);
-    font-weight: 560;
-    letter-spacing: 0;
-    text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -427,25 +448,44 @@
 
 /* Margin actions (slice #33): the direct quick-prompt buttons are Astryx
    Button and the overflow is Astryx MoreMenu (its popover renders in a portal).
-   These token-only supplements keep the chips reading-margin-tight — width
-   clamping, icon sizing, label truncation — without re-skinning the button. */
+   These token-only supplements keep the chips airy — wrap, spacing, label
+   truncation — without re-skinning the button. */
 .ai-margin-actions {
     position: relative;
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    align-items: center;
     align-content: flex-start;
-    gap: var(--space-1);
+    gap: var(--space-2);
     overflow: visible;
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-3) var(--space-2);
     flex-shrink: 0;
     background: var(--bg-reader);
 }
 
-.ai-margin-action.astryx-button {
-    flex: 0 1 auto;
+.ai-margin-action.astryx-button,
+.ai-margin-more .astryx-button {
+    flex: 0 0 auto;
     min-width: 0;
-    max-width: 112px;
-    font-size: var(--text-xs);
+    min-height: 30px;
+    padding-inline: var(--space-3);
+    font-size: var(--text-sm);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--bg-control);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-sm);
+}
+
+.ai-margin-action.astryx-button {
+    max-width: 140px;
+}
+
+.ai-margin-action.astryx-button:hover:not([aria-disabled="true"]),
+.ai-margin-more .astryx-button:hover:not([aria-disabled="true"]) {
+    background: var(--bg-control-hover);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
 }
 
 .ai-margin-action.astryx-button > :last-child {
@@ -456,10 +496,9 @@
     white-space: nowrap;
 }
 
-.ai-margin-action.astryx-button svg {
-    width: 13px;
-    height: 13px;
+.ai-margin-more {
     flex-shrink: 0;
+    align-self: center;
 }
 
 /* Composer */
@@ -472,7 +511,7 @@
     display: flex;
     align-items: flex-end;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-3) var(--space-3);
+    padding: var(--space-1) var(--space-3) var(--space-3);
     flex-shrink: 0;
     background: var(--bg-reader);
 }

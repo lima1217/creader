@@ -24,7 +24,6 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, PlusIcon } from '
 import {
     getMissingDefaultQuickActions,
     loadQuickActionConfigs,
-    renderQuickActionIcon,
     saveQuickActionConfigs,
 } from './ai/quickActions';
 import type { QuickActionConfig } from './ai/quickActions';
@@ -690,7 +689,6 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                                     className="settings-quick-select"
                                                     onClick={() => setEditingActionId(action.id)}
                                                 >
-                                                    {renderQuickActionIcon(action.icon)}
                                                     <span>{action.label}</span>
                                                     {index < 6 && (
                                                         <small className="settings-quick-direct" aria-hidden="true">直接</small>

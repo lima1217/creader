@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, type SVGProps } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ChatMessage as AstryxChatMessage } from '@astryxdesign/core/Chat';
 import { ChatComposerInput } from '@astryxdesign/core/Chat';
 import { ChatSendButton } from '@astryxdesign/core/Chat';
 import { Button } from '@astryxdesign/core/Button';
+import { Icon } from '@astryxdesign/core/Icon';
 import { MoreMenu } from '@astryxdesign/core/MoreMenu';
 import { useAIStore } from '../stores/aiStore';
 import { useProgressStore } from '../stores/progressStore';
@@ -12,6 +13,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import { isTauriRuntime } from '../utils/tauri';
+import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import { createLogger } from '../utils/logger';
 import type { AIProviderStatus } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
@@ -21,7 +23,6 @@ import {
 } from './ai/icons';
 import { FormatMessage } from './ai/MarkdownRenderer';
 import {
-    hydrateQuickActions,
     loadQuickActionConfigs,
     QUICK_ACTIONS_CHANGED_EVENT,
 } from './ai/quickActions';
@@ -38,6 +39,15 @@ function ScrollDownIcon() {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />
             <polyline points="19 12 12 19 5 12" />
+        </svg>
+    );
+}
+
+function HeaderBookIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
         </svg>
     );
 }
@@ -115,9 +125,8 @@ export function AIPanel() {
 
     const panelRef = useRef<HTMLElement>(null);
 
-    const quickActions = useMemo(() => hydrateQuickActions(quickActionConfigs), [quickActionConfigs]);
-    const visibleQuickActions = useMemo(() => quickActions.slice(0, 6), [quickActions]);
-    const overflowQuickActions = useMemo(() => quickActions.slice(6), [quickActions]);
+    const visibleQuickActions = useMemo(() => quickActionConfigs.slice(0, 6), [quickActionConfigs]);
+    const overflowQuickActions = useMemo(() => quickActionConfigs.slice(6), [quickActionConfigs]);
 
     // Handle resize drag
     const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
@@ -323,7 +332,6 @@ export function AIPanel() {
                     variant="ghost"
                     size="sm"
                     label={action.label}
-                    icon={action.icon}
                     isDisabled={isLoading}
                     onClick={() => setInput(action.prompt)}
                 />
@@ -336,7 +344,6 @@ export function AIPanel() {
                     isDisabled={isLoading}
                     items={overflowQuickActions.map(action => ({
                         label: action.label,
-                        icon: action.icon,
                         onClick: () => setInput(action.prompt),
                     }))}
                 />
@@ -360,9 +367,14 @@ export function AIPanel() {
                 className="ai-panel-resize-handle"
                 onMouseDown={handleResizeMouseDown}
             />
-            <div className="ai-panel-header">
+            <div className="ai-panel-header" onMouseDown={handleWindowDragMouseDown}>
                 <div className="ai-panel-current-book">
-                    {currentBook ? currentBook.title : ''}
+                    {currentBook && (
+                        <>
+                            <Icon icon={HeaderBookIcon} size="sm" color="accent" />
+                            <span>{currentBook.title}</span>
+                        </>
+                    )}
                 </div>
                 <div className="ai-panel-actions">
                     <button
