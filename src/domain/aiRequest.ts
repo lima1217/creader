@@ -7,6 +7,12 @@ export interface ChatRequest {
   message: string;
   context?: string;
   book_title?: string;
+  book_author?: string;
+  book_file_path?: string;
+  source_chapter?: string;
+  source_cfi?: string;
+  source_progress?: number;
+  reading_memory_path?: string;
   chapter_content?: string;
   conversation_summary?: string;
   history?: { role: string; content: string }[];
@@ -45,7 +51,7 @@ export function buildChatRequest(params: {
   readingContext: ReadingContextSnapshot;
   conversationSummary?: string;
   chatMessages: ChatMessage[];
-  settings: Pick<Settings, 'aiContextWindow'>;
+  settings: Pick<Settings, 'aiContextWindow' | 'readingMemoryPath'>;
 }): ChatRequest {
   const derivedContext = buildContextFromReadingSnapshot(params.readingContext);
 
@@ -56,6 +62,12 @@ export function buildChatRequest(params: {
     message: params.message,
     context: derivedContext.combinedContext,
     book_title: params.readingContext.book?.title,
+    book_author: params.readingContext.book?.author,
+    book_file_path: params.readingContext.book?.filePath,
+    source_chapter: params.readingContext.progress?.currentChapter,
+    source_cfi: params.readingContext.selection?.cfiRange,
+    source_progress: params.readingContext.progress?.percentage,
+    reading_memory_path: params.settings.readingMemoryPath,
     chapter_content: buildSmartChapterContext({
       chapterContent: params.readingContext.chapterContent,
       focusTexts: derivedContext.focusTexts,

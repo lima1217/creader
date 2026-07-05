@@ -472,6 +472,20 @@ async fn review_reading_memory_decision(
     })
 }
 
+pub(crate) fn write_reading_memory_from_tool(
+    request: ReadingMemoryDirectIngestRequest,
+    decision: ReadingMemoryDirectDecision,
+) -> Result<ReadingMemoryDirectIngestResult, String> {
+    let target_dir = decision
+        .target_dir
+        .as_deref()
+        .and_then(allowed_reading_memory_dir)
+        .ok_or_else(|| "AI selected an invalid Reading Memory directory".to_string())?;
+    let note_type = normalize_note_type(decision.note_type.as_deref(), target_dir);
+    let rendered_markdown = build_direct_reading_memory_markdown(&request, &decision, note_type, target_dir);
+    write_reading_memory_note_inner(request, decision, rendered_markdown)
+}
+
 pub(crate) fn write_reading_memory_note_inner(
     request: ReadingMemoryDirectIngestRequest,
     decision: ReadingMemoryDirectDecision,

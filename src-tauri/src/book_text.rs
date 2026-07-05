@@ -83,11 +83,13 @@ impl Default for BookTextCache {
     }
 }
 
+#[allow(dead_code)]
 pub fn list_chapters(book_path: &Path) -> Result<Vec<ChapterInfo>, String> {
     let book_path = book_path.to_path_buf();
     blocking_list_chapters(&book_path)
 }
 
+#[allow(dead_code)]
 pub fn get_chapter_text(
     book_path: &Path,
     index: usize,
