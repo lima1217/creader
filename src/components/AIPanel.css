@@ -342,9 +342,9 @@
 }
 
 .ai-message-user .ai-message-content {
-    background: var(--accent-soft);
+    background: rgba(var(--accent-rgb), 0.055);
     color: var(--text-primary);
-    border: 1px solid var(--border-accent);
+    border: 0;
 }
 
 .ai-message-assistant .ai-message-content {
@@ -364,11 +364,6 @@
 .ai-message-content ::selection {
     background: rgba(var(--accent-rgb), 0.42);
     color: var(--text-primary);
-}
-
-.ai-message-user .ai-message-content ::selection {
-    background: rgba(0, 0, 0, 0.34);
-    color: var(--bg-elevated);
 }
 
 .ai-loading {
@@ -470,7 +465,7 @@
 /* Composer */
 /* Composer (slice #32): Astryx ChatComposerInput owns the editable typography
    and caret; these token-only supplements give it the reading-surface control
-   look (bg + border + radius) Astryx leaves to the consumer, and pin the AI
+   look (quote-tinted bg + radius) Astryx leaves to the consumer, and pin the AI
    text-size token so the input tracks the Settings text-size control. */
 .ai-panel-input {
     position: relative;
@@ -488,16 +483,15 @@
     max-height: 128px;
     box-sizing: border-box;
     color: var(--text-primary);
-    background: var(--bg-control);
-    border: 1px solid var(--border-soft);
+    background: rgba(var(--accent-rgb), 0.055);
+    border: 0;
     border-radius: var(--radius-control);
     font-size: var(--ai-text-size);
-    transition: background-color var(--transition-fast), border-color var(--transition-fast);
+    transition: background-color var(--transition-fast);
 }
 
 .ai-composer-input:focus-within {
-    background: var(--bg-elevated);
-    border-color: var(--border-accent);
+    background: rgba(var(--accent-rgb), 0.08);
 }
 
 .ai-composer-input [aria-hidden="true"],
@@ -512,8 +506,7 @@
     max-height: calc(128px - 2px);
     overflow-y: auto;
     /* Suppress the global :focus-visible outline — focus feedback is
-       carried by the outer .ai-composer-input border-color change, so an
-       outline here reads as a second frame inside the composer shell. */
+       carried by the outer .ai-composer-input background tint. */
     outline: none;
 }
 
