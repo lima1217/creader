@@ -250,7 +250,6 @@
 
 .book-item.active {
     background: var(--accent-soft);
-    border-color: var(--border-accent);
 }
 
 .book-cover {

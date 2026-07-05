@@ -1,11 +1,18 @@
+import { useEffect, useState } from 'react';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
 import { useProgressStore } from '../stores/progressStore';
+import { useAIStore } from '../stores/aiStore';
+import { useSelectionStore } from '../stores/selectionStore';
 import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
 import {
+    BookOpenIcon,
+    CheckIcon,
+    CopyIcon,
+    MoreHorizontalIcon,
     MinusIcon,
     MoonIcon,
     PlusIcon,
@@ -14,13 +21,18 @@ import {
     ToolbarAIIcon,
     EpubTocIcon,
 } from './icons/icons';
+import { createLogger } from '../utils/logger';
 import './Toolbar.css';
+
+const logger = createLogger('Toolbar');
 
 export function Toolbar() {
     const settings = useSettingsStore((s) => s.settings);
     const setSettings = useSettingsStore((s) => s.setSettings);
     const currentBook = useLibraryStore((s) => s.currentBook);
     const bookProgressById = useProgressStore((s) => s.bookProgressById);
+    const currentChapterContent = useAIStore((s) => s.currentChapterContent);
+    const addToAccumulatedTexts = useSelectionStore((s) => s.addToAccumulatedTexts);
     const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
     const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
     const isAIPanelOpen = useUIStore((s) => s.isAIPanelOpen);
@@ -29,8 +41,10 @@ export function Toolbar() {
     const setSearchOpen = useUIStore((s) => s.setSearchOpen);
     const isTocOpen = useUIStore((s) => s.isTocOpen);
     const setTocOpen = useUIStore((s) => s.setTocOpen);
+    const [chapterCopied, setChapterCopied] = useState(false);
 
     const displayProgress = currentBook ? (bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage ?? 0) : 0;
+    const canUseChapter = Boolean(currentChapterContent && currentChapterContent.length > 100);
 
     const themes: Theme[] = ['light', 'dark'];
     const themeIcons: Record<Theme, React.ReactNode> = {
@@ -56,6 +70,28 @@ export function Toolbar() {
         const newSize = Math.min(24, Math.max(12, settings.fontSize + delta));
         setSettings({ ...settings, fontSize: newSize });
     };
+
+    const handleUseChapter = () => {
+        if (!canUseChapter || !currentChapterContent) return;
+        addToAccumulatedTexts(currentChapterContent);
+        setAIPanelOpen(true);
+    };
+
+    const handleCopyChapter = async () => {
+        if (!canUseChapter || !currentChapterContent) return;
+
+        try {
+            await navigator.clipboard.writeText(currentChapterContent);
+            setChapterCopied(true);
+            window.setTimeout(() => setChapterCopied(false), 2000);
+        } catch {
+            logger.warn('Failed to copy chapter content');
+        }
+    };
+
+    useEffect(() => {
+        setChapterCopied(false);
+    }, [currentChapterContent]);
 
     useKeyboardShortcuts({
         isSidebarOpen,
@@ -89,26 +125,65 @@ export function Toolbar() {
                 )}
             </div>
 
-            <div className="toolbar-center">
-                <div className="toolbar-group toolbar-reading-group" aria-label="阅读控制">
-                    <button
-                        className="btn btn-ghost btn-icon"
-                        onClick={() => adjustFontSize(-1)}
-                        aria-label="减小字号"
-                        disabled={settings.fontSize <= 12}
-                    >
-                        <MinusIcon />
-                    </button>
-                    <span className="toolbar-font-size">{settings.fontSize}px</span>
-                    <button
-                        className="btn btn-ghost btn-icon"
-                        onClick={() => adjustFontSize(1)}
-                        aria-label="增大字号"
-                        disabled={settings.fontSize >= 24}
-                    >
-                        <PlusIcon />
-                    </button>
-                    <span className="toolbar-group-divider" aria-hidden="true" />
+            <div className="toolbar-right">
+                <div className="toolbar-action-group" aria-label="内容工具">
+                    <DropdownMenu
+                        button={{
+                            label: '更多阅读工具',
+                            isIconOnly: true,
+                            icon: <MoreHorizontalIcon size={18} strokeWidth={1.9} />,
+                            variant: 'secondary',
+                            size: 'md',
+                            className: 'toolbar-action toolbar-more-button',
+                        }}
+                        hasChevron={false}
+                        placement="below"
+                        menuWidth={220}
+                        aria-label="更多阅读工具"
+                        items={[
+                            {
+                                type: 'section',
+                                title: '字号',
+                                items: [
+                                    {
+                                        label: '减小字号',
+                                        icon: <MinusIcon />,
+                                        isDisabled: settings.fontSize <= 12,
+                                        onClick: () => adjustFontSize(-1),
+                                    },
+                                    {
+                                        label: `当前字号：${settings.fontSize}px`,
+                                        isDisabled: true,
+                                    },
+                                    {
+                                        label: '增大字号',
+                                        icon: <PlusIcon />,
+                                        isDisabled: settings.fontSize >= 24,
+                                        onClick: () => adjustFontSize(1),
+                                    },
+                                ],
+                            },
+                            {
+                                type: 'section',
+                                title: '章节',
+                                items: [
+                                    {
+                                        label: canUseChapter ? `使用本章（约 ${Math.round(currentChapterContent.length / 1000)}k 字）` : '使用本章',
+                                        icon: <BookOpenIcon size={17} strokeWidth={2} />,
+                                        isDisabled: !canUseChapter,
+                                        onClick: handleUseChapter,
+                                    },
+                                    {
+                                        label: chapterCopied ? '已复制章节' : '复制章节',
+                                        icon: chapterCopied ? <CheckIcon /> : <CopyIcon />,
+                                        isDisabled: !canUseChapter,
+                                        onClick: handleCopyChapter,
+                                    },
+                                ],
+                            },
+                        ]}
+                    />
+
                     <DropdownMenu
                         button={{
                             label: `主题：${themeLabels[settings.theme]}`,
@@ -134,11 +209,7 @@ export function Toolbar() {
                             },
                         ]}
                     />
-                </div>
-            </div>
 
-            <div className="toolbar-right">
-                <div className="toolbar-action-group" aria-label="内容工具">
                     <button
                         className={`btn btn-secondary toolbar-action ${isSearchOpen ? 'active' : ''}`}
                         onClick={() => setSearchOpen(!isSearchOpen)}

@@ -182,8 +182,7 @@
 .reader:hover .reader-chrome-control,
 .reader-chrome-control:hover,
 .reader-chrome-control:focus-visible,
-.reader-search,
-.reader.toc-open .reader-chapter-action .reader-chrome-control {
+.reader-search {
     opacity: 1;
 }
 
@@ -222,66 +221,6 @@
 
 .reader-nav-next {
     right: var(--space-6);
-}
-
-.reader-chapter-action {
-    position: absolute;
-    bottom: var(--space-4);
-    left: var(--space-4);
-    z-index: 50;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-}
-
-.reader-chapter-btn {
-    display: grid;
-    grid-template-columns: 20px minmax(0, auto);
-    align-items: center;
-    justify-content: start;
-    gap: var(--space-2);
-    width: 38px;
-    min-width: 38px;
-    min-height: 38px;
-    padding: 0 9px;
-    overflow: hidden;
-    font-size: 12px;
-    font-weight: 560;
-    white-space: nowrap;
-}
-
-.reader-chapter-btn svg {
-    width: 17px;
-    height: 17px;
-    color: currentColor;
-}
-
-.reader-chapter-btn span {
-    max-width: 260px;
-    overflow: hidden;
-    opacity: 0;
-    clip-path: inset(0 100% 0 0);
-    transition: clip-path var(--transition-base), opacity var(--transition-fast);
-}
-
-.reader-chapter-btn:hover,
-.reader-chapter-btn:focus-visible,
-.reader-chapter-btn.copied {
-    width: auto;
-}
-
-.reader-chapter-btn:hover span,
-.reader-chapter-btn:focus-visible span,
-.reader-chapter-btn.copied span {
-    opacity: 1;
-    clip-path: inset(0);
-}
-
-.reader-chapter-btn.copied {
-    background: var(--success);
-    border-color: var(--success);
-    color: var(--bg-elevated);
 }
 
 .reader-accumulated-indicator {
@@ -452,10 +391,6 @@
     left: calc(340px + var(--space-6));
 }
 
-.reader.toc-open .reader-chapter-action {
-    left: calc(340px + var(--space-4));
-}
-
 /* Search */
 .reader-search {
     position: absolute;
@@ -582,7 +517,6 @@
 @media (prefers-reduced-motion: reduce) {
     .reader-toc,
     .reader-chrome-control,
-    .reader-chapter-btn span,
     .reader-accumulated-preview {
         animation: none;
         transition-duration: 0.01ms !important;

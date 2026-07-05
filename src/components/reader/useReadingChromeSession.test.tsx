@@ -8,7 +8,7 @@ import { useLibraryStore } from '../../stores/libraryStore';
 import { useProgressStore } from '../../stores/progressStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useUIStore } from '../../stores/uiStore';
-import { mount, settle } from '../testUtils';
+import { mount } from '../testUtils';
 import { useReadingChromeSession } from './useReadingChromeSession';
 
 const hookMocks = vi.hoisted(() => ({
@@ -210,27 +210,6 @@ describe('useReadingChromeSession', () => {
     expect(useSelectionStore.getState().selectedText).toBe('');
     expect(useSelectionStore.getState().selectedCfiRange).toBe('');
     expect(session().selectionToolbar.position).toBeNull();
-  });
-
-  it('routes chapter use and copy actions through the session', async () => {
-    const { session } = mountSession();
-    const chapter = 'chapter text '.repeat(20);
-
-    flushSync(() => {
-      useAIStore.getState().setCurrentChapterContent(chapter);
-    });
-
-    flushSync(() => {
-      session().onUseChapter();
-    });
-    expect(useSelectionStore.getState().accumulatedTexts).toEqual([chapter.trim()]);
-    expect(useUIStore.getState().isAIPanelOpen).toBe(true);
-
-    await session().onCopyChapter();
-    await settle();
-
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(chapter);
-    expect(session().chapterCopied).toBe(true);
   });
 
   it('passes progress and chapter extraction routing into the progress tracker', () => {

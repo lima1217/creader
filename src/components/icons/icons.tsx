@@ -65,6 +65,14 @@ export const PlusIcon = ({ size = 16, strokeWidth = 2 }: StrokeIconProps) => (
   </svg>
 );
 
+export const MoreHorizontalIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
+    <circle cx="12" cy="12" r="1.5" />
+    <circle cx="5" cy="12" r="1.5" />
+    <circle cx="19" cy="12" r="1.5" />
+  </svg>
+);
+
 export const ChevronLeftIcon = ({ size = 20, strokeWidth = 2 }: StrokeIconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}>
     <polyline points="15 18 9 12 15 6" />

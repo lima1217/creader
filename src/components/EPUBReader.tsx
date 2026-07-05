@@ -13,8 +13,8 @@ import { useEpubBookLifecycle } from './reader/useEpubBookLifecycle';
 import { useReadingChromeSession } from './reader/useReadingChromeSession';
 import './EPUBReader.css';
 import './SelectionToolbar.css';
-import { AILogoIcon, CheckIcon, CopyIcon, PlusIcon as SelectionPlusIcon } from './ai/icons';
-import { BookOpenIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, FileIcon, LayersIcon, SearchIcon } from './icons/icons';
+import { AILogoIcon, PlusIcon as SelectionPlusIcon } from './ai/icons';
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, FileIcon, LayersIcon, SearchIcon } from './icons/icons';
 
 const logger = createLogger('EPUBReader');
 
@@ -256,26 +256,6 @@ export function EPUBReader() {
                             </div>
                         )}
                     </div>
-                </div>
-            )}
-
-            {/* Use Chapter Button - for translating entire chapters */}
-            {chrome.currentChapterContent && chrome.currentChapterContent.length > 100 && (
-                <div className="reader-chapter-action">
-                    <button
-                        className="reader-chrome-control reader-chapter-btn"
-                        onClick={chrome.onUseChapter}
-                    >
-                        <BookOpenIcon size={18} strokeWidth={2} />
-                        <span>使用本章（约 {Math.round(chrome.currentChapterContent.length / 1000)}k 字）</span>
-                    </button>
-                    <button
-                        className={`reader-chrome-control reader-chapter-btn reader-chapter-copy ${chrome.chapterCopied ? 'copied' : ''}`}
-                        onClick={chrome.onCopyChapter}
-                    >
-                        {chrome.chapterCopied ? <CheckIcon /> : <CopyIcon />}
-                        <span>{chrome.chapterCopied ? '已复制' : '复制章节'}</span>
-                    </button>
                 </div>
             )}
 

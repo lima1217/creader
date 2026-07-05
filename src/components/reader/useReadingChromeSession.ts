@@ -44,7 +44,6 @@ export function useReadingChromeSession(params: {
   const showToc = useUIStore((s) => s.isTocOpen);
   const setShowToc = useUIStore((s) => s.setTocOpen);
   const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
-  const currentChapterContent = useAIStore((s) => s.currentChapterContent);
   const setCurrentChapterContent = useAIStore((s) => s.setCurrentChapterContent);
   const selectedText = useSelectionStore((s) => s.selectedText);
   const setSelectedText = useSelectionStore((s) => s.setSelectedText);
@@ -58,7 +57,6 @@ export function useReadingChromeSession(params: {
   const [selectionToolbarPos, setSelectionToolbarPos] = useState<{ x: number; y: number } | null>(null);
   const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
   const [showSelectionHint, setShowSelectionHint] = useState(false);
-  const [chapterCopied, setChapterCopied] = useState(false);
   const [accumulatedPreviewOpen, setAccumulatedPreviewOpen] = useState(false);
 
   const handleSearchIndexStatus = useCallback((status: NonNullable<Book['searchIndex']>) => {
@@ -120,23 +118,6 @@ export function useReadingChromeSession(params: {
     setAIPanelOpen(true);
   }, [setAIPanelOpen]);
 
-  const handleUseChapter = useCallback(() => {
-    addToAccumulatedTexts(currentChapterContent);
-    setAIPanelOpen(true);
-  }, [addToAccumulatedTexts, currentChapterContent, setAIPanelOpen]);
-
-  const handleCopyChapter = useCallback(async () => {
-    if (!currentChapterContent) return;
-
-    try {
-      await navigator.clipboard.writeText(currentChapterContent);
-      setChapterCopied(true);
-      setTimeout(() => setChapterCopied(false), 2000);
-    } catch {
-      logger.warn('Failed to copy chapter content');
-    }
-  }, [currentChapterContent]);
-
   const resolveChapterLabel = useCallback((result: { section?: string; cfi?: string }) => {
     const href = (result.cfi || '').split('#')[0].trim();
     const viaHref = href ? findChapterLabelByHref(toc, href) : undefined;
@@ -189,10 +170,6 @@ export function useReadingChromeSession(params: {
       }
     },
   });
-
-  useEffect(() => {
-    setChapterCopied(false);
-  }, [currentChapterContent]);
 
   useEffect(() => {
     const rendition = renditionRef.current;
@@ -251,10 +228,6 @@ export function useReadingChromeSession(params: {
     accumulatedTexts,
     accumulatedPreviewOpen,
     onAccumulatedTextsClick: handleAccumulatedTextsClick,
-    currentChapterContent,
-    chapterCopied,
-    onUseChapter: handleUseChapter,
-    onCopyChapter: handleCopyChapter,
     search: {
       ...search,
       inputRef: searchInputRef,
