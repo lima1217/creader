@@ -9,16 +9,16 @@ describe('foliateEngine theme bridge', () => {
         background: '#fff !important',
       },
       a: {
-        color: '#264466 !important',
+        color: '#33526E !important',
       },
     });
 
-    expect(css).toBe('body{color:#111 !important;background:#fff !important;}\na{color:#264466 !important;}');
+    expect(css).toBe('body{color:#111 !important;background:#fff !important;}\na{color:#33526E !important;}');
   });
 
   it('uses foliate renderer.setStyles so theme switches refresh the paginator background layer', () => {
     const setStyles = vi.fn();
-    const css = 'body{background:#FBF7EF !important;}';
+    const css = 'body{background:#FBF9F4 !important;}';
 
     const applied = applyFoliateManagedStyles({ setStyles }, css);
 

@@ -14,19 +14,18 @@ import { defineTheme } from '@astryxdesign/core/theme';
  * migration").
  */
 export const paperBodyPalette = {
-  light: { background: '#FBF7EF', text: '#1F2933', link: '#264466' },
-  dark: { background: '#0B0D0F', text: 'rgba(238, 242, 246, 0.92)', link: '#7EB0E0' },
+  light: { background: '#FBF9F4', text: '#2B2B2B', link: '#33526E' },
+  dark: { background: '#1A1B1E', text: '#D4D4D4', link: '#7EB0E0' },
 } as const;
 
 /**
  * Paper theme — CReader's warm Paper Workspace palette mapped onto Astryx's
  * `--color-*` token system.
  *
- * Light values mirror the existing `[data-theme="light"]` block in index.css
- * (paper background #FBF7EF, ink-blue accent #264466); dark values mirror the
- * existing `[data-theme="dark"]` block. Token values are `[light, dark]` tuples
- * that Astryx compiles to CSS `light-dark()`, so a single `mode` on `<Theme>`
- * drives both sides.
+ * Values mirror the existing `[data-theme="light"]` and `[data-theme="dark"]`
+ * blocks in index.css. Token values are `[light, dark]` tuples that Astryx
+ * compiles to CSS `light-dark()`, so a single `mode` on `<Theme>` drives both
+ * sides.
  *
  * Native chrome continues to consume CReader's own tokens (`--bg-primary`,
  * `--accent`, …); Astryx components consume these tokens. The two systems do
@@ -48,44 +47,44 @@ export const paperTheme = defineTheme({
     },
   },
   tokens: {
-    // Surfaces — light uses the warm paper palette; dark mirrors today's dark theme.
+    // Surfaces — light uses the warm paper palette; dark uses neutral gray tones.
     // Body background/text come from `paperBodyPalette` so the reading-engine
     // theme bridge (`epubTheme.ts`) injects the same values into the book body.
     '--color-background-body': [paperBodyPalette.light.background, paperBodyPalette.dark.background],
-    '--color-background-surface': ['#FFFDF8', '#12161A'],
-    '--color-background-card': ['#FFFDF8', '#171C22'],
-    '--color-background-muted': ['#F5EFE5', '#1A2026'],
-    '--color-background-popover': ['#FFFDF8', '#171C22'],
-    '--color-background-inverted': ['#1F2933', '#FFFDF8'],
+    '--color-background-surface': ['#F4F1E9', '#212226'],
+    '--color-background-card': ['#F4F1E9', '#26272B'],
+    '--color-background-muted': ['#EFEBE1', '#2D2E33'],
+    '--color-background-popover': ['#F4F1E9', '#26272B'],
+    '--color-background-inverted': ['#2B2B2B', '#FBF9F4'],
 
     // Text. Body text mirrors `paperBodyPalette` for parity with the book body.
     '--color-text-primary': [paperBodyPalette.light.text, paperBodyPalette.dark.text],
-    '--color-text-secondary': ['#53606B', 'rgba(205, 214, 223, 0.72)'],
-    '--color-text-disabled': ['#A3988A', 'rgba(172, 181, 190, 0.42)'],
+    '--color-text-secondary': ['#5A5A57', '#ABABAB'],
+    '--color-text-disabled': ['#A8A29A', '#6E6E6E'],
 
     // Accent — ink blue in light, sky blue in dark. Matches `paperBodyPalette`
     // link so book-body links stay in sync with chrome accent.
     '--color-accent': [paperBodyPalette.light.link, paperBodyPalette.dark.link],
-    '--color-accent-muted': ['rgba(38, 68, 102, 0.075)', 'rgba(126, 176, 224, 0.12)'],
-    '--color-on-accent': ['#FFFFFF', '#0B0D0F'],
-    '--color-text-accent': ['#264466', '#7EB0E0'],
-    '--color-icon-accent': ['#264466', '#7EB0E0'],
-    '--color-icon-primary': ['#1F2933', 'rgba(238, 242, 246, 0.92)'],
-    '--color-icon-secondary': ['#53606B', 'rgba(205, 214, 223, 0.72)'],
+    '--color-accent-muted': ['rgba(51, 82, 110, 0.07)', 'rgba(126, 176, 224, 0.12)'],
+    '--color-on-accent': ['#FFFFFF', '#1A1B1E'],
+    '--color-text-accent': ['#33526E', '#7EB0E0'],
+    '--color-icon-accent': ['#33526E', '#7EB0E0'],
+    '--color-icon-primary': ['#2B2B2B', '#D4D4D4'],
+    '--color-icon-secondary': ['#5A5A57', '#ABABAB'],
 
     // Borders.
-    '--color-border': ['rgba(48, 43, 36, 0.13)', 'rgba(255, 255, 255, 0.09)'],
-    '--color-border-emphasized': ['rgba(48, 43, 36, 0.22)', 'rgba(255, 255, 255, 0.16)'],
+    '--color-border': ['rgba(43, 43, 43, 0.12)', 'rgba(255, 255, 255, 0.08)'],
+    '--color-border-emphasized': ['rgba(43, 43, 43, 0.20)', 'rgba(255, 255, 255, 0.14)'],
 
     // Status — keep parity with the existing light/dark success/warning/error tokens.
     '--color-success': ['#3E7D5B', '#73B58E'],
     '--color-success-muted': ['rgba(62, 125, 91, 0.12)', 'rgba(115, 181, 142, 0.14)'],
-    '--color-on-success': ['#FFFFFF', '#0B0D0F'],
+    '--color-on-success': ['#FFFFFF', '#1A1B1E'],
     '--color-warning': ['#9C6D1E', '#D5A64C'],
     '--color-warning-muted': ['rgba(156, 109, 30, 0.12)', 'rgba(213, 166, 76, 0.14)'],
-    '--color-on-warning': ['#FFFFFF', '#0B0D0F'],
+    '--color-on-warning': ['#FFFFFF', '#1A1B1E'],
     '--color-error': ['#B84A3F', '#E06D62'],
     '--color-error-muted': ['rgba(184, 74, 63, 0.12)', 'rgba(224, 109, 98, 0.14)'],
-    '--color-on-error': ['#FFFFFF', '#0B0D0F'],
+    '--color-on-error': ['#FFFFFF', '#1A1B1E'],
   },
 });

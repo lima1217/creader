@@ -27,6 +27,15 @@ function captureThemeDefault() {
 const baseOptions = { fontFamily: 'Georgia', fontSize: 16, lineHeight: 1.6 };
 
 describe('applyEpubTheme', () => {
+  it('uses the current app page colors for the isolated book body document', () => {
+    expect(paperBodyPalette.light.background).toBe('#FBF9F4');
+    expect(paperBodyPalette.light.text).toBe('#2B2B2B');
+    expect(paperBodyPalette.light.link).toBe('#33526E');
+    expect(paperBodyPalette.dark.background).toBe('#1A1B1E');
+    expect(paperBodyPalette.dark.text).toBe('#D4D4D4');
+    expect(paperBodyPalette.dark.link).toBe('#7EB0E0');
+  });
+
   it('injects the light palette into body, paragraph, headings, and link', () => {
     const { rendition, captured } = captureThemeDefault();
 
