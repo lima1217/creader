@@ -13,7 +13,7 @@
     padding: 0 10px;
     overflow: visible;
     flex-shrink: 0;
-    background: var(--bg-reader);
+    background: var(--bg-secondary);
     user-select: none;
 }
 
@@ -51,8 +51,8 @@
     min-height: 36px;
     padding: 0 10px;
     overflow: hidden;
-    background: color-mix(in srgb, var(--bg-control) 72%, transparent);
-    border: 1px solid var(--border-soft);
+    background: var(--bg-tertiary);
+    border: 0;
     border-radius: 4px;
 }
 
@@ -89,8 +89,6 @@
     gap: 3px;
     min-height: 38px;
     padding: 3px;
-    background: color-mix(in srgb, var(--bg-control) 86%, transparent);
-    border: 1px solid var(--border-soft);
     border-radius: 6px;
     gap: 5px;
     padding: 0;
@@ -184,7 +182,7 @@
 
 .astryx-dropdown-menu[role="menu"] {
     padding: 6px !important;
-    border: 1px solid var(--border-secondary) !important;
+    border: 0 !important;
     border-radius: 8px !important;
     background: var(--bg-elevated) !important;
     box-shadow: var(--shadow-popover) !important;

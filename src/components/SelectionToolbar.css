@@ -14,7 +14,7 @@
     gap: var(--space-1);
     padding: var(--space-1);
     background: var(--bg-elevated);
-    border: 1px solid var(--border-soft);
+    border: 0;
     border-radius: var(--radius-control);
     box-shadow: var(--shadow-float);
     z-index: 100;
@@ -41,9 +41,9 @@
     background: var(--bg-elevated);
     color: var(--text-tertiary);
     font-size: var(--text-xs);
-    border: 1px solid var(--border-soft);
+    border: 0;
     border-radius: var(--radius-control);
-    box-shadow: none;
+    box-shadow: var(--shadow-sm);
     z-index: 99;
     animation: hintFadeIn var(--transition-base) ease-out;
     white-space: nowrap;

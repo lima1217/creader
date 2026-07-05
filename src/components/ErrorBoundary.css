@@ -15,7 +15,7 @@
     width: min(100%, 520px);
     text-align: left;
     padding-top: var(--space-5);
-    border-top: 1px solid var(--border-secondary);
+    border-top: 0;
 }
 
 .error-boundary-content h2 {
@@ -38,7 +38,7 @@
     background: var(--bg-control);
     border-radius: var(--radius-control);
     padding: var(--space-3);
-    border: 1px solid var(--border-soft);
+    border: 0;
 }
 
 .error-details summary {

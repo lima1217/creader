@@ -3,8 +3,8 @@
     --sidebar-nav-item-padding-inline: var(--spacing-3, 12px);
     width: var(--sidebar-width);
     height: 100%;
-    background: var(--bg-reader);
-    border-right: 1px solid var(--border-soft);
+    background: var(--bg-secondary);
+    border-right: 0;
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
@@ -18,7 +18,7 @@
     justify-content: flex-start;
     height: var(--reading-toolbar-height);
     padding: 0 12px;
-    background: var(--bg-reader);
+    background: var(--bg-secondary);
     flex-shrink: 0;
 }
 
@@ -27,7 +27,7 @@
     flex-direction: column;
     gap: 6px;
     padding: 10px;
-    background: var(--bg-reader);
+    background: var(--bg-secondary);
     flex-shrink: 0;
 }
 
@@ -210,7 +210,7 @@
 
 .organizer-group-header:hover {
     background: var(--bg-control);
-    border-color: var(--border-soft);
+    border-color: transparent;
     color: var(--text-primary);
 }
 
@@ -267,7 +267,7 @@
 
 .book-item:hover {
     background: var(--bg-control);
-    border-color: var(--border-soft);
+    border-color: transparent;
 }
 
 .book-item.active {
@@ -281,12 +281,12 @@
     overflow: hidden;
     flex-shrink: 0;
     background: var(--bg-control);
-    box-shadow: inset 0 0 0 1px var(--border-soft);
+    box-shadow: var(--shadow-sm);
 }
 
 .book-item:hover .book-cover,
 .book-item.active .book-cover {
-    box-shadow: inset 0 0 0 1px var(--border-secondary);
+    box-shadow: var(--shadow-sm);
 }
 
 .book-cover img {
@@ -382,14 +382,14 @@
 .book-actions .astryx-button {
     color: var(--text-secondary) !important;
     background: color-mix(in srgb, var(--bg-elevated) 86%, transparent) !important;
-    border: 1px solid var(--border-soft) !important;
+    border-color: transparent !important;
     pointer-events: auto;
 }
 
 .book-actions .astryx-button:hover {
     color: var(--accent) !important;
     background: var(--bg-control-hover) !important;
-    border-color: var(--border-primary) !important;
+    border-color: transparent !important;
 }
 
 dialog.sidebar-dialog {
@@ -404,7 +404,7 @@ dialog.sidebar-dialog {
     padding: 0 !important;
     overflow: hidden;
     background: var(--sidebar-dialog-surface) !important;
-    border: 1px solid var(--border-secondary) !important;
+    border: 0 !important;
     border-radius: 10px !important;
     box-shadow: var(--shadow-popover) !important;
     transform: translate(-50%, -50%) !important;
@@ -542,7 +542,7 @@ dialog.sidebar-dialog::backdrop {
 
 .folder-assign-item:hover {
     background: var(--bg-control-hover);
-    border-color: var(--border-soft);
+    border-color: transparent;
 }
 
 .folder-assign-item[aria-selected="true"],
@@ -578,7 +578,7 @@ dialog.folder-assign-dialog.sidebar-dialog {
 
 .sidebar-footer {
     padding: 10px;
-    background: var(--bg-reader);
+    background: var(--bg-secondary);
     color: var(--text-muted);
     font-size: var(--text-xs);
     display: flex;
@@ -616,6 +616,6 @@ dialog.folder-assign-dialog.sidebar-dialog {
 
 .sidebar-settings-btn:hover {
     background: var(--bg-control);
-    border-color: var(--border-soft);
+    border-color: transparent;
     color: var(--text-primary);
 }

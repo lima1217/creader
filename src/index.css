@@ -283,12 +283,12 @@ a:hover {
 .btn-secondary {
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  border: 1px solid var(--border-primary);
+  border: 1px solid transparent;
 }
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--bg-active);
-  border-color: var(--border-accent);
+  border-color: transparent;
 }
 
 .btn-ghost {
@@ -334,7 +334,7 @@ a:hover {
   padding: var(--space-6);
   color: var(--text-primary);
   background: var(--bg-elevated);
-  border: 1px solid var(--border-secondary);
+  border: 0;
   border-radius: var(--radius-surface);
   box-shadow: var(--shadow-popover);
 }
@@ -368,16 +368,17 @@ textarea {
   font-size: var(--text-base);
   padding: var(--space-2) var(--space-3);
   background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   color: var(--text-primary);
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 input:focus,
 textarea:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.14);
 }
 
 input::placeholder,
@@ -604,7 +605,7 @@ li {
 
 .btn-secondary {
   background: var(--bg-control);
-  border-color: var(--border-secondary);
+  border-color: transparent;
 }
 
 .btn-secondary:hover:not(:disabled),
@@ -655,15 +656,15 @@ li {
 }
 
 .btn-secondary {
-  background: transparent;
+  background: var(--bg-control);
   color: var(--text-secondary);
-  border: 1px solid var(--border-primary);
+  border-color: transparent;
 }
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--bg-control-hover);
   color: var(--text-primary);
-  border-color: var(--border-accent);
+  border-color: transparent;
 }
 
 .btn-ghost:hover:not(:disabled) {
