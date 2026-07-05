@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isEditableEventTarget } from '../utils/dom';
 
 export function useKeyboardShortcuts(params: {
   isSidebarOpen: boolean;
@@ -14,16 +15,8 @@ export function useKeyboardShortcuts(params: {
   } = params;
 
   useEffect(() => {
-    const isEditable = (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) return false;
-      const tag = target.tagName.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
-      if (target.isContentEditable) return true;
-      return false;
-    };
-
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isEditable(e.target)) return;
+      if (isEditableEventTarget(e.target)) return;
 
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;

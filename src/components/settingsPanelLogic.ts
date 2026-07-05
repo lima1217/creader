@@ -163,14 +163,10 @@ export function formatQuickPromptStatus(
 
 /**
  * Restore a previously hidden default action by appending it and selecting it.
- * Pure.
+ * Same shape as {@link addQuickAction}, kept as a distinct name for the restore
+ * call site. Pure.
  */
-export function restoreQuickAction(
-  actions: QuickActionConfig[],
-  action: QuickActionConfig,
-): { actions: QuickActionConfig[]; editingId: string } {
-  return { actions: [...actions, action], editingId: action.id };
-}
+export const restoreQuickAction = addQuickAction;
 
 /**
  * Reset the quick-action list back to defaults. Pure (re-exported shape so the

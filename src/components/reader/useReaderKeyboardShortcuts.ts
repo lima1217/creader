@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isEditableEventTarget } from '../../utils/dom';
 
 export function useReaderKeyboardShortcuts(params: {
   enabled: boolean;
@@ -13,15 +14,7 @@ export function useReaderKeyboardShortcuts(params: {
   useEffect(() => {
     if (!enabled) return;
 
-    const isEditable = isEditableTarget
-      ? isEditableTarget
-      : (target: EventTarget | null) => {
-          if (!(target instanceof HTMLElement)) return false;
-          const tag = target.tagName.toLowerCase();
-          if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
-          if (target.isContentEditable) return true;
-          return false;
-        };
+    const isEditable = isEditableTarget ?? isEditableEventTarget;
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (isEditable(e.target)) return;
