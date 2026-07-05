@@ -1,5 +1,7 @@
 mod ai;
 mod book_files;
+#[allow(dead_code)]
+mod book_text;
 mod reading_memory;
 
 // ============================================================
