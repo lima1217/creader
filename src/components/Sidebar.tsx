@@ -22,7 +22,6 @@ import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
 import type { DropdownMenuOption } from '@astryxdesign/core/DropdownMenu';
-import { MoreMenu } from '@astryxdesign/core/MoreMenu';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import {
     CloseIcon,
@@ -479,14 +478,20 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                         onMouseDown={(event) => event.stopPropagation()}
                         onClick={(event) => event.stopPropagation()}
                     >
-                        <MoreMenu
-                            label={`${book.title} 操作`}
-                            size="sm"
+                        <DropdownMenu
+                            button={{
+                                label: `${book.title} 操作`,
+                                icon: <Icon icon={AstryxMoreHorizontalIcon} size="sm" />,
+                                variant: 'ghost',
+                                size: 'sm',
+                                isIconOnly: true,
+                            }}
                             items={[
                                 { label: '移动到文件夹', icon: AstryxFolderIcon, onClick: () => handleSetBookFolder(book.id) },
                                 { label: '编辑书籍信息', icon: AstryxEditIcon, onClick: () => handleEditBookAction(book) },
                                 { label: '移除书籍', icon: AstryxTrashIcon, onClick: () => void handleDeleteBookAction(book.id) },
                             ]}
+                            hasChevron={false}
                         />
                     </span>
                 }

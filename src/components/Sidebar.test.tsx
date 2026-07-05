@@ -245,6 +245,7 @@ describe('Sidebar contract — book interactions', () => {
     const { container } = mountSidebar();
     const button = container.querySelector('.book-actions button') as HTMLButtonElement | null;
     expect(button).not.toBeNull();
+    expect(button!.getAttribute('aria-describedby')).toBeNull();
 
     click(button!);
     await settle();
