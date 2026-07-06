@@ -630,7 +630,7 @@ dependencies = [
 
 [[package]]
 name = "creader"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "async-openai",
  "base64 0.22.1",
