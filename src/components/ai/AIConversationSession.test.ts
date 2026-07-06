@@ -280,6 +280,28 @@ describe('AIConversationSession', () => {
     expect(h.toolActivity).toBeNull();
   });
 
+  it('clears a previous tool activity hint when a tool fails without detail', async () => {
+    const h = createHarness();
+    await h.session.send();
+
+    h.lastChannel!.onmessage!({
+      event: 'tool_activity',
+      data: { name: 'write_reading_memory', status: 'started', detail: '正在写入阅读记忆…' },
+    });
+    expect(h.toolActivity).toBe('正在写入阅读记忆…');
+
+    // A failure with no detail (e.g. backend returned status=failed but omitted
+    // the label) must clear the stale "正在写入…" hint instead of leaving it up.
+    h.lastChannel!.onmessage!({
+      event: 'tool_activity',
+      data: { name: 'write_reading_memory', status: 'failed' },
+    });
+    expect(h.toolActivity).toBeNull();
+
+    h.lastChannel!.onmessage!({ event: 'done', data: { fullText: 'answer' } });
+    expect(h.toolActivity).toBeNull();
+  });
+
   it('commits stopped streaming content after cancel timeout', async () => {
     const h = createHarness({ isLoading: true });
     h.setStreamingContent('partial answer');

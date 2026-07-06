@@ -696,7 +696,13 @@ fn tool_activity_detail(name: &str, status: &str, arguments: &str) -> Option<Str
     match (name, status) {
         ("list_chapters", "started") => Some("正在获取目录…".to_string()),
         ("list_chapters", "completed") => Some("已获取目录".to_string()),
-        ("get_chapter_text", "started") | ("get_chapter_text", "completed") => {
+        ("list_chapters", "failed") => Some("获取目录失败".to_string()),
+        ("get_chapter_text", "started") | ("get_chapter_text", "completed")
+        | ("get_chapter_text", "failed") => {
+            // Parse the requested chapter index once for all three statuses so the
+            // hint stays consistent across the tool's lifecycle. A missing/garbled
+            // index falls back to a chapter-agnostic label rather than dropping
+            // the hint entirely — the user still sees the tool ran.
             let chapter_index = serde_json::from_str::<GetChapterTextToolArgs>(arguments)
                 .ok()
                 .map(|args| args.index);
@@ -705,11 +711,14 @@ fn tool_activity_detail(name: &str, status: &str, arguments: &str) -> Option<Str
                 ("started", None) => Some("正在查阅章节…".to_string()),
                 ("completed", Some(index)) => Some(format!("已查阅第 {} 章", index)),
                 ("completed", None) => Some("已查阅章节".to_string()),
+                ("failed", Some(index)) => Some(format!("查阅第 {} 章失败", index)),
+                ("failed", None) => Some("查阅章节失败".to_string()),
                 _ => None,
             }
         }
         ("write_reading_memory", "started") => Some("正在写入阅读记忆…".to_string()),
         ("write_reading_memory", "completed") => Some("已写入阅读记忆".to_string()),
+        ("write_reading_memory", "failed") => Some("写入阅读记忆失败".to_string()),
         _ => None,
     }
 }
@@ -1332,13 +1341,41 @@ mod tests {
 
     #[test]
     fn tool_activity_detail_formats_user_facing_labels() {
+        // get_chapter_text lifecycle, including the failed branch and the
+        // chapter-agnostic fallback when the index cannot be parsed.
         assert_eq!(
             tool_activity_detail("get_chapter_text", "started", r#"{"index":2}"#),
             Some("正在查阅第 2 章…".to_string())
         );
         assert_eq!(
+            tool_activity_detail("get_chapter_text", "completed", r#"{"index":2}"#),
+            Some("已查阅第 2 章".to_string())
+        );
+        assert_eq!(
+            tool_activity_detail("get_chapter_text", "failed", r#"{"index":2}"#),
+            Some("查阅第 2 章失败".to_string())
+        );
+        assert_eq!(
+            tool_activity_detail("get_chapter_text", "failed", "{}"),
+            Some("查阅章节失败".to_string())
+        );
+        // list_chapters lifecycle.
+        assert_eq!(
+            tool_activity_detail("list_chapters", "started", "{}"),
+            Some("正在获取目录…".to_string())
+        );
+        assert_eq!(
+            tool_activity_detail("list_chapters", "failed", "{}"),
+            Some("获取目录失败".to_string())
+        );
+        // write_reading_memory lifecycle.
+        assert_eq!(
             tool_activity_detail("write_reading_memory", "completed", "{}"),
             Some("已写入阅读记忆".to_string())
+        );
+        assert_eq!(
+            tool_activity_detail("write_reading_memory", "failed", "{}"),
+            Some("写入阅读记忆失败".to_string())
         );
     }
 

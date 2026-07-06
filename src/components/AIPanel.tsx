@@ -461,7 +461,12 @@ export function AIPanel() {
                     >
                         <div className="ai-message-content">
                             {toolActivity && (
-                                <div className="ai-tool-activity" aria-live="polite">
+                                <div
+                                    className="ai-tool-activity"
+                                    role="status"
+                                    aria-live="polite"
+                                    aria-atomic="true"
+                                >
                                     {toolActivity}
                                 </div>
                             )}

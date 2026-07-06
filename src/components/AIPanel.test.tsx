@@ -338,6 +338,32 @@ describe('AIPanel — streaming contract', () => {
     expect(container.querySelector('.ai-tool-activity')).toBeNull();
   });
 
+  it('surfaces a tool failure hint and clears it on done', async () => {
+    const { container } = mountPanel();
+    await typeAndSend(container, 'write a note');
+    const ch = lastChannel.current!;
+
+    ch.onmessage!({ event: 'started', data: { provider: 'mock' } });
+    ch.onmessage!({
+      event: 'tool_activity',
+      data: {
+        name: 'write_reading_memory',
+        status: 'failed',
+        detail: '写入阅读记忆失败',
+      },
+    });
+    await settle();
+
+    expect(container.querySelector('.ai-tool-activity')?.textContent).toContain(
+      '写入阅读记忆失败',
+    );
+
+    ch.onmessage!({ event: 'done', data: { fullText: 'could not save' } });
+    await settle();
+
+    expect(container.querySelector('.ai-tool-activity')).toBeNull();
+  });
+
   it('does not show tool activity hints during a plain text turn', async () => {
     const { container } = mountPanel();
     await typeAndSend(container, 'plain answer');
