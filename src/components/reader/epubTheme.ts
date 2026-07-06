@@ -2,9 +2,12 @@ import type { Theme } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { paperBodyPalette } from '../../theme/paperTheme';
 
+// Line measure lives on the layout contract (single source of truth); re-export
+// here so body-typography consumers keep their existing import path.
+export { EPUB_MAX_INLINE_SIZE } from '../../services/reader/readingEngine';
+
 /** Fixed typography — not user-adjustable (issue #91). */
 export const EPUB_LINE_HEIGHT = 1.6;
-export const EPUB_MAX_INLINE_SIZE = 700;
 
 /**
  * Injects the reading-engine body theme into the rendered EPUB.

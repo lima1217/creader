@@ -3,8 +3,9 @@ import type { RefObject } from 'react';
 import { readFile } from '@tauri-apps/plugin-fs';
 import type { Settings, Book, NavItem } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
-import { applyEpubTheme, buildFontStack, EPUB_MAX_INLINE_SIZE } from './epubTheme';
+import { applyEpubTheme, buildFontStack } from './epubTheme';
 import { foliateEngineAdapter } from '../../services/reader/foliateEngine';
+import { DEFAULT_READING_LAYOUT } from '../../services/reader/readingEngine';
 import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
 import { createLogger } from '../../utils/logger';
 import { classifyBookOpenError, toBookOpenUserMessage } from '../../utils/errors';
@@ -92,11 +93,10 @@ export function useEpubBookLifecycle(params: {
           fontSize: settings.fontSize,
         });
 
-        rendition.setLayout?.({
-          flow: 'scrolled',
-          maxInlineSize: EPUB_MAX_INLINE_SIZE,
-          animated: true,
-        });
+        // Pin the engine to the fixed scrolled layout before the first display
+        // so the very first paint is already flow=scrolled (#88). Position is
+        // preserved across later setLayout calls by foliate's `#anchor`.
+        rendition.setLayout?.(DEFAULT_READING_LAYOUT);
 
         const startTarget = currentBook.progress.currentCfi || undefined;
         await perfSpan('epub:firstDisplay', async () => rendition.display(startTarget));

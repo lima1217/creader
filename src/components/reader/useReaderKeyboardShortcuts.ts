@@ -6,10 +6,21 @@ export function useReaderKeyboardShortcuts(params: {
   isEditableTarget?: (target: EventTarget | null) => boolean;
   onPrev?: () => void;
   onNext?: () => void;
+  onChapterStart?: () => void;
+  onChapterEnd?: () => void;
   onEscape?: () => void;
   onKey?: (e: KeyboardEvent) => void;
 }) {
-  const { enabled, isEditableTarget, onPrev, onNext, onEscape, onKey } = params;
+  const {
+    enabled,
+    isEditableTarget,
+    onPrev,
+    onNext,
+    onChapterStart,
+    onChapterEnd,
+    onEscape,
+    onKey,
+  } = params;
 
   useEffect(() => {
     if (!enabled) return;
@@ -22,15 +33,27 @@ export function useReaderKeyboardShortcuts(params: {
       const isSpace = e.key === ' ' || e.key === 'Spacebar';
       const isShiftSpace = isSpace && e.shiftKey;
 
-      if ((e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp' || isShiftSpace) && onPrev) {
+      if ((e.key === 'ArrowLeft' || e.key === 'PageUp' || isShiftSpace) && onPrev) {
         e.preventDefault();
         onPrev();
         return;
       }
 
-      if ((e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || isSpace) && onNext) {
+      if ((e.key === 'ArrowRight' || e.key === 'PageDown' || (isSpace && !e.shiftKey)) && onNext) {
         e.preventDefault();
         onNext();
+        return;
+      }
+
+      if (e.key === 'Home' && onChapterStart) {
+        e.preventDefault();
+        onChapterStart();
+        return;
+      }
+
+      if (e.key === 'End' && onChapterEnd) {
+        e.preventDefault();
+        onChapterEnd();
         return;
       }
 
@@ -44,5 +67,5 @@ export function useReaderKeyboardShortcuts(params: {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [enabled, isEditableTarget, onEscape, onKey, onNext, onPrev]);
+  }, [enabled, isEditableTarget, onChapterEnd, onChapterStart, onEscape, onKey, onNext, onPrev]);
 }

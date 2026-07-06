@@ -6,6 +6,7 @@ import { useSelectionStore } from '../../stores/selectionStore';
 import { useUIStore } from '../../stores/uiStore';
 import type { Book, NavItem } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
+import type { ReadingEngineRendition } from '../../services/reader/readingEngine';
 import { createLogger } from '../../utils/logger';
 import { isTocItemActive } from './readerNavigation';
 import { useEpubProgressTracking } from './useEpubProgressTracking';
@@ -50,6 +51,21 @@ export function useReadingChromeSession(params: {
 
   const handleNext = useCallback(() => {
     renditionRef.current?.next();
+    closeSelectionToolbar();
+  }, [closeSelectionToolbar, renditionRef]);
+
+  const handleChapterStart = useCallback(() => {
+    void renditionRef.current?.goToChapterStart?.();
+    closeSelectionToolbar();
+  }, [closeSelectionToolbar, renditionRef]);
+
+  const handleChapterEnd = useCallback(() => {
+    void renditionRef.current?.goToChapterEnd?.();
+    closeSelectionToolbar();
+  }, [closeSelectionToolbar, renditionRef]);
+
+  const handleSeek = useCallback((fraction: number) => {
+    void (renditionRef.current as ReadingEngineRendition | null)?.seekToFraction?.(fraction);
     closeSelectionToolbar();
   }, [closeSelectionToolbar, renditionRef]);
 
@@ -110,6 +126,8 @@ export function useReadingChromeSession(params: {
     },
     onPrev: handlePrev,
     onNext: handleNext,
+    onChapterStart: handleChapterStart,
+    onChapterEnd: handleChapterEnd,
     onEscape: () => {
       setShowToc(false);
       closeSelectionToolbar();
@@ -153,6 +171,7 @@ export function useReadingChromeSession(params: {
     isTocItemCurrent,
     handlePrev,
     handleNext,
+    handleSeek,
     selectionToolbar: {
       visible: showSelectionToolbar,
       position: selectionToolbarPos,

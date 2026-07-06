@@ -177,6 +177,41 @@ describe('useReadingChromeSession', () => {
     expect(session().selectionToolbar.position).toBeNull();
   });
 
+  it('routes prev and next through the rendition', () => {
+    const { session, rendition } = mountSession();
+
+    session().handlePrev();
+    session().handleNext();
+
+    expect(rendition.prev).toHaveBeenCalledOnce();
+    expect(rendition.next).toHaveBeenCalledOnce();
+  });
+
+  it('routes seek through seekToFraction on the rendition', () => {
+    const rendition = createRendition();
+    rendition.seekToFraction = vi.fn();
+    const { session } = mountSession(rendition);
+
+    session().handleSeek(0.5);
+
+    expect(rendition.seekToFraction).toHaveBeenCalledWith(0.5);
+  });
+
+  it('routes keyboard navigation through the rendition', () => {
+    const rendition = createRendition();
+    rendition.goToChapterStart = vi.fn();
+    rendition.goToChapterEnd = vi.fn();
+    mountSession(rendition);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+
+    expect(rendition.next).toHaveBeenCalledOnce();
+    expect(rendition.goToChapterStart).toHaveBeenCalledOnce();
+    expect(rendition.goToChapterEnd).toHaveBeenCalledOnce();
+  });
+
   it('passes progress and chapter extraction routing into the progress tracker', () => {
     mountSession();
 

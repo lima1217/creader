@@ -9,6 +9,7 @@ import { useEpubBookLifecycle } from './useEpubBookLifecycle';
 
 const mocks = vi.hoisted(() => ({
   display: vi.fn(),
+  setLayout: vi.fn(),
   readFile: vi.fn(),
   destroy: vi.fn(),
 }));
@@ -43,7 +44,7 @@ function foliateInstance(): ReadingEngineInstance {
     next: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
-    setLayout: vi.fn(),
+    setLayout: mocks.setLayout,
     themes: { default: vi.fn() },
   } as unknown as ReadingEngineInstance['rendition'];
   return {
@@ -240,6 +241,30 @@ describe('useEpubBookLifecycle opening critical path', () => {
     await settle();
 
     expect(adapterMocks.foliateOpen).toHaveBeenCalledOnce();
+
+    flushSync(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  it('pins flow=scrolled before the first display so the first paint is already scrolled (#88)', async () => {
+    mocks.display.mockResolvedValue(undefined);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    flushSync(() => root.render(
+      <Harness onLoadingChange={() => {}} />,
+    ));
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+
+    expect(mocks.setLayout).toHaveBeenCalledWith({
+      flow: 'scrolled',
+      maxInlineSize: 700,
+      animated: true,
+    });
+    expect(mocks.setLayout).toHaveBeenCalledBefore(mocks.display);
 
     flushSync(() => root.unmount());
     container.remove();

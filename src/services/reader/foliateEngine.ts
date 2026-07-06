@@ -27,6 +27,7 @@ type FoliateRenderer = {
   removeEventListener?: (type: string, listener: (event: Event) => void, options?: boolean | EventListenerOptions) => void;
   setAttribute: (name: string, value: string) => void;
   removeAttribute: (name: string) => void;
+  goTo?: (target: { index: number; anchor: () => number }) => Promise<void>;
 };
 
 type FoliateViewElement = HTMLElement & {
@@ -166,6 +167,34 @@ class FoliateRendition implements ReadingEngineRendition {
 
   async next(): Promise<void> {
     await this.view.next();
+  }
+
+  async goToChapterStart(): Promise<void> {
+    await this.goToChapterEdge(0);
+  }
+
+  async goToChapterEnd(): Promise<void> {
+    await this.goToChapterEdge(1);
+  }
+
+  async seekToFraction(fraction: number): Promise<void> {
+    const view = this.view as unknown as { goToFraction?: (frac: number) => Promise<void> };
+    if (view.goToFraction) {
+      await view.goToFraction(fraction);
+      return;
+    }
+    await this.view.goTo({ fraction });
+  }
+
+  getSectionFractions(): number[] {
+    const view = this.view as unknown as { getSectionFractions?: () => number[] };
+    return view.getSectionFractions?.() ?? [];
+  }
+
+  private async goToChapterEdge(anchor: number): Promise<void> {
+    const index = this.view.lastLocation?.index;
+    if (index == null) return;
+    await this.view.renderer?.goTo?.({ index, anchor: () => anchor });
   }
 
   setLayout(opts: ReadingLayoutOptions): void {

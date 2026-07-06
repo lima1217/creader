@@ -147,6 +147,113 @@ describe('foliateEngine setLayout', () => {
   });
 });
 
+describe('foliateEngine chapter edge navigation', () => {
+  let mockRenderer: {
+    setAttribute: ReturnType<typeof vi.fn>;
+    removeAttribute: ReturnType<typeof vi.fn>;
+    goTo: ReturnType<typeof vi.fn>;
+    getContents: ReturnType<typeof vi.fn>;
+    setStyles: ReturnType<typeof vi.fn>;
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+  };
+
+  let mockView: {
+    renderer: typeof mockRenderer;
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+    lastLocation: { index: number } | null;
+    open: ReturnType<typeof vi.fn>;
+    init: ReturnType<typeof vi.fn>;
+    goTo: ReturnType<typeof vi.fn>;
+    prev: ReturnType<typeof vi.fn>;
+    next: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+    classList: { add: ReturnType<typeof vi.fn> };
+    remove: ReturnType<typeof vi.fn>;
+  };
+
+  let originalCreateElement: typeof document.createElement;
+
+  beforeEach(() => {
+    mockRenderer = {
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      goTo: vi.fn(),
+      getContents: vi.fn(() => []),
+      setStyles: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+
+    mockView = {
+      renderer: mockRenderer,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      lastLocation: { index: 3 },
+      open: vi.fn(),
+      init: vi.fn(),
+      goTo: vi.fn(),
+      prev: vi.fn(),
+      next: vi.fn(),
+      close: vi.fn(),
+      classList: { add: vi.fn() },
+      remove: vi.fn(),
+    };
+
+    originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'foliate-view') return mockView as unknown as HTMLElement;
+      return originalCreateElement(tag);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function openTestInstance() {
+    return foliateEngineAdapter.open({
+      appBook: { title: 'Test Book' } as any,
+      arrayBuffer: new ArrayBuffer(0),
+      container: document.createElement('div'),
+    });
+  }
+
+  it('goToChapterStart scrolls to the start of the current section', async () => {
+    const instance = await openTestInstance();
+
+    await instance.rendition.goToChapterStart?.();
+
+    expect(mockRenderer.goTo).toHaveBeenCalledWith({
+      index: 3,
+      anchor: expect.any(Function),
+    });
+    expect(mockRenderer.goTo.mock.calls[0][0].anchor()).toBe(0);
+  });
+
+  it('goToChapterEnd scrolls to the end of the current section', async () => {
+    const instance = await openTestInstance();
+
+    await instance.rendition.goToChapterEnd?.();
+
+    expect(mockRenderer.goTo).toHaveBeenCalledWith({
+      index: 3,
+      anchor: expect.any(Function),
+    });
+    expect(mockRenderer.goTo.mock.calls[0][0].anchor()).toBe(1);
+  });
+
+  it('skips chapter edge navigation when the current section is unknown', async () => {
+    mockView.lastLocation = null;
+    const instance = await openTestInstance();
+
+    await instance.rendition.goToChapterStart?.();
+
+    expect(mockRenderer.goTo).not.toHaveBeenCalled();
+  });
+});
+
 describe('foliateEngine section typography', () => {
   let loadHandler: ((event: Event) => void) | undefined;
 
