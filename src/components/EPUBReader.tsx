@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -7,9 +7,9 @@ import type { ReaderRendition } from '../services/reader/epubAdapter';
 import { tryCopyBookToLibrary } from '../services/BookImportService';
 import { createLogger } from '../utils/logger';
 import { handleWindowDragMouseDown } from '../utils/windowDrag';
-import { applyEpubTheme, buildFontStack } from './reader/epubTheme';
 import { SelectionToolbar } from './reader/SelectionToolbar';
 import { useEpubBookLifecycle } from './reader/useEpubBookLifecycle';
+import { useEpubSettingsSync } from './reader/useEpubSettingsSync';
 import { useReadingChromeSession } from './reader/useReadingChromeSession';
 import './EPUBReader.css';
 import './SelectionToolbar.css';
@@ -51,16 +51,9 @@ export function EPUBReader() {
         onRenditionCreated: setActiveRendition,
     });
 
-    // Update styles when settings change (including theme)
-    useEffect(() => {
-        if (renditionRef.current) {
-            applyEpubTheme(renditionRef.current, {
-                theme: settings.theme,
-                fontStack: buildFontStack(settings.fontFamily),
-                fontSize: settings.fontSize,
-            });
-        }
-    }, [settings.fontSize, settings.fontFamily, settings.theme]);
+    // Re-apply layout + theme on settings changes without re-displaying; the
+    // engine's `#anchor` preserves scroll position (#88).
+    useEpubSettingsSync(renditionRef, settings);
 
     const renderTocItems = (items: NavItem[], depth = 0) => items.map(item => {
         const isActive = chrome.isTocItemCurrent(item.href);
