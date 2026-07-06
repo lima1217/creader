@@ -12,7 +12,14 @@ use std::time::{Duration, Instant};
 use zip::read::ZipArchive;
 
 const DEFAULT_CHAPTER_CACHE_CAPACITY: usize = 32;
-const MAX_CACHEABLE_CHAPTER_CHARS: usize = 512_000;
+/// Per-chapter hard ceiling on cached text. A single chapter above this is
+/// left un-cached to bound memory on pathological EPUBs (e.g. a manual that
+/// ships one giant section). Normal EPUB chapters are well under 200k chars,
+/// so this guard only bites the long tail, while still letting deep pagination
+/// reuse the cache for chapters up to ~2M chars. Combined with the
+/// entry-count LRU (`DEFAULT_CHAPTER_CACHE_CAPACITY`) this bounds worst-case
+/// cache memory at roughly capacity × ceiling ≈ 32 × 2M chars ≈ 64-96 MB.
+const MAX_CACHEABLE_CHAPTER_CHARS: usize = 2_000_000;
 const DEFAULT_SLICE_LIMIT: usize = 16_000;
 pub const MAX_SEARCH_CHAPTERS: usize = 200;
 pub const MAX_SEARCH_HITS: usize = 20;
@@ -229,49 +236,30 @@ fn blocking_get_chapter_text(
     }
 
     let book_key = canonical_book_key(book_path)?;
-    if let Some(full_text) = cache.get(&book_key, index) {
-        return Ok(slice_chapter_text(&full_text, index, offset, limit));
-    }
 
-    let mut archive = open_epub_archive(book_path)?;
-    let package = load_epub_package(&mut archive)?;
-    let idref = package
-        .spine
-        .get(index)
-        .ok_or_else(|| format!("Chapter index {} out of range", index))?;
-    let item = package
-        .manifest
-        .get(idref)
-        .ok_or_else(|| format!("Spine itemref '{}' missing from manifest", idref))?;
-    let entry_path = join_epub_path(&package.opf_base, &item.href);
-
-    if !is_xhtml_like(&item.media_type, &item.href) {
-        return Err(format!("Spine item '{}' is not XHTML content", idref));
-    }
-
-    let mut entry = archive
-        .by_name(&entry_path)
-        .map_err(|e| format!("Failed to read chapter entry '{}': {}", entry_path, e))?;
-
-    let mut buffered = std::io::BufReader::new(&mut entry);
-    let (extracted, reached_eof) = extract_xhtml_text(&mut buffered, offset, Some(limit))?;
-
-    if reached_eof && offset == 0 && extracted.chars().count() <= MAX_CACHEABLE_CHAPTER_CHARS {
-        cache.put(&book_key, index, extracted.clone());
-    }
-
-    let next_offset = if reached_eof {
-        None
-    } else {
-        Some(offset + extracted.chars().count())
+    // Cache-then-slice: on a miss, extract the full normalized chapter once
+    // and cache it, then slice the requested window. This keeps deep
+    // pagination (offset in the hundreds of thousands) from re-opening the
+    // ZIP and re-parsing the XHTML on every page. `slice_chapter_text` is
+    // O(limit), and the cache is shared with `search_book` so a scan followed
+    // by a `get_chapter_text` on the same chapter is free.
+    let full_text = match cache.get(&book_key, index) {
+        Some(text) => text,
+        None => {
+            let mut archive = open_epub_archive(book_path)?;
+            let package = load_epub_package(&mut archive)?;
+            let text = load_chapter_text_from_open_archive(
+                &mut archive,
+                &package,
+                &book_key,
+                index,
+                cache,
+            )?;
+            text
+        }
     };
 
-    Ok(ChapterTextSlice {
-        text: extracted,
-        index,
-        offset,
-        next_offset,
-    })
+    Ok(slice_chapter_text(&full_text, index, offset, limit))
 }
 
 fn blocking_search_book(
@@ -1287,6 +1275,66 @@ mod tests {
         let second = get_chapter_text(&path, 0, None, None, &cache).expect("second read");
         assert_eq!(second.text, "Cache me.");
         assert_eq!(chapter_extractions() - before, 1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    #[serial]
+    fn get_chapter_text_caches_large_chapter_for_deep_pagination() {
+        // Regression for #100: a chapter above the legacy 512k-char ceiling
+        // (but under the new 2M-char hard guard) must still enter the cache on
+        // the first read, so that subsequent pages do not re-open the ZIP or
+        // re-parse the XHTML. Before #100 each page was O(n) over the whole
+        // chapter; now only the first page pays full extraction.
+        let path = temp_epub("large-cache");
+        let mut body = String::new();
+        // ~700k chars of content: above the old ceiling, below the new one.
+        for _ in 0..70_000 {
+            body.push_str("<p>abcdefghij</p>"); // 10 chars per <p>
+        }
+        write_test_epub(&path, &[("Big", body.as_str())], false);
+
+        let cache = BookTextCache::with_default_capacity();
+        reset_test_counters();
+        let before_extractions = chapter_extractions();
+        let before_opens = archive_opens();
+
+        // First page: cold cache. Extracts the whole chapter once and caches it.
+        let first =
+            get_chapter_text(&path, 0, Some(0), Some(1000), &cache).expect("first page");
+        assert_eq!(first.text.chars().count(), 1000);
+        assert_eq!(first.offset, 0);
+        let first_next = first.next_offset.expect("first page has next");
+        assert_eq!(first_next, 1000);
+
+        let first_extractions = chapter_extractions() - before_extractions;
+        let first_opens = archive_opens() - before_opens;
+        assert_eq!(
+            first_extractions, 1,
+            "first page must extract the chapter exactly once"
+        );
+        assert_eq!(
+            first_opens, 1,
+            "first page must open the archive exactly once"
+        );
+
+        // Second page (deep offset): warm cache. No re-extraction, no re-open.
+        let second = get_chapter_text(&path, 0, Some(first_next), Some(1000), &cache)
+            .expect("second page");
+        assert_eq!(second.text.chars().count(), 1000);
+        assert_eq!(second.offset, first_next);
+
+        let second_extractions = chapter_extractions() - before_extractions;
+        let second_opens = archive_opens() - before_opens;
+        assert_eq!(
+            second_extractions, 1,
+            "second page must not re-extract; cache hit expected"
+        );
+        assert_eq!(
+            second_opens, 1,
+            "second page must not re-open the archive; cache hit expected"
+        );
 
         let _ = std::fs::remove_file(path);
     }
