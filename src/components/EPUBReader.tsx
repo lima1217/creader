@@ -7,7 +7,7 @@ import type { ReaderRendition } from '../services/reader/epubAdapter';
 import { tryCopyBookToLibrary } from '../services/BookImportService';
 import { createLogger } from '../utils/logger';
 import { handleWindowDragMouseDown } from '../utils/windowDrag';
-import { applyEpubTheme } from './reader/epubTheme';
+import { applyEpubTheme, buildFontStack } from './reader/epubTheme';
 import { SelectionToolbar } from './reader/SelectionToolbar';
 import { useEpubBookLifecycle } from './reader/useEpubBookLifecycle';
 import { useReadingChromeSession } from './reader/useReadingChromeSession';
@@ -56,12 +56,11 @@ export function EPUBReader() {
         if (renditionRef.current) {
             applyEpubTheme(renditionRef.current, {
                 theme: settings.theme,
-                fontFamily: settings.fontFamily,
+                fontStack: buildFontStack(settings.fontFamily),
                 fontSize: settings.fontSize,
-                lineHeight: settings.lineHeight,
             });
         }
-    }, [settings.fontSize, settings.fontFamily, settings.lineHeight, settings.theme]);
+    }, [settings.fontSize, settings.fontFamily, settings.theme]);
 
     const renderTocItems = (items: NavItem[], depth = 0) => items.map(item => {
         const isActive = chrome.isTocItemCurrent(item.href);

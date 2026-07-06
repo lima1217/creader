@@ -146,3 +146,93 @@ describe('foliateEngine setLayout', () => {
     expect(() => instance.rendition.setLayout?.({ flow: 'scrolled' })).not.toThrow();
   });
 });
+
+describe('foliateEngine section typography', () => {
+  let loadHandler: ((event: Event) => void) | undefined;
+
+  let mockRenderer: {
+    setAttribute: ReturnType<typeof vi.fn>;
+    removeAttribute: ReturnType<typeof vi.fn>;
+    getContents?: () => Array<{ doc?: Document; index?: number }>;
+    setStyles?: (styles: string) => void;
+    addEventListener?: ReturnType<typeof vi.fn>;
+    removeEventListener?: ReturnType<typeof vi.fn>;
+  };
+
+  let mockView: {
+    renderer: typeof mockRenderer;
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+    lastLocation: unknown;
+    open: ReturnType<typeof vi.fn>;
+    init: ReturnType<typeof vi.fn>;
+    goTo: ReturnType<typeof vi.fn>;
+    prev: ReturnType<typeof vi.fn>;
+    next: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+    getCFI?: ReturnType<typeof vi.fn>;
+    classList: { add: ReturnType<typeof vi.fn> };
+    remove: ReturnType<typeof vi.fn>;
+  };
+
+  let originalCreateElement: typeof document.createElement;
+
+  beforeEach(() => {
+    loadHandler = undefined;
+    mockRenderer = {
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      getContents: vi.fn(() => []),
+      setStyles: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+
+    mockView = {
+      renderer: mockRenderer,
+      addEventListener: vi.fn((type: string, handler: (event: Event) => void) => {
+        if (type === 'load') loadHandler = handler;
+      }),
+      removeEventListener: vi.fn(),
+      lastLocation: null,
+      open: vi.fn(),
+      init: vi.fn(),
+      goTo: vi.fn(),
+      prev: vi.fn(),
+      next: vi.fn(),
+      close: vi.fn(),
+      classList: { add: vi.fn() },
+      remove: vi.fn(),
+    };
+
+    originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'foliate-view') return mockView as unknown as HTMLElement;
+      return originalCreateElement(tag);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function openTestInstance() {
+    return foliateEngineAdapter.open({
+      appBook: { title: 'Test Book' } as any,
+      arrayBuffer: new ArrayBuffer(0),
+      container: document.createElement('div'),
+    });
+  }
+
+  it('injects per-section typography CSS from document lang on load', async () => {
+    const { buildSectionTypographyCss } = await import('./epubTypography');
+    await openTestInstance();
+    const doc = document.implementation.createHTMLDocument('section');
+    doc.documentElement.lang = 'en';
+
+    loadHandler?.(new CustomEvent('load', { detail: { doc, index: 0 } }));
+
+    const style = doc.getElementById('creader-foliate-typography') as HTMLStyleElement | null;
+    expect(style?.textContent).toBe(buildSectionTypographyCss('en'));
+  });
+});

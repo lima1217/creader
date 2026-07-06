@@ -18,7 +18,10 @@ const adapterMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/plugin-fs', () => ({ readFile: mocks.readFile }));
-vi.mock('./epubTheme', () => ({ applyEpubTheme: vi.fn() }));
+vi.mock('./epubTheme', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./epubTheme')>();
+  return { ...actual, applyEpubTheme: vi.fn() };
+});
 vi.mock('../../utils/perf', () => ({ perfSpan: (_name: string, fn: () => Promise<unknown>) => fn() }));
 vi.mock('../../services/reader/foliateEngine', () => ({
   foliateEngineAdapter: { open: adapterMocks.foliateOpen },
@@ -40,6 +43,7 @@ function foliateInstance(): ReadingEngineInstance {
     next: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
+    setLayout: vi.fn(),
     themes: { default: vi.fn() },
   } as unknown as ReadingEngineInstance['rendition'];
   return {
@@ -236,6 +240,32 @@ describe('useEpubBookLifecycle opening critical path', () => {
     await settle();
 
     expect(adapterMocks.foliateOpen).toHaveBeenCalledOnce();
+
+    flushSync(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  it('enables scrolled layout with animated page turns before first display', async () => {
+    mocks.display.mockResolvedValue(undefined);
+    const instance = foliateInstance();
+    adapterMocks.foliateOpen.mockResolvedValue(instance);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    flushSync(() => root.render(
+      <Harness onLoadingChange={() => {}} />,
+    ));
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+
+    expect(instance.rendition.setLayout).toHaveBeenCalledWith({
+      flow: 'scrolled',
+      maxInlineSize: 700,
+      animated: true,
+    });
+    expect(mocks.display).toHaveBeenCalledOnce();
 
     flushSync(() => root.unmount());
     container.remove();

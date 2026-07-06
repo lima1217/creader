@@ -1,17 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
-import { applyEpubTheme } from './epubTheme';
+import { applyEpubTheme, buildFontStack, EPUB_LINE_HEIGHT } from './epubTheme';
 import { paperBodyPalette } from '../../theme/paperTheme';
 
-/**
- * `applyEpubTheme` injects literal palette values (the book body cannot see the
- * host `:root` tokens), so the contract under test is: every body color equals
- * the matching `paperBodyPalette` entry for the active theme. The body
- * background stays opaque so it covers the engine document's default canvas (which
- * would otherwise wash out dark-mode text). Assertions read from
- * `paperBodyPalette` rather than hard-coded strings, so a future palette edit
- * only touches `paperTheme.ts` and these tests stay green.
- */
 function captureThemeDefault() {
   const captured: Record<string, Record<string, string>> = {};
   const rendition = {
@@ -24,7 +15,13 @@ function captureThemeDefault() {
   return { rendition, captured };
 }
 
-const baseOptions = { fontFamily: 'Georgia', fontSize: 16, lineHeight: 1.6 };
+const baseOptions = { fontStack: 'Georgia, "Times New Roman", serif', fontSize: 16 };
+
+describe('buildFontStack', () => {
+  it('appends Georgia serif fallbacks until #92 whitelist lands', () => {
+    expect(buildFontStack('Merriweather')).toBe('Merriweather, Georgia, serif');
+  });
+});
 
 describe('applyEpubTheme', () => {
   it('uses the current app page colors for the isolated book body document', () => {
@@ -36,7 +33,7 @@ describe('applyEpubTheme', () => {
     expect(paperBodyPalette.dark.link).toBe('#7EB0E0');
   });
 
-  it('injects the light palette into body, paragraph, headings, and link', () => {
+  it('injects palette colors on body and links only', () => {
     const { rendition, captured } = captureThemeDefault();
 
     applyEpubTheme(rendition, { ...baseOptions, theme: 'light' });
@@ -44,9 +41,9 @@ describe('applyEpubTheme', () => {
     expect(captured.body.color).toBe(`${paperBodyPalette.light.text} !important`);
     expect(captured.body.background).toBe(`${paperBodyPalette.light.background} !important`);
     expect(captured.a.color).toBe(`${paperBodyPalette.light.link} !important`);
-    expect(captured['p'].color).toBe(`${paperBodyPalette.light.text} !important`);
-    expect(captured['h1, h2, h3, h4, h5, h6'].color).toBe(`${paperBodyPalette.light.text} !important`);
-    expect(captured['span, div'].color).toBe(`${paperBodyPalette.light.text} !important`);
+    expect(captured.p).toEqual({ 'margin-bottom': '1em' });
+    expect(captured['span, div']).toBeUndefined();
+    expect(captured['h1, h2, h3, h4, h5, h6']).toBeUndefined();
   });
 
   it('injects the dark palette so book text/links match chrome in dark mode', () => {
@@ -59,11 +56,6 @@ describe('applyEpubTheme', () => {
     expect(captured.a.color).toBe(`${paperBodyPalette.dark.link} !important`);
   });
 
-  // Regression guard: the body background must stay opaque. The engine renders
-  // each section in an isolated document whose default canvas is white; an opaque body
-  // background is what covers that white so dark-mode text stays legible. (A
-  // prior fix made the body transparent to dodge foliate's stale background
-  // snapshot, which exposed the iframe white and washed out dark-mode text.)
   it('keeps the body background opaque to cover the engine document canvas', () => {
     const { rendition, captured } = captureThemeDefault();
 
@@ -73,15 +65,19 @@ describe('applyEpubTheme', () => {
     expect(captured.body.background).toBe(`${paperBodyPalette.dark.background} !important`);
   });
 
-  it('keeps reader-driven typography settings untouched by the palette bridge', () => {
+  it('uses fixed line height and font stack without padding', () => {
     const { rendition, captured } = captureThemeDefault();
 
-    applyEpubTheme(rendition, { fontFamily: 'Merriweather', fontSize: 20, lineHeight: 1.8, theme: 'dark' });
+    applyEpubTheme(rendition, {
+      fontStack: 'Merriweather, Georgia, serif',
+      fontSize: 20,
+      theme: 'dark',
+    });
 
     expect(captured.body['font-family']).toBe('Merriweather, Georgia, serif');
     expect(captured.body['font-size']).toBe('20px');
-    expect(captured.body['line-height']).toBe('1.8');
-    expect(captured.body.padding).toBe('20px !important');
+    expect(captured.body['line-height']).toBe(String(EPUB_LINE_HEIGHT));
+    expect(captured.body.padding).toBeUndefined();
     expect(captured.body.margin).toBe('0 auto !important');
   });
 });

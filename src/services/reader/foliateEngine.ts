@@ -1,6 +1,7 @@
 import type { NavItem } from '../../types';
 import type { RenditionContent } from './epubAdapter';
 import type { ReadingEngineAdapter, ReadingEngineInstance, ReadingEngineOptions, ReadingEngineRendition, ReadingLayoutOptions } from './readingEngine';
+import { buildSectionTypographyCss } from './epubTypography';
 
 type FoliateLocation = {
   cfi?: string;
@@ -311,6 +312,15 @@ class FoliateRendition implements ReadingEngineRendition {
     const bodyBackground = this.themeStyles.body?.background;
     const bgColor = bodyBackground?.replace(/\s*!important\s*$/, '');
     if (bgColor) doc.documentElement.style.setProperty('--theme-bg-color', bgColor);
+
+    const typographyId = 'creader-foliate-typography';
+    let typographyStyle = doc.getElementById(typographyId) as HTMLStyleElement | null;
+    if (!typographyStyle) {
+      typographyStyle = doc.createElement('style');
+      typographyStyle.id = typographyId;
+      doc.head.append(typographyStyle);
+    }
+    typographyStyle.textContent = buildSectionTypographyCss(doc.documentElement.lang);
   }
 }
 
