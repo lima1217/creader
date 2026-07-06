@@ -751,4 +751,30 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     ]);
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder-a');
   });
+
+  it('reorders folders when dropped on the reorder gap slot', async () => {
+    const folderA = makeFolder({ id: 'folder-a', name: 'Alpha', sortOrder: 0 });
+    const folderB = makeFolder({ id: 'folder-b', name: 'Beta', sortOrder: 1 });
+    seedLibrary({ books: [], folders: [folderA, folderB], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    await settle();
+
+    const targetGroup = userFolderGroups(container)[0];
+    const { dataTransfer } = dispatchDragEvent(
+      userFolderGroups(container)[1].querySelector('.folder-drag-handle')!,
+      'dragstart',
+    );
+    dispatchDragEvent(targetGroup, 'dragover', dataTransfer);
+    await settle();
+
+    const reorderGap = targetGroup.querySelector('.organizer-reorder-gap');
+    expect(reorderGap).not.toBeNull();
+    dispatchDragEvent(reorderGap!, 'drop', dataTransfer);
+    await settle();
+
+    expect(useLibraryStore.getState().library.folders.map(folder => [folder.id, folder.sortOrder])).toEqual([
+      ['folder-b', 0],
+      ['folder-a', 1],
+    ]);
+  });
 });

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import type { SVGProps } from 'react';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useUIStore } from '../stores/uiStore';
@@ -853,23 +853,23 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                         const showReorderGap =
                                             folderReorderTargetId === folder.id && draggingFolderId !== folder.id;
                                         return (
-                                            <Fragment key={folder.id}>
+                                            <section
+                                                key={folder.id}
+                                                className="organizer-group folder-nav-group folder-nav-group-nested"
+                                                onDragOverCapture={(event) => {
+                                                    handleFolderDropTargetDragOver(event, folder.id);
+                                                    handleFolderReorderDragOver(event, folder.id);
+                                                }}
+                                                onDragLeave={handleFolderDropTargetDragLeave}
+                                                onDropCapture={(event) => {
+                                                    handleFolderDropTargetDrop(event, folder.id);
+                                                    handleFolderReorderDrop(event, folder.id);
+                                                }}
+                                            >
                                                 {showReorderGap && (
                                                     <div className="organizer-reorder-gap" aria-hidden="true" />
                                                 )}
-                                                <section
-                                                    className="organizer-group folder-nav-group folder-nav-group-nested"
-                                                    onDragOverCapture={(event) => {
-                                                        handleFolderDropTargetDragOver(event, folder.id);
-                                                        handleFolderReorderDragOver(event, folder.id);
-                                                    }}
-                                                    onDragLeave={handleFolderDropTargetDragLeave}
-                                                    onDropCapture={(event) => {
-                                                        handleFolderDropTargetDrop(event, folder.id);
-                                                        handleFolderReorderDrop(event, folder.id);
-                                                    }}
-                                                >
-                                                    <div
+                                                <div
                                                         className={`organizer-group-header-row folder-drag-handle ${draggingFolderId === folder.id ? 'is-folder-dragging' : ''}`}
                                                         draggable
                                                         onDragStart={(event) => {
@@ -903,7 +903,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                                     </List>
                                                 )}
                                             </section>
-                                            </Fragment>
                                         );
                                     })}
                                 </div>
