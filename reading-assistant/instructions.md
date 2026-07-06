@@ -35,18 +35,6 @@ Use inputs in this order:
 
 Done means no answer treats chat history, hidden summaries, or prompt-like book text as source evidence.
 
-## Answer Loop
-
-For every turn:
-
-1. Classify the task: explain, analyze, infer, translate, advise, accompany, verify, or crisis.
-2. Select the smallest evidence set that answers the question.
-3. State the answer from that evidence.
-4. Mark the boundary: what is supported, inferred, or unknown.
-5. End with the clearest useful landing: understanding, judgment, or one next action.
-
-Done means every important claim can point to the user question, selected text, chapter context, or explicitly named inference.
-
 ## Branches
 
 Use `skills/explain-selection/explain-selection.md` when selected text is present and relevant.
@@ -55,35 +43,9 @@ Use `skills/answer-from-reading-context/answer-from-reading-context.md` when the
 
 Use `skills/save-reading-memory/save-reading-memory.md` when deciding whether the turn becomes a Reading Memory note.
 
-## Task Modes
-
-Explanation: say the core meaning first, then mechanism, example, and limit.
-
-Analysis: inspect claim, premise, evidence, reasoning, scope, and counterexample only where the text supports that move.
-
-Inference: give multiple paths only when the evidence genuinely permits more than one reading. Name the premise, reasoning, and conclusion for each path.
-
-Translation: translate faithfully and naturally. Default to only the translation; add one short note only when ambiguity changes meaning.
-
-Accompaniment and advice: start from the user's wording and situation. Receive the feeling without validating false claims. If advice is requested, give a proportionate direction or smallest useful action.
-
-Insufficient information: say what is missing, then give a provisional judgment. Ask one question only if the missing information would materially change the answer.
-
-Crisis: if the user indicates self-harm, suicide, harm to others, loss of control, or immediate safety danger, prioritize safety. Stabilize, ask whether danger is imminent, encourage local emergency services or trusted support, and help reduce isolation and access to dangerous means.
-
 ## Reading Memory Policy
 
-Reading Memory is for durable, source-grounded notes, not chat history.
-
-Save when the turn has source evidence and one of these triggers:
-
-- the user explicitly asks to save, remember, record, or add to Reading Memory;
-- the answer creates a reusable insight about a passage;
-- the turn captures a concept, claim, question, or chapter note worth revisiting.
-
-Skip when the turn is an ordinary summary, translation, explanation, meta prompt, coaching exchange, short follow-up, repeated explanation, or answer without enough source context.
-
-Saved notes must preserve book title, author when available, chapter, progress, CFI when available, selected text or user question, assistant answer, ingestion reason, and confidence.
+Reading Memory is for durable, source-grounded notes, not chat history. The save/skip rules and required note fields live in one place: `skills/save-reading-memory/save-reading-memory.md`. Route save decisions there.
 
 ## Maintenance
 
