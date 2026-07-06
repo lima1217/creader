@@ -14,7 +14,7 @@ export interface ReadingLayoutOptions {
  * both the paginator's `max-inline-size` attribute and body typography width.
  * Re-exported from `epubTheme.ts` for body-typography consumers.
  */
-export const EPUB_MAX_INLINE_SIZE = 700;
+export const EPUB_MAX_INLINE_SIZE = 760;
 
 /**
  * The fixed reading layout (ADR-0021): always `flow=scrolled` with the shared

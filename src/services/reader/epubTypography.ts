@@ -19,12 +19,38 @@ export function shouldUseLeftAlign(lang: string): boolean {
   return isCjkLang(trimmed);
 }
 
-/** CSS block injected per section document in `foliateEngine.applyThemeToDocument`. */
+/**
+ * CSS block injected per section document in `foliateEngine.applyThemeToDocument`.
+ *
+ * Typography values follow the Readest comfort defaults (issue #91 follow-up):
+ * CJK sections get a 2em first-line indent, 1em paragraph spacing, and 1.6
+ * line-height; western sections get no indent, 0.6em paragraph spacing,
+ * justified hyphenated text, and a tighter 1.4 line-height. Both branches
+ * keep hanging-punctuation and ideograph spacing for CJK punctuation edges.
+ */
 export function buildSectionTypographyCss(lang: string): string {
-  const left = shouldUseLeftAlign(lang);
-  const shared = 'hanging-punctuation:allow-end last;text-autospace:ideograph-alpha ideograph-numeric;';
-  const align = left
-    ? 'text-align:left;'
-    : 'text-align:justify;-webkit-hyphens:auto;hyphens:auto;-webkit-hyphenate-limit-before:3;-webkit-hyphenate-limit-after:2;-webkit-hyphenate-limit-lines:2;';
-  return `body,p,li,blockquote,dd{${align}${shared}}`;
+  const isCjk = isCjkLang(lang) || !lang.trim();
+  if (isCjk) {
+    return [
+      'body,p,li,blockquote,dd{',
+      'text-align:left;',
+      'line-height:1.6;',
+      'p{text-indent:2em;margin-top:1em;margin-bottom:1em;}',
+      'hanging-punctuation:allow-end last;',
+      'text-autospace:ideograph-alpha ideograph-numeric;',
+      'widows:1;orphans:1;',
+      '}',
+    ].join('');
+  }
+  return [
+    'body,p,li,blockquote,dd{',
+    'text-align:justify;',
+    'line-height:1.4;',
+    'p{text-indent:0;margin-top:0.6em;margin-bottom:0.6em;}',
+    '-webkit-hyphens:auto;hyphens:auto;',
+    '-webkit-hyphenate-limit-before:3;-webkit-hyphenate-limit-after:2;-webkit-hyphenate-limit-lines:2;',
+    'hanging-punctuation:allow-end last;',
+    'widows:2;orphans:2;',
+    '}',
+  ].join('');
 }

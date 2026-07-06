@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
-import { applyEpubTheme, EPUB_LINE_HEIGHT } from './epubTheme';
+import { applyEpubTheme } from './epubTheme';
 import { paperBodyPalette } from '../../theme/paperTheme';
 
 function captureThemeDefault() {
@@ -66,7 +66,7 @@ describe('applyEpubTheme', () => {
     expect(captured.styles.body.background).toBe(`${paperBodyPalette.dark.background} !important`);
   });
 
-  it('uses fixed line height and font stack without padding', () => {
+  it('uses font stack and size without padding or line-height', () => {
     const { rendition, captured } = captureThemeDefault();
 
     applyEpubTheme(rendition, {
@@ -77,7 +77,7 @@ describe('applyEpubTheme', () => {
 
     expect(captured.styles.body['font-family']).toBe('Merriweather, Georgia, serif');
     expect(captured.styles.body['font-size']).toBe('20px');
-    expect(captured.styles.body['line-height']).toBe(String(EPUB_LINE_HEIGHT));
+    expect(captured.styles.body['line-height']).toBeUndefined();
     expect(captured.styles.body.padding).toBeUndefined();
     expect(captured.styles.body.margin).toBe('0 auto !important');
   });

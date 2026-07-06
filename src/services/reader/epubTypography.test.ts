@@ -29,21 +29,36 @@ describe('shouldUseLeftAlign', () => {
 });
 
 describe('buildSectionTypographyCss', () => {
-  it('justifies and hyphenates western sections', () => {
+  it('justifies, hyphenates, and tightens western sections', () => {
     const css = buildSectionTypographyCss('en');
     expect(css).toContain('text-align:justify');
     expect(css).toContain('hyphens:auto');
+    expect(css).toContain('line-height:1.4');
+    expect(css).toContain('text-indent:0');
+    expect(css).toContain('margin-top:0.6em');
+    expect(css).toContain('margin-bottom:0.6em');
+    expect(css).toContain('widows:2');
+    expect(css).toContain('orphans:2');
     expect(css).toContain('hanging-punctuation:allow-end last');
+  });
+
+  it('left-aligns and indents CJK sections without hyphenation', () => {
+    const css = buildSectionTypographyCss('zh-CN');
+    expect(css).toContain('text-align:left');
+    expect(css).toContain('line-height:1.6');
+    expect(css).toContain('text-indent:2em');
+    expect(css).toContain('margin-top:1em');
+    expect(css).toContain('margin-bottom:1em');
+    expect(css).toContain('widows:1');
+    expect(css).toContain('orphans:1');
+    expect(css).not.toContain('hyphens:auto');
     expect(css).toContain('text-autospace:ideograph-alpha ideograph-numeric');
   });
 
-  it('left-aligns CJK sections without hyphenation', () => {
-    const css = buildSectionTypographyCss('zh-CN');
+  it('defaults to CJK typography when lang metadata is missing', () => {
+    const css = buildSectionTypographyCss('');
     expect(css).toContain('text-align:left');
-    expect(css).not.toContain('hyphens:auto');
-  });
-
-  it('left-aligns when lang metadata is missing', () => {
-    expect(buildSectionTypographyCss('')).toContain('text-align:left');
+    expect(css).toContain('text-indent:2em');
+    expect(css).toContain('line-height:1.6');
   });
 });

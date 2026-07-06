@@ -6,9 +6,6 @@ import { paperBodyPalette } from '../../theme/paperTheme';
 // here so body-typography consumers keep their existing import path.
 export { EPUB_MAX_INLINE_SIZE } from '../../services/reader/readingEngine';
 
-/** Fixed typography — not user-adjustable (issue #91). */
-export const EPUB_LINE_HEIGHT = 1.6;
-
 /**
  * Injects the reading-engine body theme into the rendered EPUB.
  *
@@ -19,9 +16,9 @@ export const EPUB_LINE_HEIGHT = 1.6;
  * draw from (`paperTheme.ts`). A palette edit therefore reaches chrome and book
  * body from one place. See ADR-0011.
  *
- * Section-level alignment and hyphenation are applied in `foliateEngine.ts`
- * via `buildSectionTypographyCss` because they depend on each document's
- * `<html lang>`.
+ * Section-level typography (alignment, line-height, indent, paragraph margin,
+ * hyphenation) is applied in `foliateEngine.ts` via `buildSectionTypographyCss`
+ * because those values depend on each document's `<html lang>`.
  */
 export function applyEpubTheme(
   rendition: ReaderRendition,
@@ -32,7 +29,6 @@ export function applyEpubTheme(
     body: {
       'font-family': options.fontStack,
       'font-size': `${options.fontSize}px`,
-      'line-height': `${EPUB_LINE_HEIGHT}`,
       'color': `${palette.text} !important`,
       'background': `${palette.background} !important`,
       'margin': '0 auto !important',
