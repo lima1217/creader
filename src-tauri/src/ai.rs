@@ -74,6 +74,11 @@ pub enum StreamEvent {
         message: String,
         provider: Option<String>,
     },
+    ToolActivity {
+        name: String,
+        status: String,
+        detail: Option<String>,
+    },
 }
 
 // ============================================================
@@ -687,6 +692,28 @@ struct WriteReadingMemoryToolArgs {
     reason: Option<String>,
 }
 
+fn tool_activity_detail(name: &str, status: &str, arguments: &str) -> Option<String> {
+    match (name, status) {
+        ("list_chapters", "started") => Some("正在获取目录…".to_string()),
+        ("list_chapters", "completed") => Some("已获取目录".to_string()),
+        ("get_chapter_text", "started") | ("get_chapter_text", "completed") => {
+            let chapter_index = serde_json::from_str::<GetChapterTextToolArgs>(arguments)
+                .ok()
+                .map(|args| args.index);
+            match (status, chapter_index) {
+                ("started", Some(index)) => Some(format!("正在查阅第 {} 章…", index)),
+                ("started", None) => Some("正在查阅章节…".to_string()),
+                ("completed", Some(index)) => Some(format!("已查阅第 {} 章", index)),
+                ("completed", None) => Some("已查阅章节".to_string()),
+                _ => None,
+            }
+        }
+        ("write_reading_memory", "started") => Some("正在写入阅读记忆…".to_string()),
+        ("write_reading_memory", "completed") => Some("已写入阅读记忆".to_string()),
+        _ => None,
+    }
+}
+
 fn validated_book_path(app: &tauri::AppHandle, book_file_path: &str) -> Result<PathBuf, String> {
     if !validate_book_path_inner(app, book_file_path) {
         return Err("Book file path is not allowed or does not exist".to_string());
@@ -813,16 +840,18 @@ fn openai_client(
     async_openai::Client::with_config(openai_config)
 }
 
-pub(crate) async fn chat_completion_stream_typed<F>(
+pub(crate) async fn chat_completion_stream_typed<F, G>(
     prompt: &str,
     config: &AIProviderConfig,
     api_key: &str,
     tool_ctx: Option<&AiToolContext>,
     app: Option<&tauri::AppHandle>,
     mut on_chunk: F,
+    mut on_tool_activity: G,
 ) -> Result<String, String>
 where
     F: FnMut(String),
+    G: FnMut(&str, &str, Option<String>),
 {
     if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
         return Ok(String::new());
@@ -942,6 +971,8 @@ where
         ));
 
         for (id, name, arguments) in resolved_calls {
+            let detail = tool_activity_detail(&name, "started", &arguments);
+            on_tool_activity(&name, "started", detail);
             let tool_result = execute_local_tool(
                 app,
                 tool_ctx,
@@ -949,10 +980,13 @@ where
                 &name,
                 &arguments,
             )
-            .await
-            .unwrap_or_else(|err| {
-                serde_json::json!({ "error": err }).to_string()
-            });
+            .await;
+            let (tool_result, status) = match tool_result {
+                Ok(result) => (result, "completed"),
+                Err(err) => (serde_json::json!({ "error": err }).to_string(), "failed"),
+            };
+            let detail = tool_activity_detail(&name, status, &arguments);
+            on_tool_activity(&name, status, detail);
             messages.push(ChatCompletionRequestMessage::Tool(
                 ChatCompletionRequestToolMessage {
                     content: tool_result.into(),
@@ -987,6 +1021,12 @@ async fn chat_completion_stream(
 
     chat_completion_stream_typed(prompt, config, api_key, tool_ctx, app, |piece| {
         let _ = on_event.send(StreamEvent::Chunk { text: piece });
+    }, |name, status, detail| {
+        let _ = on_event.send(StreamEvent::ToolActivity {
+            name: name.to_string(),
+            status: status.to_string(),
+            detail,
+        });
     })
     .await
 }
@@ -1291,6 +1331,18 @@ mod tests {
     );
 
     #[test]
+    fn tool_activity_detail_formats_user_facing_labels() {
+        assert_eq!(
+            tool_activity_detail("get_chapter_text", "started", r#"{"index":2}"#),
+            Some("正在查阅第 2 章…".to_string())
+        );
+        assert_eq!(
+            tool_activity_detail("write_reading_memory", "completed", "{}"),
+            Some("已写入阅读记忆".to_string())
+        );
+    }
+
+    #[test]
     fn tool_call_accumulator_merges_streaming_chunks() {
         use async_openai::types::chat::ChatCompletionMessageToolCallChunk;
         use async_openai::types::chat::FunctionCallStream;
@@ -1344,6 +1396,7 @@ mod tests {
             Some(&tool_ctx),
             None,
             |piece| chunks.push(piece),
+            |_, _, _| {},
         )
         .await
         .unwrap();
@@ -1388,6 +1441,7 @@ mod tests {
             Some(&tool_ctx),
             None,
             |_| {},
+            |_, _, _| {},
         )
         .await
         .unwrap();
@@ -1420,6 +1474,7 @@ mod tests {
             Some(&tool_ctx),
             None,
             |_| {},
+            |_, _, _| {},
         )
         .await
         .unwrap();
@@ -1460,6 +1515,7 @@ mod tests {
             Some(&tool_ctx),
             None,
             |_| {},
+            |_, _, _| {},
         )
         .await
         .unwrap();
@@ -1801,7 +1857,7 @@ mod tests {
         let full_text =
             chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, |piece| {
                 chunks.push(piece)
-            })
+            }, |_, _, _| {})
             .await
             .unwrap();
 
@@ -1841,6 +1897,7 @@ mod tests {
             None,
             None,
             |piece| chunks.push(piece),
+            |_, _, _| {},
         )
         .await
         .unwrap();
@@ -1992,7 +2049,7 @@ mod tests {
             model: "reader-model".to_string(),
         };
 
-        let err = chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, |_| {})
+        let err = chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, |_| {}, |_, _, _| {})
             .await
             .unwrap_err();
 

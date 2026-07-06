@@ -318,6 +318,40 @@ describe('AIPanel — streaming contract', () => {
     expect(container.querySelector('.ai-message-streaming')).toBeNull();
   });
 
+  it('shows a tool activity hint while tools run and clears it on done', async () => {
+    const { container } = mountPanel();
+    await typeAndSend(container, 'look up chapter');
+    const ch = lastChannel.current!;
+
+    ch.onmessage!({ event: 'started', data: { provider: 'mock' } });
+    ch.onmessage!({
+      event: 'tool_activity',
+      data: { name: 'get_chapter_text', status: 'started', detail: '正在查阅第 2 章…' },
+    });
+    await settle();
+
+    expect(container.querySelector('.ai-tool-activity')?.textContent).toContain('正在查阅第 2 章');
+
+    ch.onmessage!({ event: 'done', data: { fullText: 'chapter summary' } });
+    await settle();
+
+    expect(container.querySelector('.ai-tool-activity')).toBeNull();
+  });
+
+  it('does not show tool activity hints during a plain text turn', async () => {
+    const { container } = mountPanel();
+    await typeAndSend(container, 'plain answer');
+    const ch = lastChannel.current!;
+
+    ch.onmessage!({ event: 'started', data: { provider: 'mock' } });
+    ch.onmessage!({ event: 'chunk', data: { text: 'hello' } });
+    (window as unknown as { __flushRaf: () => void }).__flushRaf();
+    ch.onmessage!({ event: 'done', data: { fullText: 'hello' } });
+    await settle();
+
+    expect(container.querySelector('.ai-tool-activity')).toBeNull();
+  });
+
   it('error pushes an error message and clears streaming', async () => {
     const { container } = mountPanel();
     await typeAndSend(container, 'fail me');

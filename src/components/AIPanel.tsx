@@ -74,6 +74,7 @@ export function AIPanel() {
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [streamingContent, setStreamingContent] = useState('');
+    const [toolActivity, setToolActivity] = useState<string | null>(null);
     const streamingContentRef = useRef('');
     const [providers, setProviders] = useState<AIProviderStatus[]>([]);
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -253,6 +254,7 @@ export function AIPanel() {
         clearChat();
         setInput('');
         setStreamingContent('');
+        setToolActivity(null);
         setSelectedText('');
         clearAccumulatedTexts();
         await refreshProviders();
@@ -270,6 +272,7 @@ export function AIPanel() {
         setIsLoading,
         setStreamingContent,
         getStreamingContent: () => streamingContentRef.current,
+        setToolActivity,
         clearSelectedText: () => setSelectedText(''),
     }), [
         addChatMessage,
@@ -457,6 +460,11 @@ export function AIPanel() {
                         className="ai-message ai-message-assistant ai-message-streaming"
                     >
                         <div className="ai-message-content">
+                            {toolActivity && (
+                                <div className="ai-tool-activity" aria-live="polite">
+                                    {toolActivity}
+                                </div>
+                            )}
                             {streamingContent ? (
                                 <>
                                     <pre className="ai-streaming-text">{streamingContent}</pre>

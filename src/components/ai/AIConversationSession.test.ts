@@ -61,6 +61,7 @@ function createHarness(
   const ingestCalls: unknown[] = [];
   const invokeCalls: Array<{ cmd: string; args: unknown }> = [];
   let releaseResetInvoke: (() => void) | null = null;
+  let toolActivity: string | null = null;
 
   const deps: AIConversationSessionDeps = {
     getState: () => state,
@@ -84,6 +85,9 @@ function createHarness(
       streamingContent = value;
     },
     getStreamingContent: () => streamingContent,
+    setToolActivity: (value) => {
+      toolActivity = value;
+    },
     clearSelectedText: () => {
       state = { ...state, selectedText: '' };
     },
@@ -138,6 +142,9 @@ function createHarness(
     },
     setStreamingContent(value: string) {
       streamingContent = value;
+    },
+    get toolActivity() {
+      return toolActivity;
     },
     get lastChannel() {
       return lastChannel;
@@ -248,6 +255,29 @@ describe('AIConversationSession', () => {
     const assistant = h.state.chatMessages.find(message => message.role === 'assistant')!;
     expect(assistant.content).toBe('partial');
     expect(h.state.isLoading).toBe(false);
+  });
+
+  it('shows tool activity as transient state and clears it on done', async () => {
+    const h = createHarness();
+    await h.session.send();
+
+    h.lastChannel!.onmessage!({
+      event: 'tool_activity',
+      data: { name: 'get_chapter_text', status: 'started', detail: '正在查阅第 2 章…' },
+    });
+    expect(h.toolActivity).toBe('正在查阅第 2 章…');
+
+    h.lastChannel!.onmessage!({ event: 'done', data: { fullText: 'answer' } });
+    expect(h.toolActivity).toBeNull();
+  });
+
+  it('does not set tool activity during a plain text turn', async () => {
+    const h = createHarness();
+    await h.session.send();
+
+    h.lastChannel!.onmessage!({ event: 'chunk', data: { text: 'plain' } });
+    h.lastChannel!.onmessage!({ event: 'done', data: { fullText: 'plain' } });
+    expect(h.toolActivity).toBeNull();
   });
 
   it('commits stopped streaming content after cancel timeout', async () => {

@@ -23,7 +23,8 @@ export type StreamEvent =
   | { event: 'started'; data: { provider: string } }
   | { event: 'chunk'; data: { text: string } }
   | { event: 'done'; data: { fullText: string } }
-  | { event: 'error'; data: { message: string; provider?: string } };
+  | { event: 'error'; data: { message: string; provider?: string } }
+  | { event: 'tool_activity'; data: { name: string; status: string; detail?: string } };
 
 type StreamChannel = {
   onmessage: ((event: StreamEvent) => void) | null;
@@ -54,6 +55,7 @@ export type AIConversationSessionDeps = {
   setIsLoading: (value: boolean) => void;
   setStreamingContent: (value: string) => void;
   getStreamingContent: () => string;
+  setToolActivity: (value: string | null) => void;
   clearSelectedText: () => void;
   invoke: typeof invoke;
   createChannel: () => StreamChannel;
@@ -120,6 +122,7 @@ export class AIConversationSession {
     this.deps.setInput('');
     this.deps.setIsLoading(true);
     this.deps.setStreamingContent('');
+    this.deps.setToolActivity(null);
     const perfKey = `ai:sendMessage:${userMessage.id}`;
     this.deps.markPerformance(`${perfKey}:start`);
     let streamComplete = false;
@@ -187,6 +190,9 @@ export class AIConversationSession {
             pendingChunks.push(event.data.text);
             scheduleFlush();
             break;
+          case 'tool_activity':
+            this.deps.setToolActivity(event.data.detail ?? null);
+            break;
           case 'done': {
             streamComplete = true;
             if (flushRaf !== null) {
@@ -197,6 +203,7 @@ export class AIConversationSession {
             const finalContent = event.data.fullText || finalizeContent();
             commitAssistantMessage(finalContent);
             this.deps.setStreamingContent('');
+            this.deps.setToolActivity(null);
             this.deps.setIsLoading(false);
             if (state.selectedText) this.deps.clearSelectedText();
             break;
@@ -216,6 +223,7 @@ export class AIConversationSession {
               timestamp: this.deps.now(),
             });
             this.deps.setStreamingContent('');
+            this.deps.setToolActivity(null);
             this.deps.setIsLoading(false);
             this.deps.setInput(messageToSend);
             break;
@@ -229,6 +237,7 @@ export class AIConversationSession {
         this.deps.measurePerformance(perfKey, `${perfKey}:start`, `${perfKey}:fallback`);
         commitAssistantMessage(finalizeContent());
         this.deps.setStreamingContent('');
+        this.deps.setToolActivity(null);
         this.deps.setIsLoading(false);
       }
     } catch (error) {
@@ -241,6 +250,7 @@ export class AIConversationSession {
         timestamp: this.deps.now(),
       });
       this.deps.setStreamingContent('');
+      this.deps.setToolActivity(null);
       this.deps.setIsLoading(false);
       this.deps.setInput(messageToSend);
     } finally {
@@ -253,6 +263,7 @@ export class AIConversationSession {
     try {
       if (!state.isTauri) {
         this.deps.setStreamingContent('');
+        this.deps.setToolActivity(null);
         this.deps.setIsLoading(false);
         return;
       }
@@ -268,11 +279,13 @@ export class AIConversationSession {
           timestamp: this.deps.now(),
         });
         this.deps.setStreamingContent('');
+        this.deps.setToolActivity(null);
         this.deps.setIsLoading(false);
       }, 500);
     } catch (error) {
       logger.error('Failed to cancel AI streaming:', error);
       this.deps.setStreamingContent('');
+      this.deps.setToolActivity(null);
       this.deps.setIsLoading(false);
     }
   }
