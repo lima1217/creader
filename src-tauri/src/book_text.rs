@@ -294,14 +294,27 @@ fn blocking_search_book(
     let mut truncated = chapters.len() > MAX_SEARCH_CHAPTERS;
     let mut hits = Vec::new();
 
+    // Open the archive and parse the OPF package once for the whole scan.
+    // Without this hoist, a miss on every chapter would re-open the ZIP and
+    // re-parse container.xml + OPF once per chapter (up to 200x), burning the
+    // 15s deadline on constant metadata I/O instead of text scanning.
+    let book_key = canonical_book_key(book_path)?;
+    let mut archive = open_epub_archive(book_path)?;
+    let package = load_epub_package(&mut archive)?;
+
     for chapter in chapters.iter().take(MAX_SEARCH_CHAPTERS) {
         if Instant::now() >= deadline {
             truncated = true;
             break;
         }
 
-        let full_text =
-            blocking_load_full_chapter_text(book_path, chapter.index, cache)?;
+        let full_text = load_chapter_text_from_open_archive(
+            &mut archive,
+            &package,
+            &book_key,
+            chapter.index,
+            cache,
+        )?;
 
         if full_text.contains(query) {
             hits.push(BookSearchHit {
@@ -319,18 +332,21 @@ fn blocking_search_book(
     Ok(BookSearchResult { hits, truncated })
 }
 
-fn blocking_load_full_chapter_text(
-    book_path: &Path,
+/// Reads a chapter's full plain text from an already-open archive, checking
+/// the shared cache first and filling it on miss. Unlike the per-chapter
+/// `open_epub_archive` + `load_epub_package` path, callers that scan many
+/// chapters reuse a single archive and parsed package.
+fn load_chapter_text_from_open_archive(
+    archive: &mut ZipArchive<File>,
+    package: &EpubPackage,
+    book_key: &str,
     index: usize,
     cache: &BookTextCache,
 ) -> Result<String, String> {
-    let book_key = canonical_book_key(book_path)?;
-    if let Some(full_text) = cache.get(&book_key, index) {
+    if let Some(full_text) = cache.get(book_key, index) {
         return Ok(full_text);
     }
 
-    let mut archive = open_epub_archive(book_path)?;
-    let package = load_epub_package(&mut archive)?;
     let idref = package
         .spine
         .get(index)
@@ -353,7 +369,7 @@ fn blocking_load_full_chapter_text(
     let (extracted, _) = extract_xhtml_text(&mut buffered, 0, None)?;
 
     if extracted.chars().count() <= MAX_CACHEABLE_CHAPTER_CHARS {
-        cache.put(&book_key, index, extracted.clone());
+        cache.put(book_key, index, extracted.clone());
     }
 
     Ok(extracted)
@@ -415,6 +431,7 @@ fn slice_chapter_text(full_text: &str, index: usize, offset: usize, limit: usize
 }
 
 fn open_epub_archive(book_path: &Path) -> Result<ZipArchive<File>, String> {
+    test_record_archive_open();
     if !book_path.exists() {
         return Err(format!("Book file does not exist: {}", book_path.display()));
     }
@@ -977,9 +994,18 @@ fn attr_value(event: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<S
 pub(crate) static CHAPTER_EXTRACTIONS: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
+#[cfg(test)]
+pub(crate) static ARCHIVE_OPENS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 fn test_record_chapter_extraction() {
     #[cfg(test)]
     CHAPTER_EXTRACTIONS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn test_record_archive_open() {
+    #[cfg(test)]
+    ARCHIVE_OPENS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
 #[cfg(test)]
@@ -994,10 +1020,15 @@ mod tests {
 
     fn reset_test_counters() {
         super::CHAPTER_EXTRACTIONS.store(0, Ordering::SeqCst);
+        super::ARCHIVE_OPENS.store(0, Ordering::SeqCst);
     }
 
     fn chapter_extractions() -> usize {
         super::CHAPTER_EXTRACTIONS.load(Ordering::SeqCst)
+    }
+
+    fn archive_opens() -> usize {
+        super::ARCHIVE_OPENS.load(Ordering::SeqCst)
     }
     fn write_test_epub(path: &Path, chapters: &[(&str, &str)], include_nav: bool) {
         let file = File::create(path).expect("create epub");
@@ -1480,6 +1511,43 @@ mod tests {
             .expect("search");
         assert_eq!(result.hits.len(), 2);
         assert!(result.truncated);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    #[serial]
+    fn search_book_opens_archive_once_per_scan_not_per_chapter() {
+        // Regression guard for the archive-open hoist: scanning a multi-chapter
+        // book with a cold cache must open the ZIP exactly twice -- once for
+        // blocking_list_chapters and once for the scan body -- regardless of
+        // chapter count. If a future refactor moves the open back inside the
+        // per-chapter loader, this assertion fires (would report N+1).
+        let path = temp_epub("search-open-count");
+        write_test_epub(
+            &path,
+            &[
+                ("One", "<p>alpha token one</p>"),
+                ("Two", "<p>beta token two</p>"),
+                ("Three", "<p>gamma token three</p>"),
+                ("Four", "<p>delta token four</p>"),
+            ],
+            true,
+        );
+
+        let cache = BookTextCache::with_default_capacity();
+        reset_test_counters();
+        let before = archive_opens();
+
+        let result = search_book(&path, "token", None, &cache).expect("search");
+        assert_eq!(result.hits.len(), 4);
+
+        let opens = archive_opens() - before;
+        assert_eq!(
+            opens, 2,
+            "scan must open archive twice (list + scan), not once per chapter; opened {} times",
+            opens
+        );
 
         let _ = std::fs::remove_file(path);
     }
