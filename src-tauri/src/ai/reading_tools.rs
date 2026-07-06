@@ -256,12 +256,34 @@ pub(crate) fn canonical_tool_arguments(arguments: &str) -> Result<String, String
         .map_err(|e| format!("Failed to canonicalize tool arguments: {}", e))
 }
 
-fn tool_call_cache_key(name: &str, arguments: &str) -> Option<(String, String)> {
+pub(crate) fn tool_call_cache_key(name: &str, arguments: &str) -> Option<(String, String)> {
     if !is_deduplicable_readonly_tool(name) {
         return None;
     }
     let canonical_args = canonical_tool_arguments(arguments).ok()?;
     Some((name.to_string(), canonical_args))
+}
+
+pub(crate) enum SameRoundReadonlyPlan {
+    ExecuteFirst,
+    ReuseFirst,
+}
+
+pub(crate) fn plan_same_round_readonly_call(
+    pending_keys: &mut std::collections::HashMap<(String, String), usize>,
+    name: &str,
+    arguments: &str,
+    call_index: usize,
+) -> SameRoundReadonlyPlan {
+    let Some(key) = tool_call_cache_key(name, arguments) else {
+        return SameRoundReadonlyPlan::ExecuteFirst;
+    };
+    if pending_keys.contains_key(&key) {
+        SameRoundReadonlyPlan::ReuseFirst
+    } else {
+        pending_keys.insert(key, call_index);
+        SameRoundReadonlyPlan::ExecuteFirst
+    }
 }
 
 fn mark_duplicate_tool_result(result_json: &str) -> String {
@@ -537,6 +559,40 @@ mod tests {
         assert_eq!(json["duplicate_call"], true);
         assert_eq!(json["text"], "Chapter body");
         assert_eq!(json["index"], 5);
+    }
+
+    #[test]
+    fn plan_same_round_readonly_call_reuses_first_index_for_duplicates() {
+        use std::collections::HashMap;
+
+        let mut pending = HashMap::new();
+        assert!(matches!(
+            plan_same_round_readonly_call(
+                &mut pending,
+                "get_chapter_text",
+                r#"{"index":0}"#,
+                0,
+            ),
+            SameRoundReadonlyPlan::ExecuteFirst
+        ));
+        assert!(matches!(
+            plan_same_round_readonly_call(
+                &mut pending,
+                "get_chapter_text",
+                r#"{"index":0}"#,
+                1,
+            ),
+            SameRoundReadonlyPlan::ReuseFirst
+        ));
+        assert!(matches!(
+            plan_same_round_readonly_call(
+                &mut pending,
+                "get_chapter_text",
+                r#"{"index": 0}"#,
+                2,
+            ),
+            SameRoundReadonlyPlan::ReuseFirst
+        ));
     }
 
     #[test]

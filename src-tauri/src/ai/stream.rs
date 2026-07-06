@@ -5,8 +5,9 @@ use tauri::ipc::Channel;
 use tokio_util::sync::CancellationToken;
 
 use super::reading_tools::{
-    execute_local_tool, is_deduplicable_readonly_tool, reading_ai_tools,
-    resolve_book_text_cache, tool_activity_detail, AiToolContext, ToolCallResultCache,
+    execute_local_tool, is_deduplicable_readonly_tool, plan_same_round_readonly_call,
+    reading_ai_tools, resolve_book_text_cache, tool_activity_detail, AiToolContext,
+    SameRoundReadonlyPlan, ToolCallResultCache,
 };
 use super::{
     build_openai_chat_request, build_openai_chat_request_from_prompt, openai_api_base,
@@ -236,6 +237,7 @@ where
         enum CallExecution {
             Resolved { tool_result: String, status: &'static str },
             ReadonlyPending,
+            ReadonlyDuplicate,
             WritePending,
         }
 
@@ -247,6 +249,7 @@ where
         }
 
         let mut calls: Vec<ResolvedToolCall> = Vec::with_capacity(resolved_calls.len());
+        let mut pending_readonly_keys: HashMap<(String, String), usize> = HashMap::new();
         for (id, name, arguments) in resolved_calls {
             let detail = tool_activity_detail(&name, "started", &arguments);
             on_tool_activity(&name, "started", detail);
@@ -256,7 +259,15 @@ where
                     status: "completed",
                 }
             } else if is_deduplicable_readonly_tool(&name) {
-                CallExecution::ReadonlyPending
+                match plan_same_round_readonly_call(
+                    &mut pending_readonly_keys,
+                    &name,
+                    &arguments,
+                    calls.len(),
+                ) {
+                    SameRoundReadonlyPlan::ExecuteFirst => CallExecution::ReadonlyPending,
+                    SameRoundReadonlyPlan::ReuseFirst => CallExecution::ReadonlyDuplicate,
+                }
             } else {
                 CallExecution::WritePending
             };
@@ -298,6 +309,33 @@ where
                     (result, "completed")
                 }
                 Err(err) => (serde_json::json!({ "error": err }).to_string(), "failed"),
+            };
+            calls[index].execution = CallExecution::Resolved {
+                tool_result,
+                status,
+            };
+        }
+
+        for index in 0..calls.len() {
+            if !matches!(calls[index].execution, CallExecution::ReadonlyDuplicate) {
+                continue;
+            }
+            let name = calls[index].name.clone();
+            let arguments = calls[index].arguments.clone();
+            let (tool_result, status) = if let Some(cached) =
+                tool_result_cache.lookup(&name, &arguments)
+            {
+                (cached, "completed")
+            } else {
+                let result =
+                    execute_local_tool(app, tool_ctx, &chapter_cache, &name, &arguments).await;
+                match result {
+                    Ok(result) => {
+                        tool_result_cache.store(&name, &arguments, &result);
+                        (result, "completed")
+                    }
+                    Err(err) => (serde_json::json!({ "error": err }).to_string(), "failed"),
+                }
             };
             calls[index].execution = CallExecution::Resolved {
                 tool_result,
