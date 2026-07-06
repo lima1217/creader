@@ -20,19 +20,76 @@ type FoliateRendererRelocateDetail = {
   fraction?: number;
 };
 
-type FoliateRenderer = {
-  getContents?: () => FoliateContent[];
-  setStyles?: (styles: string) => void;
+type FoliateSection = {
+  linear?: string;
+  createDocument?: () => Promise<Document>;
+};
+
+type FoliatePaginatorScroll = {
+  scrolled?: boolean;
+  start?: number;
+  end?: number;
+  viewSize?: number;
+  atStart?: boolean;
+  atEnd?: boolean;
   addEventListener?: (type: string, listener: (event: Event) => void, options?: boolean | AddEventListenerOptions) => void;
   removeEventListener?: (type: string, listener: (event: Event) => void, options?: boolean | EventListenerOptions) => void;
+};
+
+type FoliateRenderer = FoliatePaginatorScroll & {
+  getContents?: () => FoliateContent[];
+  setStyles?: (styles: string) => void;
   setAttribute: (name: string, value: string) => void;
   removeAttribute: (name: string) => void;
   goTo?: (target: { index: number; anchor: () => number }) => Promise<void>;
 };
 
+export const SCROLLED_BOUNDARY_TOLERANCE_PX = 2;
+export const SCROLLED_PREFETCH_DISTANCE_PX = 1200;
+
+export function isScrolledAtBottom(
+  metrics: { viewSize?: number; end?: number },
+  tolerance = SCROLLED_BOUNDARY_TOLERANCE_PX,
+): boolean {
+  const viewSize = metrics.viewSize ?? 0;
+  const end = metrics.end ?? 0;
+  return viewSize - end <= tolerance;
+}
+
+export function isScrolledAtTop(
+  metrics: { start?: number },
+  tolerance = SCROLLED_BOUNDARY_TOLERANCE_PX,
+): boolean {
+  return (metrics.start ?? 0) <= tolerance;
+}
+
+export function shouldPrefetchAdjacentSections(
+  metrics: { viewSize?: number; end?: number; start?: number },
+  distance = SCROLLED_PREFETCH_DISTANCE_PX,
+): { prefetchNext: boolean; prefetchPrev: boolean } {
+  const viewSize = metrics.viewSize ?? 0;
+  const start = metrics.start ?? 0;
+  const end = metrics.end ?? 0;
+  return {
+    prefetchNext: viewSize - end <= distance,
+    prefetchPrev: start <= distance,
+  };
+}
+
+export function findAdjacentLinearSectionIndex(
+  sections: FoliateSection[],
+  currentIndex: number,
+  direction: 1 | -1,
+): number | null {
+  for (let index = currentIndex + direction; index >= 0 && index < sections.length; index += direction) {
+    if (sections[index]?.linear !== 'no') return index;
+  }
+  return null;
+}
+
 type FoliateViewElement = HTMLElement & {
   book?: {
-    sections?: Array<{ id?: string; cfi?: string }>;
+    sections?: FoliateSection[];
     toc?: FoliateTocItem[];
   };
   renderer?: FoliateRenderer;
@@ -118,9 +175,14 @@ class FoliateRendition implements ReadingEngineRendition {
 
   private readonly bridge = new FoliateRenditionEventBridge();
   private readonly selectionCleanups: Array<() => void> = [];
+  private readonly boundaryCleanups: Array<() => void> = [];
+  private readonly prefetchedSectionIndices = new Set<number>();
   private themeStyles: Record<string, Record<string, string>> = {};
   private initialized = false;
   private sectionFraction: number | null = null;
+  private boundaryNavLock = false;
+  private scrolledBoundaryBridgeEnabled = false;
+  private scrollBoundaryState = { atBottom: false, atTop: false };
   private readonly onRendererRelocate = (event: Event) => {
     const fraction = (event as CustomEvent<FoliateRendererRelocateDetail>).detail?.fraction;
     if (typeof fraction === 'number' && Number.isFinite(fraction)) {
@@ -134,6 +196,8 @@ class FoliateRendition implements ReadingEngineRendition {
       const location = this.toEpubLocation(detail);
       this.bridge.emit('relocated', location);
       this.bridge.emit('locationChanged', location);
+      this.syncScrollBoundaryState();
+      this.prefetchedSectionIndices.clear();
     });
 
     view.addEventListener('load', event => {
@@ -204,6 +268,8 @@ class FoliateRendition implements ReadingEngineRendition {
     if (opts.maxInlineSize != null) r.setAttribute('max-inline-size', `${opts.maxInlineSize}px`);
     if (opts.animated) r.setAttribute('animated', '');
     else r.removeAttribute('animated');
+    if (opts.flow === 'scrolled') this.enableScrolledBoundaryBridge();
+    else this.disableScrolledBoundaryBridge();
   }
 
   on(event: string, callback: (...args: unknown[]) => void): void {
@@ -226,10 +292,126 @@ class FoliateRendition implements ReadingEngineRendition {
   }
 
   destroy(): void {
+    this.disableScrolledBoundaryBridge();
     this.view.renderer?.removeEventListener?.('relocate', this.onRendererRelocate, true);
     for (const cleanup of this.selectionCleanups.splice(0)) cleanup();
     this.view.close();
     this.view.remove();
+  }
+
+  private getScrollRenderer(): FoliatePaginatorScroll | undefined {
+    return this.view.renderer;
+  }
+
+  private syncScrollBoundaryState(): void {
+    const renderer = this.getScrollRenderer();
+    if (!renderer?.scrolled) {
+      this.scrollBoundaryState = { atBottom: false, atTop: false };
+      return;
+    }
+    this.scrollBoundaryState = {
+      atBottom: isScrolledAtBottom(renderer),
+      atTop: isScrolledAtTop(renderer),
+    };
+  }
+
+  private enableScrolledBoundaryBridge(): void {
+    if (this.scrolledBoundaryBridgeEnabled) return;
+    const renderer = this.getScrollRenderer();
+    if (!renderer?.addEventListener) return;
+
+    const onScroll = () => {
+      if (!renderer.scrolled || this.boundaryNavLock) return;
+      this.maybePrefetchAdjacentSections(renderer);
+      const atBottom = isScrolledAtBottom(renderer);
+      const atTop = isScrolledAtTop(renderer);
+      if (atBottom && !this.scrollBoundaryState.atBottom && !renderer.atEnd) {
+        void this.advanceAtBoundary('next');
+      } else if (atTop && !this.scrollBoundaryState.atTop && !renderer.atStart) {
+        void this.advanceAtBoundary('prev');
+      }
+      this.scrollBoundaryState = { atBottom, atTop };
+    };
+
+    const onWheel = (event: Event) => {
+      if (!renderer.scrolled || this.boundaryNavLock) return;
+      const wheel = event as WheelEvent;
+      this.maybePrefetchAdjacentSections(renderer);
+      if (wheel.deltaY > 0 && isScrolledAtBottom(renderer) && !renderer.atEnd) {
+        wheel.preventDefault();
+        void this.advanceAtBoundary('next');
+      } else if (wheel.deltaY < 0 && isScrolledAtTop(renderer) && !renderer.atStart) {
+        wheel.preventDefault();
+        void this.advanceAtBoundary('prev');
+      }
+    };
+
+    renderer.addEventListener('scroll', onScroll);
+    renderer.addEventListener('wheel', onWheel, { passive: false });
+    this.boundaryCleanups.push(() => {
+      renderer.removeEventListener?.('scroll', onScroll);
+      renderer.removeEventListener?.('wheel', onWheel);
+    });
+    this.scrolledBoundaryBridgeEnabled = true;
+    this.syncScrollBoundaryState();
+  }
+
+  private disableScrolledBoundaryBridge(): void {
+    if (!this.scrolledBoundaryBridgeEnabled) return;
+    for (const cleanup of this.boundaryCleanups.splice(0)) cleanup();
+    this.scrolledBoundaryBridgeEnabled = false;
+    this.scrollBoundaryState = { atBottom: false, atTop: false };
+  }
+
+  private async advanceAtBoundary(direction: 'next' | 'prev'): Promise<void> {
+    if (this.boundaryNavLock) return;
+    const renderer = this.getScrollRenderer();
+    if (!renderer?.scrolled) return;
+    if (direction === 'next') {
+      if (renderer.atEnd || !isScrolledAtBottom(renderer)) return;
+      this.boundaryNavLock = true;
+      try {
+        await this.view.next();
+      } finally {
+        this.boundaryNavLock = false;
+        this.syncScrollBoundaryState();
+      }
+      return;
+    }
+    if (renderer.atStart || !isScrolledAtTop(renderer)) return;
+    this.boundaryNavLock = true;
+    try {
+      await this.view.prev();
+    } finally {
+      this.boundaryNavLock = false;
+      this.syncScrollBoundaryState();
+    }
+  }
+
+  private maybePrefetchAdjacentSections(renderer: FoliatePaginatorScroll): void {
+    const index = this.view.lastLocation?.index;
+    const sections = this.view.book?.sections;
+    if (index == null || !sections?.length) return;
+
+    const { prefetchNext, prefetchPrev } = shouldPrefetchAdjacentSections(renderer);
+    if (prefetchNext) {
+      const nextIndex = findAdjacentLinearSectionIndex(sections, index, 1);
+      if (nextIndex != null) this.prefetchSection(sections, nextIndex);
+    }
+    if (prefetchPrev) {
+      const prevIndex = findAdjacentLinearSectionIndex(sections, index, -1);
+      if (prevIndex != null) this.prefetchSection(sections, prevIndex);
+    }
+  }
+
+  private prefetchSection(sections: FoliateSection[], index: number): void {
+    if (this.prefetchedSectionIndices.has(index)) return;
+    const createDocument = sections[index]?.createDocument;
+    if (!createDocument) return;
+    this.prefetchedSectionIndices.add(index);
+    void createDocument().catch(() => {
+      this.prefetchedSectionIndices.delete(index);
+    });
   }
 
   private toEpubLocation(location?: FoliateLocation): unknown {

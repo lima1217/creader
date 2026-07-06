@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyFoliateManagedStyles, toFoliateThemeCss, foliateEngineAdapter } from './foliateEngine';
+import {
+  applyFoliateManagedStyles,
+  toFoliateThemeCss,
+  foliateEngineAdapter,
+  isScrolledAtBottom,
+  isScrolledAtTop,
+  shouldPrefetchAdjacentSections,
+  findAdjacentLinearSectionIndex,
+  SCROLLED_BOUNDARY_TOLERANCE_PX,
+  SCROLLED_PREFETCH_DISTANCE_PX,
+} from './foliateEngine';
 
 vi.mock('foliate-js/view.js', () => ({}));
 
@@ -445,5 +455,276 @@ describe('foliateEngine section typography', () => {
 
     const style = doc.getElementById('creader-foliate-typography') as HTMLStyleElement | null;
     expect(style?.textContent).toBe(buildSectionTypographyCss('en'));
+  });
+});
+
+describe('foliateEngine scrolled boundary helpers', () => {
+  it('detects bottom and top boundaries within tolerance', () => {
+    expect(isScrolledAtBottom({ viewSize: 1000, end: 998 })).toBe(true);
+    expect(isScrolledAtBottom({ viewSize: 1000, end: 990 })).toBe(false);
+    expect(isScrolledAtTop({ start: SCROLLED_BOUNDARY_TOLERANCE_PX })).toBe(true);
+    expect(isScrolledAtTop({ start: SCROLLED_BOUNDARY_TOLERANCE_PX + 1 })).toBe(false);
+  });
+
+  it('prefetches when within the configured distance from a boundary', () => {
+    expect(shouldPrefetchAdjacentSections({ viewSize: 2000, end: 1900, start: 50 })).toEqual({
+      prefetchNext: true,
+      prefetchPrev: true,
+    });
+    expect(
+      shouldPrefetchAdjacentSections(
+        { viewSize: 5000, end: 5000 - SCROLLED_PREFETCH_DISTANCE_PX - 10, start: 5000 },
+      ),
+    ).toEqual({
+      prefetchNext: false,
+      prefetchPrev: false,
+    });
+  });
+
+  it('skips non-linear sections when resolving adjacent indices', () => {
+    const sections = [
+      { linear: 'yes' },
+      { linear: 'no' },
+      { linear: 'yes' },
+    ];
+    expect(findAdjacentLinearSectionIndex(sections, 0, 1)).toBe(2);
+    expect(findAdjacentLinearSectionIndex(sections, 2, -1)).toBe(0);
+    expect(findAdjacentLinearSectionIndex(sections, 0, -1)).toBeNull();
+  });
+});
+
+describe('foliateEngine scrolled boundary bridge', () => {
+  type ScrollListener = () => void;
+  type WheelListener = (event: { deltaY: number; preventDefault: ReturnType<typeof vi.fn> }) => void;
+
+  let scrollListener: ScrollListener | undefined;
+  let wheelListener: WheelListener | undefined;
+  let rendererState: {
+    scrolled: boolean;
+    start: number;
+    end: number;
+    viewSize: number;
+    atStart: boolean;
+    atEnd: boolean;
+  };
+
+  let mockRenderer: {
+    scrolled: boolean;
+    get start(): number;
+    get end(): number;
+    get viewSize(): number;
+    atStart: boolean;
+    atEnd: boolean;
+    setAttribute: ReturnType<typeof vi.fn>;
+    removeAttribute: ReturnType<typeof vi.fn>;
+    getContents: ReturnType<typeof vi.fn>;
+    setStyles: ReturnType<typeof vi.fn>;
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+    goTo: ReturnType<typeof vi.fn>;
+  };
+
+  let mockView: {
+    renderer: typeof mockRenderer;
+    book: { sections: Array<{ linear?: string; createDocument?: ReturnType<typeof vi.fn> }> };
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+    lastLocation: { index: number } | null;
+    open: ReturnType<typeof vi.fn>;
+    init: ReturnType<typeof vi.fn>;
+    goTo: ReturnType<typeof vi.fn>;
+    prev: ReturnType<typeof vi.fn>;
+    next: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+    classList: { add: ReturnType<typeof vi.fn> };
+    remove: ReturnType<typeof vi.fn>;
+  };
+
+  let originalCreateElement: typeof document.createElement;
+
+  beforeEach(() => {
+    scrollListener = undefined;
+    wheelListener = undefined;
+    rendererState = {
+      scrolled: true,
+      start: 0,
+      end: 500,
+      viewSize: 1000,
+      atStart: false,
+      atEnd: false,
+    };
+
+    mockRenderer = {
+      get scrolled() {
+        return rendererState.scrolled;
+      },
+      get start() {
+        return rendererState.start;
+      },
+      get end() {
+        return rendererState.end;
+      },
+      get viewSize() {
+        return rendererState.viewSize;
+      },
+      get atStart() {
+        return rendererState.atStart;
+      },
+      get atEnd() {
+        return rendererState.atEnd;
+      },
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      getContents: vi.fn(() => []),
+      setStyles: vi.fn(),
+      addEventListener: vi.fn((type: string, listener: ScrollListener | WheelListener, options?: AddEventListenerOptions) => {
+        if (type === 'scroll') scrollListener = listener as ScrollListener;
+        if (type === 'wheel') wheelListener = listener as WheelListener;
+        if (type === 'wheel') expect(options).toEqual({ passive: false });
+      }),
+      removeEventListener: vi.fn(),
+      goTo: vi.fn(),
+    };
+
+    const createDocument = vi.fn(async () => document.implementation.createHTMLDocument('prefetch'));
+    mockView = {
+      renderer: mockRenderer,
+      book: {
+        sections: [
+          { linear: 'yes', createDocument },
+          { linear: 'yes', createDocument: vi.fn(async () => document.implementation.createHTMLDocument('mid')) },
+          { linear: 'yes', createDocument: vi.fn(async () => document.implementation.createHTMLDocument('tail')) },
+        ],
+      },
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      lastLocation: { index: 1 },
+      open: vi.fn(),
+      init: vi.fn(),
+      goTo: vi.fn(),
+      prev: vi.fn(),
+      next: vi.fn(),
+      close: vi.fn(),
+      classList: { add: vi.fn() },
+      remove: vi.fn(),
+    };
+
+    originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'foliate-view') return mockView as unknown as HTMLElement;
+      return originalCreateElement(tag);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function openTestInstance() {
+    return foliateEngineAdapter.open({
+      appBook: { title: 'Test Book' } as any,
+      arrayBuffer: new ArrayBuffer(0),
+      container: document.createElement('div'),
+    });
+  }
+
+  it('attaches scroll and wheel listeners when flow=scrolled is applied', async () => {
+    const instance = await openTestInstance();
+
+    instance.rendition.setLayout?.({ flow: 'scrolled' });
+
+    expect(mockRenderer.addEventListener).toHaveBeenCalledWith('scroll', expect.any(Function));
+    expect(mockRenderer.addEventListener).toHaveBeenCalledWith('wheel', expect.any(Function), { passive: false });
+    expect(scrollListener).toBeTypeOf('function');
+    expect(wheelListener).toBeTypeOf('function');
+  });
+
+  it('calls next at the bottom boundary and prev at the top without crossing book edges', async () => {
+    const instance = await openTestInstance();
+    instance.rendition.setLayout?.({ flow: 'scrolled' });
+
+    rendererState.start = 400;
+    rendererState.end = 900;
+    rendererState.viewSize = 1000;
+    scrollListener?.();
+
+    rendererState.start = 998;
+    rendererState.end = 1000;
+    scrollListener?.();
+    await Promise.resolve();
+    expect(mockView.next).toHaveBeenCalledTimes(1);
+
+    rendererState.atEnd = true;
+    const preventDefault = vi.fn();
+    wheelListener?.({ deltaY: 120, preventDefault });
+    expect(mockView.next).toHaveBeenCalledTimes(1);
+    expect(preventDefault).not.toHaveBeenCalled();
+
+    rendererState.atEnd = false;
+    rendererState.start = 200;
+    rendererState.end = 700;
+    scrollListener?.();
+    await Promise.resolve();
+
+    rendererState.start = 0;
+    rendererState.end = 400;
+    scrollListener?.();
+    await Promise.resolve();
+    expect(mockView.prev).toHaveBeenCalledTimes(1);
+
+    rendererState.atStart = true;
+    wheelListener?.({ deltaY: -80, preventDefault: vi.fn() });
+    expect(mockView.prev).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefetches adjacent sections when approaching a boundary', async () => {
+    const instance = await openTestInstance();
+    instance.rendition.setLayout?.({ flow: 'scrolled' });
+
+    rendererState.start = 100;
+    rendererState.end = 1900;
+    rendererState.viewSize = 2000;
+    scrollListener?.();
+
+    expect(mockView.book.sections[0].createDocument).toHaveBeenCalledTimes(1);
+    expect(mockView.book.sections[2].createDocument).toHaveBeenCalledTimes(1);
+
+    scrollListener?.();
+    expect(mockView.book.sections[0].createDocument).toHaveBeenCalledTimes(1);
+    expect(mockView.book.sections[2].createDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not double-advance while a boundary navigation is in flight', async () => {
+    let releaseNext: (() => void) | undefined;
+    mockView.next.mockImplementation(() => new Promise<void>(resolve => {
+      releaseNext = resolve;
+    }));
+
+    const instance = await openTestInstance();
+    instance.rendition.setLayout?.({ flow: 'scrolled' });
+
+    rendererState.start = 998;
+    rendererState.end = 1000;
+    scrollListener?.();
+    wheelListener?.({ deltaY: 80, preventDefault: vi.fn() });
+    expect(mockView.next).toHaveBeenCalledTimes(1);
+
+    releaseNext?.();
+    await Promise.resolve();
+  });
+
+  it('does not call next again when scroll stays at the bottom', async () => {
+    const instance = await openTestInstance();
+    instance.rendition.setLayout?.({ flow: 'scrolled' });
+
+    rendererState.start = 998;
+    rendererState.end = 1000;
+    scrollListener?.();
+    await Promise.resolve();
+    expect(mockView.next).toHaveBeenCalledTimes(1);
+
+    scrollListener?.();
+    await Promise.resolve();
+    expect(mockView.next).toHaveBeenCalledTimes(1);
   });
 });
