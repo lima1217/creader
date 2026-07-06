@@ -8,6 +8,7 @@ describe('reading engine adapters', () => {
     expect(foliateEngineAdapter.supports.selection).toBe(true);
     expect(foliateEngineAdapter.supports.progress).toBe(true);
     expect(foliateEngineAdapter.supports.theme).toBe(true);
+    expect(foliateEngineAdapter.supports.layout).toBe(true);
     expect(foliateEngineAdapter.supports.cfi).toBe('epub-cfi');
   });
 });

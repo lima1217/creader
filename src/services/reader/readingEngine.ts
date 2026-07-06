@@ -3,11 +3,18 @@ import type { ReaderRendition, RenditionContent } from './epubAdapter';
 
 export type ReadingEngineName = 'foliate';
 
+export interface ReadingLayoutOptions {
+  flow: 'scrolled';
+  maxInlineSize?: number;
+  animated?: boolean;
+}
+
 export interface ReadingEngineRendition extends ReaderRendition {
   engineName?: ReadingEngineName;
   currentLocation?: () => unknown;
   getContents?: () => RenditionContent[];
   destroy?: () => void;
+  setLayout?: (opts: ReadingLayoutOptions) => void;
 }
 
 export interface ReadingEngineInstance {
@@ -30,6 +37,7 @@ export interface ReadingEngineAdapter {
     selection: boolean;
     progress: boolean;
     theme: boolean;
+    layout: boolean;
     cfi: 'epub-cfi' | 'synthetic-cfi' | 'none';
   };
   open(options: ReadingEngineOptions): Promise<ReadingEngineInstance>;

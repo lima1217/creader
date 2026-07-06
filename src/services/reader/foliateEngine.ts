@@ -1,6 +1,6 @@
 import type { NavItem } from '../../types';
 import type { RenditionContent } from './epubAdapter';
-import type { ReadingEngineAdapter, ReadingEngineInstance, ReadingEngineOptions, ReadingEngineRendition } from './readingEngine';
+import type { ReadingEngineAdapter, ReadingEngineInstance, ReadingEngineOptions, ReadingEngineRendition, ReadingLayoutOptions } from './readingEngine';
 
 type FoliateLocation = {
   cfi?: string;
@@ -24,6 +24,8 @@ type FoliateRenderer = {
   setStyles?: (styles: string) => void;
   addEventListener?: (type: string, listener: (event: Event) => void, options?: boolean | AddEventListenerOptions) => void;
   removeEventListener?: (type: string, listener: (event: Event) => void, options?: boolean | EventListenerOptions) => void;
+  setAttribute: (name: string, value: string) => void;
+  removeAttribute: (name: string) => void;
 };
 
 type FoliateViewElement = HTMLElement & {
@@ -163,6 +165,15 @@ class FoliateRendition implements ReadingEngineRendition {
 
   async next(): Promise<void> {
     await this.view.next();
+  }
+
+  setLayout(opts: ReadingLayoutOptions): void {
+    const r = this.view.renderer;
+    if (!r) return;
+    r.setAttribute('flow', opts.flow);
+    if (opts.maxInlineSize != null) r.setAttribute('max-inline-size', `${opts.maxInlineSize}px`);
+    if (opts.animated) r.setAttribute('animated', '');
+    else r.removeAttribute('animated');
   }
 
   on(event: string, callback: (...args: unknown[]) => void): void {
@@ -319,6 +330,7 @@ export const foliateEngineAdapter: ReadingEngineAdapter = {
     selection: true,
     progress: true,
     theme: true,
+    layout: true,
     cfi: 'epub-cfi',
   },
   async open({ appBook, arrayBuffer, container }: ReadingEngineOptions): Promise<ReadingEngineInstance> {
