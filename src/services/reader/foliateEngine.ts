@@ -15,9 +15,15 @@ type FoliateContent = {
   index?: number;
 };
 
+type FoliateRendererRelocateDetail = {
+  fraction?: number;
+};
+
 type FoliateRenderer = {
   getContents?: () => FoliateContent[];
   setStyles?: (styles: string) => void;
+  addEventListener?: (type: string, listener: (event: Event) => void, options?: boolean | AddEventListenerOptions) => void;
+  removeEventListener?: (type: string, listener: (event: Event) => void, options?: boolean | EventListenerOptions) => void;
 };
 
 type FoliateViewElement = HTMLElement & {
@@ -110,6 +116,13 @@ class FoliateRendition implements ReadingEngineRendition {
   private readonly selectionCleanups: Array<() => void> = [];
   private themeStyles: Record<string, Record<string, string>> = {};
   private initialized = false;
+  private sectionFraction: number | null = null;
+  private readonly onRendererRelocate = (event: Event) => {
+    const fraction = (event as CustomEvent<FoliateRendererRelocateDetail>).detail?.fraction;
+    if (typeof fraction === 'number' && Number.isFinite(fraction)) {
+      this.sectionFraction = fraction;
+    }
+  };
 
   constructor(private readonly view: FoliateViewElement) {
     view.addEventListener('relocate', event => {
@@ -124,6 +137,15 @@ class FoliateRendition implements ReadingEngineRendition {
       this.attachSelectionListener(detail.doc, detail.index);
       this.applyThemeToDocument(detail.doc);
     });
+
+    this.attachRendererSectionTracking();
+  }
+
+  private attachRendererSectionTracking(): void {
+    const renderer = this.view.renderer;
+    if (!renderer?.addEventListener) return;
+    // Capture so sectionFraction is updated before foliate-view handles the same event.
+    renderer.addEventListener('relocate', this.onRendererRelocate, true);
   }
 
   async display(target?: string): Promise<void> {
@@ -163,6 +185,7 @@ class FoliateRendition implements ReadingEngineRendition {
   }
 
   destroy(): void {
+    this.view.renderer?.removeEventListener?.('relocate', this.onRendererRelocate, true);
     for (const cleanup of this.selectionCleanups.splice(0)) cleanup();
     this.view.close();
     this.view.remove();
@@ -178,6 +201,7 @@ class FoliateRendition implements ReadingEngineRendition {
         label: location?.tocItem?.label,
         index: location?.index,
         percentage,
+        sectionFraction: this.sectionFraction,
       },
       end: { cfi, percentage },
     };

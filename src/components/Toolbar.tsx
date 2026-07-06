@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
-import { useProgressStore } from '../stores/progressStore';
 import { useAIStore } from '../stores/aiStore';
 import { useSelectionStore } from '../stores/selectionStore';
 import type { Theme } from '../types';
@@ -29,8 +28,9 @@ export function Toolbar() {
     const settings = useSettingsStore((s) => s.settings);
     const setSettings = useSettingsStore((s) => s.setSettings);
     const currentBook = useLibraryStore((s) => s.currentBook);
-    const bookProgressById = useProgressStore((s) => s.bookProgressById);
     const currentChapterContent = useAIStore((s) => s.currentChapterContent);
+    const currentChapterTitle = useAIStore((s) => s.currentChapterTitle);
+    const currentChapterRemainingPercent = useAIStore((s) => s.currentChapterRemainingPercent);
     const addToAccumulatedTexts = useSelectionStore((s) => s.addToAccumulatedTexts);
     const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
     const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
@@ -40,7 +40,6 @@ export function Toolbar() {
     const setTocOpen = useUIStore((s) => s.setTocOpen);
     const [chapterCopied, setChapterCopied] = useState(false);
 
-    const displayProgress = currentBook ? (bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage ?? 0) : 0;
     const canUseChapter = Boolean(currentChapterContent && currentChapterContent.length > 100);
     const useChapterLabel = canUseChapter
         ? `使用本章（约 ${Math.round(currentChapterContent!.length / 1000)}k 字）`
@@ -104,10 +103,15 @@ export function Toolbar() {
                             <EpubTocIcon size={18} />
                         </button>
                         <div className="toolbar-book-info">
-                            <span className="toolbar-book-title">{currentBook.title}</span>
-                            <span className="toolbar-book-progress">
-                                {Math.round(displayProgress)}%
-                            </span>
+                            <span className="toolbar-book-title">{currentChapterTitle ?? '…'}</span>
+                            {currentChapterRemainingPercent !== null && (
+                                <span
+                                    className="toolbar-book-progress"
+                                    title="本章剩余"
+                                >
+                                    {currentChapterRemainingPercent}%
+                                </span>
+                            )}
                         </div>
                     </div>
                 )}

@@ -5,7 +5,7 @@ import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { useEpubProgressTracking } from './useEpubProgressTracking';
 
 const location = {
-  start: { cfi: 'epubcfi(/6/4)', index: 4, percentage: 0.62 },
+  start: { cfi: 'epubcfi(/6/4)', index: 4, percentage: 0.62, sectionFraction: 0.38 },
   end: { cfi: 'epubcfi(/6/6)' },
 };
 
@@ -73,6 +73,7 @@ describe('useEpubProgressTracking', () => {
     expect(setCurrentChapterLocation).toHaveBeenCalledWith({
       index: 4,
       title: 'Chapter 5',
+      remainingPercent: 62,
     });
 
     flushSync(() => root.unmount());

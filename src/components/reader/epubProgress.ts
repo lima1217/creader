@@ -1,3 +1,14 @@
+export function computeChapterRemainingPercent(
+  sectionFraction: number | null | undefined,
+): number | null {
+  if (sectionFraction === null || sectionFraction === undefined || !Number.isFinite(sectionFraction)) {
+    return null;
+  }
+
+  const clamped = Math.min(1, Math.max(0, sectionFraction));
+  return Math.round((1 - clamped) * 100);
+}
+
 export function computeEpubPercentage(params: {
   location: any;
   cfi: string | null;

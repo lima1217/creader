@@ -27,8 +27,13 @@ type AIState = {
   currentChapterSliceTruncatedEnd: boolean;
   currentChapterIndex: number | null;
   currentChapterTitle: string | null;
+  currentChapterRemainingPercent: number | null;
   setCurrentChapterSlice: (slice: { content: string; offset: number; truncatedEnd: boolean }) => void;
-  setCurrentChapterLocation: (location: { index: number | null; title: string | null }) => void;
+  setCurrentChapterLocation: (location: {
+    index: number | null;
+    title: string | null;
+    remainingPercent: number | null;
+  }) => void;
   chatMessages: ChatMessage[];
   conversationMemory: ConversationMemory | null;
   addChatMessage: (message: ChatMessage) => void;
@@ -43,6 +48,7 @@ export const useAIStore = create<AIState>((set, get) => ({
   currentChapterSliceTruncatedEnd: false,
   currentChapterIndex: null,
   currentChapterTitle: null,
+  currentChapterRemainingPercent: null,
   setCurrentChapterSlice: (slice) => set({
     currentChapterContent: slice.content,
     currentChapterContentOffset: slice.offset,
@@ -51,6 +57,7 @@ export const useAIStore = create<AIState>((set, get) => ({
   setCurrentChapterLocation: (location) => set({
     currentChapterIndex: location.index,
     currentChapterTitle: location.title,
+    currentChapterRemainingPercent: location.remainingPercent,
   }),
 
   chatMessages: [],

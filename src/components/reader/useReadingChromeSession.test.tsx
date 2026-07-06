@@ -106,6 +106,7 @@ describe('useReadingChromeSession', () => {
       currentChapterSliceTruncatedEnd: false,
       currentChapterIndex: null,
       currentChapterTitle: null,
+      currentChapterRemainingPercent: null,
       chatMessages: [],
       conversationMemory: null,
     });
