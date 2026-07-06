@@ -18,7 +18,11 @@ const DEFAULT_SLICE_LIMIT: usize = 16_000;
 pub struct ChapterInfo {
     pub index: usize,
     pub title: String,
-    pub char_len: usize,
+    /// Uncompressed size of the chapter's XHTML entry in bytes. This is a
+    /// cheap proxy for chapter length (read from the ZIP central directory
+    /// without decompressing); UTF-8 text is roughly 1-3 bytes per char, so
+    /// models should treat it as an approximate magnitude, not a char count.
+    pub byte_len: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,7 +137,7 @@ fn blocking_list_chapters(book_path: &Path) -> Result<Vec<ChapterInfo>, String> 
             .get(idref)
             .ok_or_else(|| format!("Spine itemref '{}' missing from manifest", idref))?;
         let entry_path = join_epub_path(&package.opf_base, &item.href);
-        let char_len = archive
+        let byte_len = archive
             .by_name(&entry_path)
             .map(|entry| entry.size() as usize)
             .unwrap_or(0);
@@ -146,7 +150,7 @@ fn blocking_list_chapters(book_path: &Path) -> Result<Vec<ChapterInfo>, String> 
         chapters.push(ChapterInfo {
             index,
             title,
-            char_len,
+            byte_len,
         });
     }
 
@@ -260,10 +264,26 @@ fn load_epub_package(archive: &mut ZipArchive<File>) -> Result<EpubPackage, Stri
     parse_opf_package(&opf_path, &opf_xml)
 }
 
+/// Upper bound for a single metadata entry read into memory
+/// (container.xml / OPF / nav / NCX). Real EPUB metadata is in the tens-of-KB
+/// range; this caps pathological entries so a malformed archive cannot force a
+/// multi-GB allocation through the metadata path.
+#[cfg(not(test))]
+const MAX_METADATA_ENTRY_BYTES: u64 = 8 * 1024 * 1024;
+#[cfg(test)]
+const MAX_METADATA_ENTRY_BYTES: u64 = 4 * 1024;
+
 fn read_zip_text(archive: &mut ZipArchive<File>, name: &str) -> Result<String, String> {
     let mut entry = archive
         .by_name(name)
         .map_err(|e| format!("EPUB entry not found '{}': {}", name, e))?;
+    if entry.size() > MAX_METADATA_ENTRY_BYTES {
+        return Err(format!(
+            "EPUB entry '{}' is unreasonably large ({} bytes); refusing to read into memory",
+            name,
+            entry.size()
+        ));
+    }
     let mut raw = String::new();
     entry
         .read_to_string(&mut raw)
@@ -566,11 +586,17 @@ fn extract_xhtml_text(
 
     let mut xml = Reader::from_reader(reader);
 
-    let mut raw = String::new();
+    // Incremental normalization buffer. Streaming the whitespace rules as we
+    // consume Text events keeps deep pagination (`offset` in the hundreds of
+    // thousands) linear in chapter size, instead of re-normalizing the whole
+    // accumulated `raw` on every event.
+    let mut output = String::new();
+    let mut normalizer = NormalizationSink::new();
     let mut skip_depth = 0u32;
     let mut head_depth = 0u32;
     let mut buf = Vec::new();
     let target_end = take.map(|limit| skip.saturating_add(limit));
+    let mut reached_target = false;
 
     loop {
         match xml.read_event_into(&mut buf) {
@@ -582,7 +608,7 @@ fn extract_xhtml_text(
                     if name == b"script" || name == b"style" {
                         skip_depth += 1;
                     } else if skip_depth == 0 && is_block_tag(&name) {
-                        push_block_break(&mut raw);
+                        normalizer.append("\n", &mut output);
                     }
                 }
             }
@@ -594,7 +620,7 @@ fn extract_xhtml_text(
                     if name == b"script" || name == b"style" {
                         skip_depth = skip_depth.saturating_sub(1);
                     } else if skip_depth == 0 && is_block_tag(&name) {
-                        push_block_break(&mut raw);
+                        normalizer.append("\n", &mut output);
                     }
                 }
             }
@@ -602,10 +628,11 @@ fn extract_xhtml_text(
                 let text = e
                     .unescape()
                     .map_err(|err| format!("Failed to decode XHTML text: {}", err))?;
-                raw.push_str(text.as_ref());
+                normalizer.append(text.as_ref(), &mut output);
 
                 if let Some(end) = target_end {
-                    if normalize_text(&raw).chars().count() >= end {
+                    if normalizer.char_count() >= end {
+                        reached_target = true;
                         break;
                     }
                 }
@@ -617,11 +644,79 @@ fn extract_xhtml_text(
         buf.clear();
     }
 
-    let normalized = normalize_text(&raw);
-    let reached_eof = target_end.is_none_or(|end| normalized.chars().count() < end);
+    // `output` is already normalized inline; only a final trim remains, which
+    // mirrors `normalize_text`'s trailing trim without re-scanning the body.
+    let normalized = output.trim().to_string();
+    let reached_eof = !reached_target;
     let text: String = normalized.chars().skip(skip).take(take.unwrap_or(usize::MAX)).collect();
 
     Ok((text, reached_eof))
+}
+
+/// Streaming counterpart to `normalize_text`. Folds runs of spaces/tabs into a
+/// single space, collapses 3+ newlines to 2, and tracks the normalized char
+/// count incrementally so callers can stop reading once they have enough.
+///
+/// Leading whitespace is dropped (mirroring `normalize_text`'s final
+/// `.trim()`), so `char_count` matches the trimmed output the caller will
+/// slice from — otherwise deep-pagination offsets would drift by the number
+/// of leading whitespace bytes.
+struct NormalizationSink {
+    char_count: usize,
+    leading: bool,
+    prev_was_space: bool,
+    consecutive_newlines: u32,
+}
+
+impl NormalizationSink {
+    fn new() -> Self {
+        Self {
+            char_count: 0,
+            leading: true,
+            prev_was_space: false,
+            consecutive_newlines: 0,
+        }
+    }
+
+    fn append(&mut self, chunk: &str, out: &mut String) {
+        for ch in chunk.replace("\r\n", "\n").chars() {
+            let is_space = ch == ' ' || ch == '\t';
+            let is_newline = ch == '\n';
+            if self.leading && (is_space || is_newline) {
+                continue;
+            }
+
+            if is_space {
+                if !self.prev_was_space {
+                    out.push(' ');
+                    self.char_count += 1;
+                    self.prev_was_space = true;
+                    self.leading = false;
+                }
+                continue;
+            }
+
+            self.prev_was_space = false;
+            self.leading = false;
+
+            if is_newline {
+                self.consecutive_newlines += 1;
+                if self.consecutive_newlines <= 2 {
+                    out.push('\n');
+                    self.char_count += 1;
+                }
+                continue;
+            }
+
+            self.consecutive_newlines = 0;
+            out.push(ch);
+            self.char_count += 1;
+        }
+    }
+
+    fn char_count(&self) -> usize {
+        self.char_count
+    }
 }
 
 fn normalize_text(text: &str) -> String {
@@ -653,15 +748,6 @@ fn normalize_text(text: &str) -> String {
     }
 
     normalized.trim().to_string()
-}
-
-fn push_block_break(output: &mut String) {
-    if output.is_empty() {
-        return;
-    }
-    if !output.ends_with('\n') {
-        output.push('\n');
-    }
 }
 
 fn is_block_tag(name: &[u8]) -> bool {
@@ -876,8 +962,8 @@ mod tests {
         assert_eq!(chapters[0].title, "Alpha");
         assert_eq!(chapters[1].index, 1);
         assert_eq!(chapters[1].title, "Beta");
-        assert!(chapters[0].char_len > 0);
-        assert!(chapters[1].char_len > 0);
+        assert!(chapters[0].byte_len > 0);
+        assert!(chapters[1].byte_len > 0);
 
         let _ = std::fs::remove_file(path);
     }
@@ -1039,8 +1125,8 @@ mod tests {
         let chapters = list_chapters(&path).expect("list");
         assert_eq!(chapters.len(), 2);
         assert_eq!(chapter_extractions() - before, 0);
-        assert!(chapters[0].char_len > 0);
-        assert!(chapters[1].char_len > 0);
+        assert!(chapters[0].byte_len > 0);
+        assert!(chapters[1].byte_len > 0);
 
         let _ = std::fs::remove_file(path);
     }
@@ -1065,6 +1151,105 @@ mod tests {
             .await
             .expect("async get");
         assert_eq!(slice.text, "Blocking path.");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    #[serial]
+    fn get_chapter_text_deep_pagination_counts_chars_incrementally() {
+        // Regression for the O(n^2) normalize path: a long chapter paged from a
+        // non-zero offset must still return exactly `limit` chars and a correct
+        // `next_offset`, without re-normalizing the whole chapter per event.
+        let path = temp_epub("deep-page");
+        // One paragraph per <p> so the chapter has many small Text events,
+        // which is the shape that exposed the repeated full-normalize cost.
+        let mut body = String::new();
+        for _ in 0..4000 {
+            body.push_str("<p>甲乙丙丁戊己庚辛壬癸</p>");
+        }
+        write_test_epub(&path, &[("Long", body.as_str())], false);
+
+        let cache = BookTextCache::default();
+        let mid_offset = 20_000;
+        let first =
+            get_chapter_text(&path, 0, Some(mid_offset), Some(1000), &cache).expect("mid slice");
+        assert_eq!(first.offset, mid_offset);
+        assert_eq!(first.text.chars().count(), 1000);
+        assert!(first.next_offset.is_some());
+        assert_eq!(first.next_offset, Some(mid_offset + 1000));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    fn write_epub_with_oversized_nav(path: &Path) {
+        // Build a minimal EPUB whose nav document exceeds the test-only
+        // MAX_METADATA_ENTRY_BYTES (4 KB) so we can assert the metadata read
+        // refuses to load it.
+        let file = File::create(path).expect("create epub");
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        zip.start_file("mimetype", options).expect("mimetype");
+        zip.write_all(b"application/epub+zip").expect("mimetype");
+        zip.start_file("META-INF/container.xml", options)
+            .expect("container");
+        zip.write_all(
+            br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+        )
+        .expect("container");
+
+        zip.start_file("OEBPS/content.opf", options).expect("opf");
+        zip.write_all(
+            br#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Big</dc:title></metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="ch1"/></spine>
+</package>"#,
+        )
+        .expect("opf");
+
+        zip.start_file("OEBPS/nav.xhtml", options).expect("nav");
+        // Pad well past the 4 KB test cap.
+        let mut nav = String::from(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<body><nav epub:type="toc"><ol><li><a href="chapter1.xhtml">Big</a></li></ol></nav>
+"#,
+        );
+        nav.push_str(&"x".repeat(8192));
+        nav.push_str("</body></html>");
+        zip.write_all(nav.as_bytes()).expect("nav");
+
+        zip.start_file("OEBPS/chapter1.xhtml", options)
+            .expect("chapter");
+        zip.write_all(b"<?xml version=\"1.0\"?><html><body><p>Body.</p></body></html>")
+            .expect("chapter");
+
+        zip.finish().expect("finish");
+    }
+
+    #[test]
+    #[serial]
+    fn list_chapters_degrades_when_nav_exceeds_size_cap() {
+        let path = temp_epub("oversized-nav");
+        write_epub_with_oversized_nav(&path);
+
+        // The oversized nav is rejected by read_zip_text, so title resolution
+        // falls back to the spine-derived "Chapter N" titles instead of
+        // failing the whole listing.
+        let chapters = list_chapters(&path).expect("list degrades");
+        assert_eq!(chapters.len(), 1);
+        assert_eq!(chapters[0].title, "Chapter 1");
 
         let _ = std::fs::remove_file(path);
     }

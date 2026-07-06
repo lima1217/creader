@@ -10,7 +10,7 @@ use tauri::Manager;
 use crate::book_files::validate_book_path_inner;
 use crate::book_text::{get_chapter_text_async, list_chapters_async, BookTextCache};
 use crate::reading_memory::{
-    allowed_reading_memory_dir, normalize_note_type, write_reading_memory_from_tool,
+    allowed_reading_memory_dir, write_reading_memory_from_tool,
     ReadingMemoryDirectDecision, ReadingMemoryDirectIngestRequest,
 };
 
@@ -699,7 +699,6 @@ async fn execute_local_tool(
     app: Option<&tauri::AppHandle>,
     tool_ctx: &AiToolContext,
     cache: &Arc<BookTextCache>,
-    assistant_answer: &str,
     name: &str,
     arguments: &str,
 ) -> Result<String, String> {
@@ -780,13 +779,11 @@ async fn execute_local_tool(
                 source_progress: tool_ctx.source_progress,
                 user_question: tool_ctx.user_question.clone(),
                 selected_excerpt: tool_ctx.selected_excerpt.clone(),
-                assistant_answer: assistant_answer.to_string(),
+                // The tool-write path does not render the assistant answer into
+                // the note (the model authors `body` itself); keep the field
+                // empty rather than passing a partial mid-stream answer.
+                assistant_answer: String::new(),
             };
-            let note_type = normalize_note_type(
-                decision.note_type.as_deref(),
-                decision.target_dir.as_deref().unwrap_or("books"),
-            );
-            let _note_type = note_type;
             let result = write_reading_memory_from_tool(request, decision)?;
             serde_json::to_string(&result)
                 .map_err(|e| format!("Failed to serialize Reading Memory result: {}", e))
@@ -949,7 +946,6 @@ where
                 app,
                 tool_ctx,
                 &chapter_cache,
-                &full_text,
                 &name,
                 &arguments,
             )
@@ -1507,7 +1503,6 @@ mod tests {
             None,
             &tool_ctx,
             &cache,
-            "assistant answer",
             "write_reading_memory",
             args,
         )
