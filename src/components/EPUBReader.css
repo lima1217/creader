@@ -1,5 +1,4 @@
 .reader {
-    --reader-progress-height: 28px;
     flex: 1;
     position: relative;
     display: flex;
@@ -34,6 +33,11 @@
 
 .foliate-reader-view::part(container) {
     background: var(--bg-reader);
+    scrollbar-width: none;
+}
+
+.foliate-reader-view::part(container)::-webkit-scrollbar {
+    display: none;
 }
 
 /* Empty and error states */
@@ -196,37 +200,10 @@
     scale: 0.97;
 }
 
-.reader-nav {
-    position: absolute;
-    top: 50%;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 42px;
-    height: 96px;
-    padding: 0;
-    border: 0;
-    opacity: 1;
-    transform: translateY(-50%);
-}
-
-.reader-nav:active {
-    transform: translateY(-50%) scale(0.97);
-}
-
-.reader-nav-prev {
-    left: var(--space-6);
-}
-
-.reader-nav-next {
-    right: var(--space-6);
-}
-
 .reader-accumulated-indicator {
     position: absolute;
     right: var(--space-4);
-    bottom: calc(var(--space-4) + var(--reader-progress-height, 0px));
+    bottom: var(--space-4);
     z-index: 50;
     display: flex;
     flex-direction: column;
@@ -385,10 +362,6 @@
     color: var(--text-muted);
     font-size: var(--text-sm);
     text-align: center;
-}
-
-.reader.toc-open .reader-nav-prev {
-    left: calc(340px + var(--space-6));
 }
 
 @media (hover: none) {
