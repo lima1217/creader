@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,11 +33,8 @@ function Harness({
     setShowSelectionToolbar: ReturnType<typeof vi.fn>;
   };
 }) {
-  const renditionRef = useRef(rendition as unknown as ReaderRendition);
-
   useEpubSelectionTracking({
-    renditionRef,
-    renditionKey: 1,
+    rendition: rendition as unknown as ReaderRendition,
     setSelectedText: handlers.setSelectedText,
     setSelectedCfiRange: handlers.setSelectedCfiRange,
     setSelectionToolbarPos: handlers.setSelectionToolbarPos,
@@ -142,22 +138,70 @@ describe('useEpubSelectionTracking', () => {
     const root = createRoot(container);
     flushSync(() => root.render(<Harness rendition={rendition} handlers={handlers} />));
 
-    // Simulate the engine emitting selected three times as the drag grows.
-    const emitAt = (text: string) => {
+    // Simulate preview events during drag (no CFI) followed by commit.
+    const emitPreview = (text: string) => {
       const selection = {
         rangeCount: 1, getRangeAt: () => range, toString: () => text,
       } as unknown as Selection;
       const win = { getSelection: () => selection, frameElement: iframe, innerWidth: 1280 } as unknown as Window;
-      rendition.emit('selected', 'epubcfi(/6/4)', { window: win, document: {} });
+      rendition.emit('selected', '', { window: win, document: {} });
     };
 
-    emitAt('你');
-    emitAt('你好');
-    emitAt('你好世界');
+    emitPreview('你');
+    emitPreview('你好');
+    emitPreview('你好世界');
+    rendition.emit('selected', 'epubcfi(/6/4)', {
+      window: { getSelection: () => ({ rangeCount: 1, getRangeAt: () => range, toString: () => '你好世界' }) as unknown as Selection, frameElement: iframe, innerWidth: 1280 } as unknown as Window,
+      document: {},
+    });
 
     const textCalls = handlers.setSelectedText.mock.calls.map(c => c[0]);
     expect(textCalls).toEqual(['你', '你好', '你好世界']);
     expect(handlers.setSelectedText).toHaveBeenLastCalledWith('你好世界');
+    expect(handlers.setSelectedCfiRange.mock.calls).toEqual([[''], [''], [''], ['epubcfi(/6/4)']]);
+
+    flushSync(() => root.unmount());
+  });
+
+  it('clears a committed CFI while previewing a new selection', () => {
+    const rendition = createRendition();
+    const iframe = document.createElement('iframe');
+    vi.spyOn(iframe, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 500, height: 600, right: 500, bottom: 600, x: 0, y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const range = {
+      getBoundingClientRect: () => ({ left: 10, top: 10, width: 40, height: 20, right: 50, bottom: 30, x: 10, y: 10, toJSON: () => ({}) }),
+    } as Range;
+
+    const handlers = {
+      setSelectedText: vi.fn(),
+      setSelectedCfiRange: vi.fn(),
+      setSelectionToolbarPos: vi.fn(),
+      setShowSelectionToolbar: vi.fn(),
+    };
+
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    flushSync(() => root.render(<Harness rendition={rendition} handlers={handlers} />));
+
+    const emitPreview = (text: string) => {
+      const selection = {
+        rangeCount: 1, getRangeAt: () => range, toString: () => text,
+      } as unknown as Selection;
+      const win = { getSelection: () => selection, frameElement: iframe, innerWidth: 1280 } as unknown as Window;
+      rendition.emit('selected', '', { window: win, document: {} });
+    };
+
+    emitPreview('first');
+    rendition.emit('selected', 'epubcfi(/6/2)', {
+      window: { getSelection: () => ({ rangeCount: 1, getRangeAt: () => range, toString: () => 'first' }) as unknown as Selection, frameElement: iframe, innerWidth: 1280 } as unknown as Window,
+      document: {},
+    });
+    emitPreview('second');
+
+    expect(handlers.setSelectedCfiRange).toHaveBeenLastCalledWith('');
+    expect(handlers.setSelectedText).toHaveBeenLastCalledWith('second');
 
     flushSync(() => root.unmount());
   });

@@ -24,7 +24,7 @@ export function EPUBReader() {
     const settings = useSettingsStore((s) => s.settings);
     const containerRef = useRef<HTMLDivElement>(null);
     const renditionRef = useRef<ReaderRendition | null>(null);
-    const [renditionKey, setRenditionKey] = useState(0);
+    const [activeRendition, setActiveRendition] = useState<ReaderRendition | null>(null);
 
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export function EPUBReader() {
     const chrome = useReadingChromeSession({
         currentBook,
         renditionRef,
-        renditionKey,
+        rendition: activeRendition,
     });
 
     useEpubBookLifecycle({
@@ -48,26 +48,18 @@ export function EPUBReader() {
         setError,
         setIsFileNotFound,
         setIsEngineLoadError,
-        onRenditionCreated: () => setRenditionKey(k => k + 1),
+        onRenditionCreated: setActiveRendition,
     });
 
     // Update styles when settings change (including theme)
     useEffect(() => {
         if (renditionRef.current) {
-            const rendition = renditionRef.current;
-            applyEpubTheme(rendition, {
+            applyEpubTheme(renditionRef.current, {
                 theme: settings.theme,
                 fontFamily: settings.fontFamily,
                 fontSize: settings.fontSize,
                 lineHeight: settings.lineHeight,
             });
-
-            // Force a re-render of current location to apply styles
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const location = (rendition as any).currentLocation();
-            if (location && location.start) {
-                rendition.display(location.start.cfi);
-            }
         }
     }, [settings.fontSize, settings.fontFamily, settings.lineHeight, settings.theme]);
 

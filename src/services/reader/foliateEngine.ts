@@ -79,8 +79,11 @@ class FoliateRenditionEventBridge {
  *
  * Emitted events (consumed via `on(event, cb)`):
  *   - 'relocated' / 'locationChanged' — foliate `relocate` event → progress + TOC highlight.
- *   - 'selected'                      — a content-doc selection became non-empty; payload
- *                                       `(cfi, { window, document })`. Used to show SelectionToolbar.
+ *   - 'selected'                      — selection preview or commit; payload
+ *                                       `(cfi, { window, document })`. Preview
+ *                                       events use an empty CFI while the user
+ *                                       drags; commit events on mouseup/touchend/keyup
+ *                                       include the foliate-generated EPUB CFI.
  *   - 'selectionCleared'              — the content-doc selection collapsed (click on blank
  *                                       space, Esc, etc.). SelectionToolbar listens to dismiss.
  *
@@ -182,35 +185,65 @@ class FoliateRendition implements ReadingEngineRendition {
   private attachSelectionListener(doc?: Document, index?: number): void {
     if (!doc) return;
 
-    // `selected` fires on every non-empty selection change so the store tracks the
-    // live text as the user drags; downstream `setSelectedText` dedupes unchanged
-    // text. Only the collapsed transition is edge-detected, so `selectionCleared`
-    // fires once when the user clicks blank space instead of repeating.
     let hasSelection = false;
+    let previewFrame = 0;
 
-    const evaluate = () => {
+    const getActiveSelection = () => {
       const selection = doc.defaultView?.getSelection();
-      const hasText = !!selection && !selection.isCollapsed && selection.rangeCount > 0
-        && !!selection.toString().trim();
-
-      if (hasText) {
-        hasSelection = true;
-        const range = selection!.getRangeAt(0);
-        const cfi = typeof index === 'number' ? this.view.getCFI?.(index, range) ?? '' : '';
-        this.bridge.emit('selected', cfi, { window: doc.defaultView, document: doc });
-      } else if (hasSelection) {
-        hasSelection = false;
-        this.bridge.emit('selectionCleared');
-      }
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+      const text = selection.toString().trim();
+      if (!text) return null;
+      return selection;
     };
 
-    doc.addEventListener('selectionchange', evaluate);
-    doc.addEventListener('mouseup', evaluate);
-    doc.addEventListener('keyup', evaluate);
+    const emitPreview = () => {
+      const selection = getActiveSelection();
+      if (!selection) {
+        if (hasSelection) {
+          hasSelection = false;
+          this.bridge.emit('selectionCleared');
+        }
+        return;
+      }
+
+      hasSelection = true;
+      this.bridge.emit('selected', '', { window: doc.defaultView, document: doc });
+    };
+
+    const schedulePreview = () => {
+      if (previewFrame) return;
+      previewFrame = doc.defaultView?.requestAnimationFrame(() => {
+        previewFrame = 0;
+        emitPreview();
+      }) ?? 0;
+    };
+
+    const emitCommit = () => {
+      const selection = getActiveSelection();
+      if (!selection) {
+        if (hasSelection) {
+          hasSelection = false;
+          this.bridge.emit('selectionCleared');
+        }
+        return;
+      }
+
+      hasSelection = true;
+      const range = selection.getRangeAt(0);
+      const cfi = typeof index === 'number' ? this.view.getCFI?.(index, range) ?? '' : '';
+      this.bridge.emit('selected', cfi, { window: doc.defaultView, document: doc });
+    };
+
+    doc.addEventListener('selectionchange', schedulePreview);
+    doc.addEventListener('mouseup', emitCommit);
+    doc.addEventListener('touchend', emitCommit);
+    doc.addEventListener('keyup', emitCommit);
     this.selectionCleanups.push(() => {
-      doc.removeEventListener('selectionchange', evaluate);
-      doc.removeEventListener('mouseup', evaluate);
-      doc.removeEventListener('keyup', evaluate);
+      if (previewFrame) doc.defaultView?.cancelAnimationFrame(previewFrame);
+      doc.removeEventListener('selectionchange', schedulePreview);
+      doc.removeEventListener('mouseup', emitCommit);
+      doc.removeEventListener('touchend', emitCommit);
+      doc.removeEventListener('keyup', emitCommit);
     });
   }
 

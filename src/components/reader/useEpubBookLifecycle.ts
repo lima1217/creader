@@ -23,7 +23,7 @@ export function useEpubBookLifecycle(params: {
   setError: (error: string | null) => void;
   setIsFileNotFound: (isNotFound: boolean) => void;
   setIsEngineLoadError: (isEngineLoadError: boolean) => void;
-  onRenditionCreated?: (rendition: ReaderRendition) => void;
+  onRenditionCreated?: (rendition: ReaderRendition | null) => void;
 }) {
   const {
     currentBook,
@@ -60,6 +60,7 @@ export function useEpubBookLifecycle(params: {
         engineInstance = null;
       }
       renditionRef.current = null;
+      onRenditionCreated?.(null);
 
       try {
         const fileData = await perfSpan('epub:readFile', async () => readFile(currentBook.filePath));
@@ -117,6 +118,7 @@ export function useEpubBookLifecycle(params: {
         engineInstance = null;
       }
       renditionRef.current = null;
+      onRenditionCreated?.(null);
     };
   }, [currentBook?.id, currentBook?.filePath]);
 }

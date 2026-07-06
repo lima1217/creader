@@ -17,9 +17,9 @@ const logger = createLogger('useReadingChromeSession');
 export function useReadingChromeSession(params: {
   currentBook: Book | null;
   renditionRef: RefObject<ReaderRendition | null>;
-  renditionKey: number;
+  rendition: ReaderRendition | null;
 }) {
-  const { currentBook, renditionRef, renditionKey } = params;
+  const { currentBook, renditionRef, rendition } = params;
   const updateBookProgress = useProgressStore((s) => s.updateBookProgress);
   const showToc = useUIStore((s) => s.isTocOpen);
   const setShowToc = useUIStore((s) => s.setTocOpen);
@@ -85,16 +85,14 @@ export function useReadingChromeSession(params: {
   ), [currentTocHref]);
 
   useEpubProgressTracking({
-    renditionRef,
-    renditionKey,
+    rendition,
     bookId: currentBook?.id ?? null,
     updateBookProgress,
     setCurrentChapterContent,
   });
 
   useEpubSelectionTracking({
-    renditionRef,
-    renditionKey,
+    rendition,
     setSelectedText,
     setSelectedCfiRange,
     setSelectionToolbarPos,
@@ -122,7 +120,6 @@ export function useReadingChromeSession(params: {
   });
 
   useEffect(() => {
-    const rendition = renditionRef.current;
     if (!rendition) return;
 
     const updateHref = () => {
@@ -142,7 +139,7 @@ export function useReadingChromeSession(params: {
       rendition.off('relocated', updateHref);
       rendition.off('locationChanged', updateHref);
     };
-  }, [renditionKey, renditionRef]);
+  }, [rendition]);
 
   return {
     toc,

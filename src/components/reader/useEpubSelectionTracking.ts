@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import type { RefObject } from 'react';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { getSelectionPosition } from './epubSelectionListeners';
 import { createLogger } from '../../utils/logger';
@@ -7,8 +6,7 @@ import { createLogger } from '../../utils/logger';
 const logger = createLogger('useEpubSelectionTracking');
 
 export function useEpubSelectionTracking(params: {
-  renditionRef: RefObject<ReaderRendition | null>;
-  renditionKey: number;
+  rendition: ReaderRendition | null;
   setSelectedText: (text: string) => void;
   setSelectedCfiRange: (cfiRange: string) => void;
   setSelectionToolbarPos: (pos: { x: number; y: number } | null) => void;
@@ -16,8 +14,7 @@ export function useEpubSelectionTracking(params: {
   setShowSelectionHint: (show: boolean) => void;
 }) {
   const {
-    renditionRef,
-    renditionKey,
+    rendition,
     setSelectedText,
     setSelectedCfiRange,
     setSelectionToolbarPos,
@@ -26,7 +23,6 @@ export function useEpubSelectionTracking(params: {
   } = params;
 
   useEffect(() => {
-    const rendition = renditionRef.current;
     if (!rendition) return;
 
     let lastSelectedText = '';
@@ -51,7 +47,11 @@ export function useEpubSelectionTracking(params: {
         if (text && text !== lastSelectedText) {
           lastSelectedText = text;
           setSelectedText(text);
-          setSelectedCfiRange(typeof cfiRange === 'string' ? cfiRange : '');
+        }
+        if (typeof cfiRange === 'string' && cfiRange) {
+          setSelectedCfiRange(cfiRange);
+        } else if (text) {
+          setSelectedCfiRange('');
         }
 
         setSelectionToolbarPos(position);
@@ -67,6 +67,7 @@ export function useEpubSelectionTracking(params: {
       setShowSelectionToolbar(false);
       setSelectionToolbarPos(null);
       setSelectedText('');
+      setSelectedCfiRange('');
     };
 
     rendition.on('selected', onSelected);
@@ -76,5 +77,5 @@ export function useEpubSelectionTracking(params: {
       rendition.off('selected', onSelected);
       rendition.off('selectionCleared', onSelectionCleared);
     };
-  }, [renditionKey, setSelectedText, setSelectedCfiRange, setSelectionToolbarPos, setShowSelectionHint, setShowSelectionToolbar]);
+  }, [rendition, setSelectedText, setSelectedCfiRange, setSelectionToolbarPos, setShowSelectionHint, setShowSelectionToolbar]);
 }

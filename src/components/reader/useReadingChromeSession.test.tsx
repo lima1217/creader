@@ -77,7 +77,7 @@ function Harness({
   const session = useReadingChromeSession({
     currentBook,
     renditionRef,
-    renditionKey: 1,
+    rendition,
   });
   onSession(session);
   return <div ref={containerRef} />;

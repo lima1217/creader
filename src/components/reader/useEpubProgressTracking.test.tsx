@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
@@ -32,11 +31,8 @@ function Harness({
   rendition: ReturnType<typeof createRendition>;
   updateBookProgress: ReturnType<typeof vi.fn>;
 }) {
-  const renditionRef = useRef(rendition as unknown as ReaderRendition);
-
   useEpubProgressTracking({
-    renditionRef,
-    renditionKey: 1,
+    rendition: rendition as unknown as ReaderRendition,
     bookId: 'book-1',
     updateBookProgress,
     setCurrentChapterContent: () => {},

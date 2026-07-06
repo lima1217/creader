@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import type { RefObject } from 'react';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { getRenditionContents } from '../../services/reader/epubAdapter';
 import { computeEpubPercentage } from './epubProgress';
@@ -9,13 +8,12 @@ import { createLogger } from '../../utils/logger';
 const logger = createLogger('useEpubProgressTracking');
 
 export function useEpubProgressTracking(params: {
-  renditionRef: RefObject<ReaderRendition | null>;
-  renditionKey: number;
+  rendition: ReaderRendition | null;
   bookId: string | null;
   updateBookProgress: (bookId: string, update: { currentCfi: string; percentage: number }) => void;
   setCurrentChapterContent: (content: string) => void;
 }) {
-  const { renditionRef, renditionKey, bookId, updateBookProgress, setCurrentChapterContent } = params;
+  const { rendition, bookId, updateBookProgress, setCurrentChapterContent } = params;
   const progressStateRef = useRef({ lastTs: 0, lastCfi: '', lastPercentage: 0 });
   const chapterStateRef = useRef({ lastTs: 0, lastCfi: '' });
 
@@ -25,7 +23,6 @@ export function useEpubProgressTracking(params: {
   }, [bookId]);
 
   useEffect(() => {
-    const rendition = renditionRef.current;
     if (!rendition || !bookId) return;
 
     const handleLocationChange = (location: any) => {
@@ -97,5 +94,5 @@ export function useEpubProgressTracking(params: {
       rendition.off('locationChanged', handleLocationChange);
       rendition.off('relocated', handleLocationChange);
     };
-  }, [renditionKey, bookId, updateBookProgress, setCurrentChapterContent]);
+  }, [rendition, bookId, updateBookProgress, setCurrentChapterContent]);
 }
