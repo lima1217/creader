@@ -40,6 +40,7 @@ function createSettings(overrides: Partial<Settings> = {}): Settings {
     aiTextSize: 14,
     aiContextWindow: 20,
     aiAutoSummarize: true,
+    aiThinkingEnabled: false,
     ...overrides,
   };
 }

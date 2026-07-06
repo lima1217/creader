@@ -16,6 +16,7 @@ export interface ChatRequest {
   chapter_content?: string;
   conversation_summary?: string;
   history?: { role: string; content: string }[];
+  thinking_enabled?: boolean;
 }
 
 export function buildContextFromReadingSnapshot(snapshot: ReadingContextSnapshot): {
@@ -51,7 +52,7 @@ export function buildChatRequest(params: {
   readingContext: ReadingContextSnapshot;
   conversationSummary?: string;
   chatMessages: ChatMessage[];
-  settings: Pick<Settings, 'aiContextWindow' | 'readingMemoryPath'>;
+  settings: Pick<Settings, 'aiContextWindow' | 'readingMemoryPath' | 'aiThinkingEnabled'>;
 }): ChatRequest {
   const derivedContext = buildContextFromReadingSnapshot(params.readingContext);
 
@@ -77,5 +78,6 @@ export function buildChatRequest(params: {
       role: message.role,
       content: message.content,
     })),
+    thinking_enabled: params.settings.aiThinkingEnabled ? true : undefined,
   };
 }

@@ -484,18 +484,61 @@
    text-size token so the input tracks the Settings text-size control. */
 .ai-panel-input {
     position: relative;
-    display: flex;
-    align-items: flex-end;
-    gap: var(--space-2);
     padding: var(--space-1) var(--space-3) var(--space-3);
     flex-shrink: 0;
     background: var(--bg-secondary);
 }
 
-.ai-composer-input {
+.ai-composer-shell {
+    position: relative;
     flex: 1;
-    min-height: 40px;
-    max-height: 128px;
+    min-width: 0;
+}
+
+.ai-composer-actions {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.ai-composer-model-trigger.astryx-button,
+.ai-composer-mode-trigger.astryx-button {
+    height: 30px;
+    padding-inline: 8px;
+    color: var(--text-secondary);
+}
+
+.ai-composer-model-trigger.astryx-button {
+    max-width: 140px;
+}
+
+.ai-composer-model-trigger.astryx-button > :nth-child(2),
+.ai-composer-mode-trigger.astryx-button > :nth-child(2) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-composer-actions .astryx-dropdown-menu .astryx-button {
+    width: auto;
+}
+
+.ai-composer-actions > .astryx-button:last-child {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: var(--radius-control);
+}
+
+.ai-composer-input {
+    width: 100%;
+    min-height: 96px;
+    max-height: 148px;
     box-sizing: border-box;
     color: var(--text-primary);
     background: rgba(var(--accent-rgb), 0.055);
@@ -512,24 +555,21 @@
 .ai-composer-input [aria-hidden="true"],
 .ai-composer-input [role="textbox"] {
     box-sizing: border-box;
-    min-height: 38px;
-    padding: 8px 10px;
+    min-height: 94px;
+    padding: 10px 12px 52px;
     line-height: 22px;
 }
 
 .ai-composer-input [role="textbox"] {
-    max-height: calc(128px - 2px);
+    max-height: calc(148px - 2px);
     overflow-y: auto;
     /* Suppress the global :focus-visible outline — focus feedback is
        carried by the outer .ai-composer-input background tint. */
     outline: none;
 }
 
-/* ChatSendButton renders a square icon-only Astryx Button; size it to the
-   composer row height and round it to the control radius. */
-.ai-panel-input .astryx-button {
-    width: 40px;
-    height: 40px;
+/* ChatSendButton renders a square icon-only Astryx Button inside composer actions. */
+.ai-composer-actions > .astryx-button {
     border-radius: var(--radius-control);
 }
 

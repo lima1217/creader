@@ -11,8 +11,10 @@ const textSizeControlCss = readFileSync(join(componentsDir, 'TextSizeControl.css
 describe('visual CSS contracts', () => {
   it('centers the first line inside the AI composer shell', () => {
     expect(aiPanelCss).toContain('.ai-composer-input [aria-hidden="true"],');
-    expect(aiPanelCss).toContain('min-height: 38px;');
-    expect(aiPanelCss).toContain('padding: 8px 10px;');
+    // The composer grows taller to make room for the absolutely positioned
+    // actions row (model/mode/send) that overlaps the bottom of the textarea.
+    expect(aiPanelCss).toContain('min-height: 94px;');
+    expect(aiPanelCss).toContain('padding: 10px 12px 52px;');
     expect(aiPanelCss).toContain('line-height: 22px;');
   });
 

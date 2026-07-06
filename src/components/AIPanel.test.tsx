@@ -172,6 +172,7 @@ beforeEach(() => {
     settings: {
       ...(useSettingsStore.getState().settings ?? {}),
       aiAutoSummarize: false,
+      aiThinkingEnabled: false,
       aiContextWindow: 20,
       aiTextSize: 14,
       readingMemoryAutoIngest: false,

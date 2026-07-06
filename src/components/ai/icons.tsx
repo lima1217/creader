@@ -78,6 +78,26 @@ export const QuoteIcon = () => (
     </svg>
 );
 
+export const BrainIcon = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588 4 4 0 0 0 7.636 2.106 3.2 3.2 0 0 0 .588-.049 3.2 3.2 0 0 0 .588.049 4 4 0 0 0 7.636-2.106 4 4 0 0 0 .556-6.588 4 4 0 0 0-2.526-5.77A3 3 0 1 0 12 5Z" />
+        <path d="M12 5v14" />
+        <path d="M8 10h8" />
+        <path d="M9 14h6" />
+    </svg>
+);
+
+export const FastRabbitIcon = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 8c0-2.2 1.8-4 4-4 1.1 0 2.1.45 2.8 1.2" />
+        <path d="M13.8 5.2 16 3l1 2.5" />
+        <path d="M8 14c-2.2 0-4 1.3-4 3s1.8 3 4 3h8c2.2 0 4-1.3 4-3s-1.8-3-4-3" />
+        <circle cx="9.5" cy="10" r="0.75" fill="currentColor" stroke="none" />
+        <circle cx="14.5" cy="10" r="0.75" fill="currentColor" stroke="none" />
+        <path d="M10 12.5c.6.4 1.3.6 2 .6s1.4-.2 2-.6" />
+    </svg>
+);
+
 export const ChevronDownIcon = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <polyline points="6 9 12 15 18 9" />

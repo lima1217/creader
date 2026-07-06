@@ -77,6 +77,7 @@ function Harness({
       aiTextSize: 14,
       aiContextWindow: 20,
       aiAutoSummarize: false,
+      aiThinkingEnabled: false,
     },
     renditionRef,
     setToc: () => {},

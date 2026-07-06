@@ -24,6 +24,7 @@ const settings: Settings = {
   aiTextSize: 14,
   aiContextWindow: 5,
   aiAutoSummarize: true,
+  aiThinkingEnabled: false,
 };
 
 function msg(index: number): ChatMessage {

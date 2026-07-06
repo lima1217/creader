@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS: Settings = {
   aiTextSize: 14,
   aiContextWindow: 20,
   aiAutoSummarize: true,
+  aiThinkingEnabled: false,
 };
 
 const EMPTY_LIBRARY: Library = { books: [], folders: [], lastUpdated: Date.now() };
@@ -75,6 +76,9 @@ export function resolveSettings(stored: Partial<Settings>, defaultSettings: Sett
     aiAutoSummarize: typeof stored.aiAutoSummarize === 'boolean'
       ? stored.aiAutoSummarize
       : defaultSettings.aiAutoSummarize,
+    aiThinkingEnabled: typeof stored.aiThinkingEnabled === 'boolean'
+      ? stored.aiThinkingEnabled
+      : defaultSettings.aiThinkingEnabled,
   };
 }
 

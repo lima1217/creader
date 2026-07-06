@@ -103,6 +103,7 @@ function resetSettings() {
       aiTextSize: 14,
       aiContextWindow: 20,
       aiAutoSummarize: true,
+      aiThinkingEnabled: false,
     },
   });
 }

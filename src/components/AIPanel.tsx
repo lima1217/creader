@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback, useMemo, type SVGProps } from
 import { invoke } from '@tauri-apps/api/core';
 import { ChatMessage as AstryxChatMessage } from '@astryxdesign/core/Chat';
 import { ChatComposerInput } from '@astryxdesign/core/Chat';
-import { ChatSendButton } from '@astryxdesign/core/Chat';
 import { Button } from '@astryxdesign/core/Button';
 import { Icon } from '@astryxdesign/core/Icon';
 import { MoreMenu } from '@astryxdesign/core/MoreMenu';
@@ -18,9 +17,10 @@ import { createLogger } from '../utils/logger';
 import type { AIProviderStatus } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
 import {
-    SendIcon, TrashIcon,
-    QuoteIcon, CopyIcon, CheckIcon, StopIcon, CloseIcon,
+    TrashIcon,
+    QuoteIcon, CopyIcon, CheckIcon, CloseIcon,
 } from './ai/icons';
+import { AIComposerControls } from './ai/AIComposerControls';
 import { FormatMessage } from './ai/MarkdownRenderer';
 import {
     loadQuickActionConfigs,
@@ -69,6 +69,7 @@ export function AIPanel() {
     const currentBook = useLibraryStore((s) => s.currentBook);
     const bookProgressById = useProgressStore((s) => s.bookProgressById);
     const settings = useSettingsStore((s) => s.settings);
+    const setSettings = useSettingsStore((s) => s.setSettings);
     const isTauri = isTauriRuntime();
 
     const [input, setInput] = useState('');
@@ -231,6 +232,23 @@ export function AIPanel() {
             setProviders([]);
         }
     }, [isTauri]);
+
+    const handleSelectProvider = useCallback(async (providerId: string) => {
+        try {
+            if (!isTauri) return;
+            await invoke('set_active_ai_provider', { id: providerId });
+            await refreshProviders();
+        } catch (e) {
+            logger.error('Failed to switch AI provider:', e);
+        }
+    }, [isTauri, refreshProviders]);
+
+    const handleThinkingEnabledChange = useCallback((enabled: boolean) => {
+        setSettings({
+            ...settings,
+            aiThinkingEnabled: enabled,
+        });
+    }, [setSettings, settings]);
 
     // Focus input when panel opens
     useEffect(() => {
@@ -501,24 +519,28 @@ export function AIPanel() {
             {quickActionControls}
 
             <div className="ai-panel-input">
-                <ChatComposerInput
-                    value={input}
-                    onChange={setInput}
-                    onSubmit={(text) => { void sendMessage(text); }}
-                    placeholder=""
-                    label="AI 输入"
-                    maxRows={4}
-                    isDisabled={isLoading}
-                    className="ai-composer-input"
-                />
-                <ChatSendButton
-                    isStopShown={isLoading}
-                    isDisabled={!isLoading && !input.trim()}
-                    onSend={() => { void sendMessage(); }}
-                    onStop={stopGeneration}
-                    sendIcon={<SendIcon />}
-                    stopIcon={<StopIcon />}
-                />
+                <div className="ai-composer-shell">
+                    <ChatComposerInput
+                        value={input}
+                        onChange={setInput}
+                        onSubmit={(text) => { void sendMessage(text); }}
+                        placeholder=""
+                        label="AI 输入"
+                        maxRows={4}
+                        isDisabled={isLoading}
+                        className="ai-composer-input"
+                    />
+                    <AIComposerControls
+                        providers={providers}
+                        isLoading={isLoading}
+                        canSend={Boolean(input.trim())}
+                        thinkingEnabled={settings.aiThinkingEnabled}
+                        onThinkingEnabledChange={handleThinkingEnabledChange}
+                        onSelectProvider={(providerId) => { void handleSelectProvider(providerId); }}
+                        onSend={() => { void sendMessage(); }}
+                        onStop={stopGeneration}
+                    />
+                </div>
             </div>
         </aside>
     );

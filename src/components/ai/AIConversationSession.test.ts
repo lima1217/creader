@@ -16,6 +16,7 @@ const baseSettings: Settings = {
   aiTextSize: 14,
   aiContextWindow: 20,
   aiAutoSummarize: false,
+  aiThinkingEnabled: false,
   readingMemoryAutoIngest: false,
   readingMemoryPath: '',
 };

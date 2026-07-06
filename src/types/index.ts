@@ -69,6 +69,7 @@ export interface Settings {
   aiTextSize: number; // 13-20
   aiContextWindow: 5 | 20 | 40;
   aiAutoSummarize: boolean;
+  aiThinkingEnabled: boolean;
 }
 
 // OpenAI-compatible AI provider configuration. The API key is NOT stored here —

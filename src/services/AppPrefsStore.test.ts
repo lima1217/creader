@@ -40,6 +40,7 @@ describe('AppPrefsStore Dexie persistence', () => {
       aiTextSize: 15,
       aiContextWindow: 20,
       aiAutoSummarize: false,
+      aiThinkingEnabled: false,
     };
 
     await saveAppPref(APP_PREF_KEYS.settings, settings);

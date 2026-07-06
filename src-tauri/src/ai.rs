@@ -42,6 +42,8 @@ pub struct ChatRequest {
     pub chapter_content: Option<String>,
     pub conversation_summary: Option<String>,
     pub history: Option<Vec<ChatHistoryItem>>,
+    #[serde(default, rename = "thinkingEnabled")]
+    pub thinking_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -484,8 +486,10 @@ pub(crate) fn build_openai_chat_request(
     stream: bool,
     temperature: f32,
     tools: Option<Vec<async_openai::types::chat::ChatCompletionTools>>,
+    thinking_enabled: bool,
 ) -> Result<async_openai::types::chat::CreateChatCompletionRequest, String> {
     use async_openai::types::chat::CreateChatCompletionRequestArgs;
+    use async_openai::types::chat::ReasoningEffort;
 
     let mut builder = CreateChatCompletionRequestArgs::default();
     builder
@@ -493,6 +497,9 @@ pub(crate) fn build_openai_chat_request(
         .messages(messages)
         .stream(stream)
         .temperature(temperature);
+    if thinking_enabled {
+        builder.reasoning_effort(ReasoningEffort::High);
+    }
     if let Some(tools) = tools {
         builder.tools(tools);
     }
@@ -518,7 +525,7 @@ pub(crate) fn build_openai_chat_request_from_prompt(
         messages.push(ChatCompletionRequestSystemMessage::from(system_prompt).into());
     }
     messages.push(ChatCompletionRequestUserMessage::from(prompt).into());
-    build_openai_chat_request(messages, model, stream, temperature, None)
+    build_openai_chat_request(messages, model, stream, temperature, None, false)
 }
 
 #[derive(Debug, Clone)]
@@ -856,6 +863,7 @@ pub(crate) async fn chat_completion_stream_typed<F, G>(
     api_key: &str,
     tool_ctx: Option<&AiToolContext>,
     app: Option<&tauri::AppHandle>,
+    thinking_enabled: bool,
     mut on_chunk: F,
     mut on_tool_activity: G,
 ) -> Result<String, String>
@@ -892,8 +900,9 @@ where
             messages.clone(),
             &config.model,
             true,
-            0.7,
+            1.0,
             tools.clone(),
+            thinking_enabled,
         )?;
 
         let stream_future = chat.create_stream(request);
@@ -1023,13 +1032,14 @@ async fn chat_completion_stream(
     api_key: &str,
     tool_ctx: Option<&AiToolContext>,
     app: Option<&tauri::AppHandle>,
+    thinking_enabled: bool,
     on_event: &Channel<StreamEvent>,
 ) -> Result<String, String> {
     let _ = on_event.send(StreamEvent::Started {
         provider: config.name.clone(),
     });
 
-    chat_completion_stream_typed(prompt, config, api_key, tool_ctx, app, |piece| {
+    chat_completion_stream_typed(prompt, config, api_key, tool_ctx, app, thinking_enabled, |piece| {
         let _ = on_event.send(StreamEvent::Chunk { text: piece });
     }, |name, status, detail| {
         let _ = on_event.send(StreamEvent::ToolActivity {
@@ -1056,7 +1066,7 @@ pub(crate) async fn chat_completion_oneshot_typed(
     api_key: &str,
 ) -> Result<String, String> {
     let client = openai_client(config, api_key);
-    let request = build_openai_chat_request_from_prompt(prompt, &config.model, None, false, 0.3)?;
+    let request = build_openai_chat_request_from_prompt(prompt, &config.model, None, false, 1.0)?;
 
     let chat = client.chat();
     let response = tokio::time::timeout(Duration::from_secs(AI_TIMEOUT_SECS), chat.create(request))
@@ -1146,6 +1156,7 @@ pub(crate) async fn chat_with_ai_streaming(
 
     let prompt = build_prompt(&request);
     let tool_ctx = AiToolContext::from_chat_request(&request);
+    let thinking_enabled = request.thinking_enabled.unwrap_or(false);
 
     match chat_completion_stream(
         &prompt,
@@ -1153,6 +1164,7 @@ pub(crate) async fn chat_with_ai_streaming(
         &api_key,
         Some(&tool_ctx),
         Some(&app),
+        thinking_enabled,
         &on_event,
     )
     .await
@@ -1447,6 +1459,7 @@ mod tests {
             "secret-key",
             Some(&tool_ctx),
             None,
+            false,
             |piece| chunks.push(piece),
             |_, _, _| {},
         )
@@ -1492,6 +1505,7 @@ mod tests {
             "secret-key",
             Some(&tool_ctx),
             None,
+            false,
             |_| {},
             |_, _, _| {},
         )
@@ -1525,6 +1539,7 @@ mod tests {
             "secret-key",
             Some(&tool_ctx),
             None,
+            false,
             |_| {},
             |_, _, _| {},
         )
@@ -1566,6 +1581,7 @@ mod tests {
             "secret-key",
             Some(&tool_ctx),
             None,
+            false,
             |_| {},
             |_, _, _| {},
         )
@@ -1658,6 +1674,7 @@ mod tests {
                     content: "u2".to_string(),
                 },
             ]),
+            thinking_enabled: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1702,6 +1719,7 @@ mod tests {
             chapter_content: Some("章".repeat(9000)),
             conversation_summary: None,
             history: None,
+            thinking_enabled: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1732,6 +1750,7 @@ mod tests {
             chapter_content: Some("🙂".repeat(7999)),
             conversation_summary: None,
             history: None,
+            thinking_enabled: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1755,6 +1774,7 @@ mod tests {
             chapter_content: Some("🙂".repeat(8000)),
             conversation_summary: None,
             history: None,
+            thinking_enabled: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1778,6 +1798,7 @@ mod tests {
             chapter_content: Some("🙂".repeat(8001)),
             conversation_summary: None,
             history: None,
+            thinking_enabled: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1875,7 +1896,7 @@ mod tests {
     fn reading_chat_request_includes_tools() {
         let messages = build_initial_messages("hello");
         let request =
-            build_openai_chat_request(messages, "reader-model", true, 0.7, Some(reading_ai_tools()))
+            build_openai_chat_request(messages, "reader-model", true, 0.7, Some(reading_ai_tools()), false)
                 .unwrap();
         let json = serde_json::to_value(request).unwrap();
         let tools = json["tools"].as_array().expect("tools array");
@@ -1907,7 +1928,7 @@ mod tests {
         let mut chunks = Vec::new();
 
         let full_text =
-            chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, |piece| {
+            chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, false, |piece| {
                 chunks.push(piece)
             }, |_, _, _| {})
             .await
@@ -1948,6 +1969,7 @@ mod tests {
             "secret-key",
             None,
             None,
+            false,
             |piece| chunks.push(piece),
             |_, _, _| {},
         )
@@ -2101,7 +2123,7 @@ mod tests {
             model: "reader-model".to_string(),
         };
 
-        let err = chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, |_| {}, |_, _, _| {})
+        let err = chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, false, |_| {}, |_, _, _| {})
             .await
             .unwrap_err();
 
