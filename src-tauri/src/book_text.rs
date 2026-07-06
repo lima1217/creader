@@ -285,6 +285,7 @@ fn blocking_search_book(
         return Err("query must not be empty".to_string());
     }
 
+    let query_lower = query.to_lowercase();
     let max_hits = limit
         .unwrap_or(MAX_SEARCH_HITS)
         .clamp(1, MAX_SEARCH_HITS);
@@ -316,7 +317,8 @@ fn blocking_search_book(
             cache,
         )?;
 
-        if full_text.contains(query) {
+        let full_text_lower = full_text.to_lowercase();
+        if full_text_lower.contains(&query_lower) {
             hits.push(BookSearchHit {
                 index: chapter.index,
                 title: chapter.title.clone(),
@@ -375,14 +377,33 @@ fn load_chapter_text_from_open_archive(
     Ok(extracted)
 }
 
+fn find_case_insensitive_char_range(text: &str, query: &str) -> Option<(usize, usize)> {
+    let needle: Vec<char> = query.chars().collect();
+    if needle.is_empty() {
+        return Some((0, 0));
+    }
+    let needle_lower: Vec<String> = needle.iter().map(|c| c.to_lowercase().collect()).collect();
+    let haystack: Vec<char> = text.chars().collect();
+    let len = needle.len();
+
+    'windows: for start in 0..=haystack.len().saturating_sub(len) {
+        for (j, folded) in needle_lower.iter().enumerate() {
+            let hay_folded: String = haystack[start + j].to_lowercase().collect();
+            if hay_folded != *folded {
+                continue 'windows;
+            }
+        }
+        return Some((start, len));
+    }
+    None
+}
+
 fn build_search_excerpt(text: &str, query: &str) -> String {
-    let Some(byte_start) = text.find(query) else {
+    let Some((char_start, match_char_len)) = find_case_insensitive_char_range(text, query) else {
         return String::new();
     };
 
-    let char_start = text[..byte_start].chars().count();
     let excerpt_start = char_start.saturating_sub(SEARCH_EXCERPT_CONTEXT_CHARS);
-    let match_char_len = query.chars().count();
     let total_chars = text.chars().count();
     let excerpt_end = (char_start + match_char_len + SEARCH_EXCERPT_CONTEXT_CHARS).min(total_chars);
 
@@ -1453,6 +1474,43 @@ mod tests {
         assert_eq!(result.hits[0].title, "Middle");
         assert!(result.hits[0].excerpt.contains("quantum observer"));
         assert!(!result.truncated);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    #[serial]
+    fn search_book_matches_case_insensitive() {
+        let path = temp_epub("search-case");
+        write_test_epub(
+            &path,
+            &[("Chapter", "<p>The Needle in the haystack.</p>")],
+            false,
+        );
+
+        let result = search_book(&path, "needle", None, &BookTextCache::default())
+            .expect("search");
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].index, 0);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    #[serial]
+    fn search_book_excerpt_preserves_original_case() {
+        let path = temp_epub("search-excerpt-case");
+        write_test_epub(
+            &path,
+            &[("Chapter", "<p>The Needle in the haystack.</p>")],
+            false,
+        );
+
+        let result = search_book(&path, "needle", None, &BookTextCache::default())
+            .expect("search");
+        assert_eq!(result.hits.len(), 1);
+        assert!(result.hits[0].excerpt.contains("Needle"));
+        assert!(!result.hits[0].excerpt.contains("needle"));
 
         let _ = std::fs::remove_file(path);
     }

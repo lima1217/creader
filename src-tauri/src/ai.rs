@@ -587,7 +587,7 @@ fn reading_ai_tools() -> Vec<async_openai::types::chat::ChatCompletionTools> {
         function: FunctionObject {
             name: "list_chapters".to_string(),
             description: Some(
-                "List all chapters in the current EPUB with index, title, and approximate length."
+                "List all chapters in the current EPUB. Each entry has `index` (0-based spine position), `title`, and `byte_len` — the uncompressed XHTML byte size, a rough proxy for length only (UTF-8 is ~1-3 bytes/char). Do not use `byte_len` as a character count or as an offset bound."
                     .to_string(),
             ),
             parameters: Some(serde_json::json!({
@@ -603,7 +603,7 @@ fn reading_ai_tools() -> Vec<async_openai::types::chat::ChatCompletionTools> {
         function: FunctionObject {
             name: "get_chapter_text".to_string(),
             description: Some(
-                "Fetch plain text for a chapter by spine index. Use offset/limit to page long chapters."
+                "Fetch plain text for a chapter by spine index. `offset` and `limit` are in characters (Unicode scalars), not bytes or tokens. Defaults: offset=0, limit=16000. Returns `{ text, index, offset, next_offset }`; to page forward pass `next_offset` as the next `offset` — `next_offset` is null when the chapter end was reached. Do not recompute the next offset yourself; whitespace is normalized so `offset + limit` may overlap or skip. Repeated calls with the same `(index, offset, limit)` within one conversation are deduplicated automatically; you do not need to avoid them."
                     .to_string(),
             ),
             parameters: Some(serde_json::json!({
