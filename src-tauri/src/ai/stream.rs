@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::ipc::Channel;
 use tokio_util::sync::CancellationToken;
 
 use super::reading_tools::{
-    execute_local_tool, reading_ai_tools, resolve_book_text_cache, tool_activity_detail,
-    AiToolContext, ToolCallResultCache,
+    execute_local_tool, is_deduplicable_readonly_tool, reading_ai_tools,
+    resolve_book_text_cache, tool_activity_detail, AiToolContext, ToolCallResultCache,
 };
 use super::{
     build_openai_chat_request, build_openai_chat_request_from_prompt, openai_api_base,
@@ -231,35 +232,114 @@ where
         ));
 
         tool_rounds_used += 1;
+
+        enum CallExecution {
+            Resolved { tool_result: String, status: &'static str },
+            ReadonlyPending,
+            WritePending,
+        }
+
+        struct ResolvedToolCall {
+            id: String,
+            name: String,
+            arguments: String,
+            execution: CallExecution,
+        }
+
+        let mut calls: Vec<ResolvedToolCall> = Vec::with_capacity(resolved_calls.len());
         for (id, name, arguments) in resolved_calls {
             let detail = tool_activity_detail(&name, "started", &arguments);
             on_tool_activity(&name, "started", detail);
-            let tool_result = if let Some(cached) = tool_result_cache.lookup(&name, &arguments) {
-                Ok(cached)
-            } else {
-                let result = execute_local_tool(
-                    app,
-                    tool_ctx,
-                    &chapter_cache,
-                    &name,
-                    &arguments,
-                )
-                .await;
-                if let Ok(ref ok) = result {
-                    tool_result_cache.store(&name, &arguments, ok);
+            let execution = if let Some(cached) = tool_result_cache.lookup(&name, &arguments) {
+                CallExecution::Resolved {
+                    tool_result: cached,
+                    status: "completed",
                 }
-                result
+            } else if is_deduplicable_readonly_tool(&name) {
+                CallExecution::ReadonlyPending
+            } else {
+                CallExecution::WritePending
             };
-            let (tool_result, status) = match tool_result {
-                Ok(result) => (result, "completed"),
+            calls.push(ResolvedToolCall {
+                id,
+                name,
+                arguments,
+                execution,
+            });
+        }
+
+        let readonly_tasks: Vec<_> = calls
+            .iter()
+            .enumerate()
+            .filter(|(_, call)| matches!(call.execution, CallExecution::ReadonlyPending))
+            .map(|(index, call)| {
+                let name = call.name.clone();
+                let arguments = call.arguments.clone();
+                let cache = Arc::clone(&chapter_cache);
+                async move {
+                    let result = execute_local_tool(
+                        app,
+                        tool_ctx,
+                        &cache,
+                        &name,
+                        &arguments,
+                    )
+                    .await;
+                    (index, name, arguments, result)
+                }
+            })
+            .collect();
+
+        for (index, name, arguments, result) in futures_util::future::join_all(readonly_tasks).await
+        {
+            let (tool_result, status) = match result {
+                Ok(result) => {
+                    tool_result_cache.store(&name, &arguments, &result);
+                    (result, "completed")
+                }
                 Err(err) => (serde_json::json!({ "error": err }).to_string(), "failed"),
             };
-            let detail = tool_activity_detail(&name, status, &arguments);
-            on_tool_activity(&name, status, detail);
+            calls[index].execution = CallExecution::Resolved {
+                tool_result,
+                status,
+            };
+        }
+
+        for call in &mut calls {
+            if !matches!(call.execution, CallExecution::WritePending) {
+                continue;
+            }
+            let name = call.name.clone();
+            let arguments = call.arguments.clone();
+            let result = execute_local_tool(app, tool_ctx, &chapter_cache, &name, &arguments)
+                .await;
+            let (tool_result, status) = match result {
+                Ok(result) => {
+                    tool_result_cache.store(&name, &arguments, &result);
+                    (result, "completed")
+                }
+                Err(err) => (serde_json::json!({ "error": err }).to_string(), "failed"),
+            };
+            call.execution = CallExecution::Resolved {
+                tool_result,
+                status,
+            };
+        }
+
+        for call in calls {
+            let CallExecution::Resolved {
+                tool_result,
+                status,
+            } = call.execution
+            else {
+                unreachable!("all tool calls should be resolved before emitting results")
+            };
+            let detail = tool_activity_detail(&call.name, status, &call.arguments);
+            on_tool_activity(&call.name, status, detail);
             messages.push(ChatCompletionRequestMessage::Tool(
                 ChatCompletionRequestToolMessage {
                     content: tool_result.into(),
-                    tool_call_id: id,
+                    tool_call_id: call.id,
                 },
             ));
         }
@@ -578,6 +658,65 @@ mod tests {
         let second_json: serde_json::Value = serde_json::from_str(second_body).unwrap();
         let messages = second_json["messages"].as_array().unwrap();
         assert!(messages.iter().any(|m| m["role"] == "tool"));
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn typed_stream_runs_readonly_tools_concurrently_in_one_round() {
+        let dual_get_chapter_round = concat!(
+            "data: {\"id\":\"chatcmpl-dual\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"reader-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_get_0\",\"type\":\"function\",\"function\":{\"name\":\"get_chapter_text\",\"arguments\":\"{\\\"index\\\":0}\"}},{\"index\":1,\"id\":\"call_get_1\",\"type\":\"function\",\"function\":{\"name\":\"get_chapter_text\",\"arguments\":\"{\\\"index\\\":1}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let (base_url, _request_rx, server) =
+            spawn_sequential_chat_server(vec![dual_get_chapter_round, FINAL_TEXT_ROUND]);
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+        let tool_ctx = sample_tool_ctx();
+        let activity = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(String, String)>::new()));
+        let activity_for_callback = std::sync::Arc::clone(&activity);
+
+        let full_text = chat_completion_stream_typed(
+            sample_stream_messages(),
+            &config,
+            "secret-key",
+            Some(&tool_ctx),
+            None,
+            false,
+            DEFAULT_MAX_TOOL_ROUNDS,
+            None,
+            |_| {},
+            move |name, status, _| {
+                if name == "get_chapter_text" {
+                    activity_for_callback
+                        .lock()
+                        .unwrap()
+                        .push((name.to_string(), status.to_string()));
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(full_text, "Final answer");
+        let events = activity.lock().unwrap();
+        let terminal_status = |status: &str| status == "completed" || status == "failed";
+        let first_terminal = events
+            .iter()
+            .position(|(_, status)| terminal_status(status))
+            .expect("each tool call should finish");
+        let started_before_first_terminal = events[..first_terminal]
+            .iter()
+            .filter(|(_, status)| status == "started")
+            .count();
+        assert_eq!(
+            started_before_first_terminal, 2,
+            "both get_chapter_text calls should start before either completes; got {:?}",
+            *events
+        );
         server.join().unwrap();
     }
 

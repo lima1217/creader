@@ -224,7 +224,7 @@ pub(crate) fn resolve_book_text_cache(app: Option<&tauri::AppHandle>) -> Arc<Boo
     Arc::new(BookTextCache::with_default_capacity())
 }
 
-fn is_deduplicable_readonly_tool(name: &str) -> bool {
+pub(crate) fn is_deduplicable_readonly_tool(name: &str) -> bool {
     matches!(
         name,
         "list_chapters" | "get_chapter_text" | "search_book"
