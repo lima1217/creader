@@ -7,6 +7,7 @@ import {
   isScrolledAtTop,
   shouldPrefetchAdjacentSections,
   findAdjacentLinearSectionIndex,
+  readPaginatorMetrics,
   SCROLLED_BOUNDARY_TOLERANCE_PX,
   SCROLLED_PREFETCH_DISTANCE_PX,
 } from './foliateEngine';
@@ -490,6 +491,24 @@ describe('foliateEngine scrolled boundary helpers', () => {
     expect(findAdjacentLinearSectionIndex(sections, 0, 1)).toBe(2);
     expect(findAdjacentLinearSectionIndex(sections, 2, -1)).toBe(0);
     expect(findAdjacentLinearSectionIndex(sections, 0, -1)).toBeNull();
+  });
+
+  it('returns null before foliate has mounted a section document', () => {
+    const renderer = {
+      scrolled: true,
+      get start() {
+        return 0;
+      },
+      get end() {
+        return 0;
+      },
+      get viewSize() {
+        throw new TypeError("Cannot read properties of null (reading 'element')");
+      },
+      atStart: false,
+      atEnd: false,
+    };
+    expect(readPaginatorMetrics(renderer)).toBeNull();
   });
 });
 

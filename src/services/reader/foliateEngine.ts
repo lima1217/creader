@@ -97,15 +97,20 @@ export type PaginatorScrollMetrics = {
 };
 
 export function readPaginatorMetrics(renderer: FoliatePaginatorScroll | undefined): PaginatorScrollMetrics | null {
-  if (!renderer) return null;
-  return {
-    scrolled: Boolean(renderer.scrolled),
-    start: Number(renderer.start ?? 0),
-    end: Number(renderer.end ?? 0),
-    viewSize: Number(renderer.viewSize ?? 0),
-    atStart: Boolean(renderer.atStart),
-    atEnd: Boolean(renderer.atEnd),
-  };
+  if (!renderer?.scrolled) return null;
+  try {
+    return {
+      scrolled: true,
+      start: Number(renderer.start ?? 0),
+      end: Number(renderer.end ?? 0),
+      viewSize: Number(renderer.viewSize ?? 0),
+      atStart: Boolean(renderer.atStart),
+      atEnd: Boolean(renderer.atEnd),
+    };
+  } catch {
+    // foliate paginator getters touch #view before the first section is displayed
+    return null;
+  }
 }
 
 type FoliateViewElement = HTMLElement & {
