@@ -36,10 +36,10 @@ describe('fontLoader', () => {
   });
 
   it('loads bundled faces for builtin fonts', async () => {
-    const css = await resolveFontFaceCss('builtin-literata', customFonts);
+    const css = await resolveFontFaceCss('builtin-bitter', customFonts);
 
     expect(readBundledFontBase64).toHaveBeenCalledTimes(2);
-    expect(css).toContain('CReader Literata');
+    expect(css).toContain('CReader Bitter');
     expect(css).toContain('font-style: italic');
   });
 
@@ -51,8 +51,8 @@ describe('fontLoader', () => {
   });
 
   it('caches repeated loads for the same key', async () => {
-    await resolveFontFaceCss('builtin-literata', customFonts);
-    await resolveFontFaceCss('builtin-literata', customFonts);
+    await resolveFontFaceCss('builtin-bitter', customFonts);
+    await resolveFontFaceCss('builtin-bitter', customFonts);
 
     expect(readBundledFontBase64).toHaveBeenCalledTimes(2);
   });

@@ -13,8 +13,9 @@ pub struct FontFilePayload {
 }
 
 const BUNDLED_FONT_RESOURCES: &[&str] = &[
-    "fonts/Literata-Regular.woff2",
-    "fonts/Literata-Italic.woff2",
+    "fonts/Bitter-Regular.woff2",
+    "fonts/Bitter-Italic.woff2",
+    "fonts/LXGWWenKaiGBScreen-Subset.woff2",
 ];
 
 pub(crate) fn is_supported_font_extension(path: &Path) -> bool {
@@ -140,6 +141,7 @@ mod tests {
     #[test]
     fn bundled_font_allowlist_rejects_unknown_names() {
         assert!(!BUNDLED_FONT_RESOURCES.contains(&"fonts/Evil.woff2"));
-        assert!(BUNDLED_FONT_RESOURCES.contains(&"fonts/Literata-Regular.woff2"));
+        assert!(BUNDLED_FONT_RESOURCES.contains(&"fonts/Bitter-Regular.woff2"));
+        assert!(BUNDLED_FONT_RESOURCES.contains(&"fonts/LXGWWenKaiGBScreen-Subset.woff2"));
     }
 }

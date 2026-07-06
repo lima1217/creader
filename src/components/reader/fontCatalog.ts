@@ -7,7 +7,7 @@ export type WhitelistFontFamilyKey =
   | 'serif-latin'
   | 'sans-latin';
 
-export type BuiltinFontFamilyKey = 'builtin-literata';
+export type BuiltinFontFamilyKey = 'builtin-bitter' | 'builtin-lxgw-wenkai';
 
 export type FontFamilyKey = WhitelistFontFamilyKey | BuiltinFontFamilyKey | `custom:${string}`;
 
@@ -58,13 +58,22 @@ export const FONT_CATALOG: readonly FontCatalogEntry[] = [
 
 export const BUILTIN_FONT_DEFINITIONS: readonly BuiltinFontDefinition[] = [
   {
-    key: 'builtin-literata',
-    label: 'Literata（内置）',
-    fontFamily: 'CReader Literata',
-    fontStack: '"CReader Literata", Georgia, "Times New Roman", serif',
+    key: 'builtin-bitter',
+    label: 'Bitter（内置西文衬线）',
+    fontFamily: 'CReader Bitter',
+    fontStack: '"CReader Bitter", Georgia, "Times New Roman", serif',
     faces: [
-      { resourceFile: 'fonts/Literata-Regular.woff2', fontStyle: 'normal' },
-      { resourceFile: 'fonts/Literata-Italic.woff2', fontStyle: 'italic' },
+      { resourceFile: 'fonts/Bitter-Regular.woff2', fontStyle: 'normal' },
+      { resourceFile: 'fonts/Bitter-Italic.woff2', fontStyle: 'italic' },
+    ],
+  },
+  {
+    key: 'builtin-lxgw-wenkai',
+    label: '霞鹜文楷（内置中文）',
+    fontFamily: 'CReader LXGW WenKai',
+    fontStack: '"CReader LXGW WenKai", "Songti SC", "Source Han Serif SC", serif',
+    faces: [
+      { resourceFile: 'fonts/LXGWWenKaiGBScreen-Subset.woff2', fontStyle: 'normal' },
     ],
   },
 ] as const;

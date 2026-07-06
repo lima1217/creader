@@ -40,7 +40,8 @@ describe('fontCatalog', () => {
       'sans-cjk',
       'serif-latin',
       'sans-latin',
-      'builtin-literata',
+      'builtin-bitter',
+      'builtin-lxgw-wenkai',
       'custom:cf_1',
     ]);
   });
@@ -51,7 +52,8 @@ describe('fontCatalog', () => {
     ['sans-cjk', '"PingFang SC", "Source Han Sans SC", "Helvetica Neue", sans-serif'],
     ['serif-latin', 'Georgia, "Times New Roman", serif'],
     ['sans-latin', '"Helvetica Neue", Arial, sans-serif'],
-    ['builtin-literata', '"CReader Literata", Georgia, "Times New Roman", serif'],
+    ['builtin-bitter', '"CReader Bitter", Georgia, "Times New Roman", serif'],
+    ['builtin-lxgw-wenkai', '"CReader LXGW WenKai", "Songti SC", "Source Han Serif SC", serif'],
     ['custom:cf_1', '"CReader Custom cf_1", Georgia, "Times New Roman", serif'],
   ] as const)('resolveFontStack(%s) returns the catalog stack', (key, stack) => {
     expect(resolveFontStack(key, customFonts)).toBe(stack);
@@ -73,8 +75,10 @@ describe('fontCatalog', () => {
 
   it('flags builtin and custom keys as injectable', () => {
     expect(fontFamilyNeedsInjection('serif-latin', customFonts)).toBe(false);
-    expect(fontFamilyNeedsInjection('builtin-literata', customFonts)).toBe(true);
+    expect(fontFamilyNeedsInjection('builtin-bitter', customFonts)).toBe(true);
+    expect(fontFamilyNeedsInjection('builtin-lxgw-wenkai', customFonts)).toBe(true);
     expect(fontFamilyNeedsInjection(customFontFamilyKey('cf_1'), customFonts)).toBe(true);
     expect(BUILTIN_FONT_DEFINITIONS[0]?.faces).toHaveLength(2);
+    expect(BUILTIN_FONT_DEFINITIONS[1]?.faces).toHaveLength(1);
   });
 });
