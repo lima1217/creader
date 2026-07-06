@@ -72,6 +72,8 @@ pub fn run() {
             ai::test_ai_provider,
             ai::cancel_ai_streaming,
             book_files::import_book_to_library,
+            book_files::preview_import_book_path,
+            book_files::import_book_bytes_to_library,
             book_files::delete_book_file,
             book_files::validate_book_path,
             book_files::validate_book_paths,

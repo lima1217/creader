@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 // ============================================================
 // Library / book file commands
@@ -10,6 +11,11 @@ use tauri::Manager;
 pub struct ImportBookResult {
     pub new_path: String,
     pub book_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PreviewImportBookPathResult {
+    pub path: String,
 }
 
 fn ensure_books_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -128,6 +134,86 @@ pub(crate) fn import_book_to_library(
     let dest_path = books_dir.join(&new_file_name);
 
     std::fs::copy(source, &dest_path).map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    let new_path = dest_path
+        .to_str()
+        .ok_or("Invalid destination path encoding")?
+        .to_string();
+
+    Ok(ImportBookResult { new_path, book_id })
+}
+
+pub(crate) fn library_book_dest_path(
+    books_dir: &Path,
+    book_id: &str,
+    file_name: &str,
+) -> Result<PathBuf, String> {
+    let extension = Path::new(file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("epub");
+    if extension.to_ascii_lowercase() != "epub" {
+        return Err("Unsupported book file type. Only EPUB is supported.".to_string());
+    }
+
+    let sanitized = sanitize_filename(file_name);
+    let new_file_name = format!("{}_{}.{}", book_id, sanitized, extension);
+    Ok(books_dir.join(&new_file_name))
+}
+
+pub(crate) fn decode_import_bytes_base64(bytes_base64: &str) -> Result<Vec<u8>, String> {
+    if bytes_base64.is_empty() {
+        return Err("Empty file".to_string());
+    }
+
+    STANDARD
+        .decode(bytes_base64)
+        .map_err(|e| format!("Invalid book bytes: {}", e))
+}
+
+pub(crate) fn write_imported_book_bytes(
+    books_dir: &Path,
+    book_id: &str,
+    file_name: &str,
+    bytes: &[u8],
+) -> Result<PathBuf, String> {
+    if bytes.is_empty() {
+        return Err("Empty file".to_string());
+    }
+
+    let dest_path = library_book_dest_path(books_dir, book_id, file_name)?;
+    std::fs::write(&dest_path, bytes).map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(dest_path)
+}
+
+#[tauri::command]
+pub(crate) fn preview_import_book_path(
+    app: tauri::AppHandle,
+    book_id: String,
+    file_name: String,
+) -> Result<PreviewImportBookPathResult, String> {
+    let books_dir = ensure_books_dir(&app)?;
+    let dest_path = library_book_dest_path(&books_dir, &book_id, &file_name)?;
+
+    let path = dest_path
+        .to_str()
+        .ok_or("Invalid destination path encoding".to_string())?
+        .to_string();
+
+    Ok(PreviewImportBookPathResult { path })
+}
+
+#[tauri::command]
+pub(crate) fn import_book_bytes_to_library(
+    app: tauri::AppHandle,
+    book_id: String,
+    file_name: String,
+    bytes_base64: String,
+) -> Result<ImportBookResult, String> {
+    let bytes = decode_import_bytes_base64(&bytes_base64)?;
+    let books_dir = ensure_books_dir(&app)?;
+    let dest_path = write_imported_book_bytes(&books_dir, &book_id, &file_name, &bytes)?;
 
     let new_path = dest_path
         .to_str()
@@ -294,6 +380,70 @@ mod tests {
         assert!(!is_supported_book_extension(Path::new("a.markdown")));
         assert!(!is_supported_book_extension(Path::new("a.txt")));
         assert!(!is_supported_book_extension(Path::new("a")));
+    }
+
+    #[test]
+    fn library_book_dest_path_builds_expected_filename() {
+        let books_dir = unique_temp_dir("dest_path");
+        std::fs::create_dir_all(&books_dir).unwrap();
+
+        let dest = library_book_dest_path(&books_dir, "42", "My Book.epub").expect("dest path");
+        assert_eq!(
+            dest.file_name().and_then(|name| name.to_str()),
+            Some("42_My Book.epub")
+        );
+
+        let _ = std::fs::remove_dir_all(&books_dir);
+    }
+
+    #[test]
+    fn library_book_dest_path_rejects_non_epub() {
+        let books_dir = unique_temp_dir("dest_path_reject");
+        std::fs::create_dir_all(&books_dir).unwrap();
+
+        assert!(library_book_dest_path(&books_dir, "1", "book.pdf").is_err());
+
+        let _ = std::fs::remove_dir_all(&books_dir);
+    }
+
+    #[test]
+    fn decode_import_bytes_base64_round_trips() {
+        let encoded = STANDARD.encode(b"epub-bytes");
+        assert_eq!(
+            decode_import_bytes_base64(&encoded).expect("decode"),
+            b"epub-bytes"
+        );
+        assert!(decode_import_bytes_base64("").is_err());
+        assert!(decode_import_bytes_base64("%%%").is_err());
+    }
+
+    #[test]
+    fn write_imported_book_bytes_writes_epub_to_library_dir() {
+        let books_dir = unique_temp_dir("import_bytes");
+        std::fs::create_dir_all(&books_dir).unwrap();
+
+        let dest = write_imported_book_bytes(&books_dir, "42", "My Book.epub", b"epub-bytes")
+            .expect("write import");
+
+        assert!(dest.exists());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"epub-bytes");
+        assert_eq!(
+            dest.file_name().and_then(|n| n.to_str()),
+            Some("42_My Book.epub")
+        );
+
+        let _ = std::fs::remove_dir_all(&books_dir);
+    }
+
+    #[test]
+    fn write_imported_book_bytes_rejects_empty_and_non_epub() {
+        let books_dir = unique_temp_dir("import_bytes_reject");
+        std::fs::create_dir_all(&books_dir).unwrap();
+
+        assert!(write_imported_book_bytes(&books_dir, "1", "book.epub", b"").is_err());
+        assert!(write_imported_book_bytes(&books_dir, "1", "book.pdf", b"x").is_err());
+
+        let _ = std::fs::remove_dir_all(&books_dir);
     }
 
     #[test]

@@ -1,6 +1,5 @@
-import { lazy, Suspense, useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { preloadEpubReader, Reader } from './components/Reader';
@@ -8,10 +7,10 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppDialogProvider, useAppDialog } from './components/AppDialog';
 import { AstryxThemeBoundary } from './theme/AstryxThemeBoundary';
 import { handleWindowDragMouseDown } from './utils/windowDrag';
-import { isTauriRuntime } from './utils/tauri';
 import { createLogger } from './utils/logger';
 import { useUIStore } from './stores/uiStore';
 import { useAppLifecycleBootstrap, useAppLifecycleImport } from './appLifecycle';
+import { useEpubFileDropImport } from './hooks/useEpubFileDropImport';
 import { SidebarPanelIcon } from './components/icons/icons';
 import './index.css';
 import './App.css';
@@ -32,11 +31,13 @@ function AppContent() {
   const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const { notice } = useAppDialog();
-  const { isImporting, importBook } = useAppLifecycleImport({ notice });
+  const { isImporting, importBook, importBookFile } = useAppLifecycleImport({ notice });
   const [isDragging, setIsDragging] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [hasLoadedAIPanel, setHasLoadedAIPanel] = useState(isAIPanelOpen);
   const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
+  const setFileDropDragging = useCallback((value: boolean) => setIsDragging(value), []);
+  useEpubFileDropImport(importBookFile, setFileDropDragging);
 
   useEffect(() => {
     if (isAIPanelOpen) setHasLoadedAIPanel(true);
@@ -66,50 +67,6 @@ function AppContent() {
       logger.error('Failed to open file dialog:', error);
     }
   };
-
-  // Setup drag and drop listeners for Tauri
-  useEffect(() => {
-    if (!isTauriRuntime()) return;
-    let unlisten: (() => void) | undefined;
-
-    const setupDragDrop = async () => {
-      try {
-        const webview = getCurrentWebviewWindow();
-
-        // Listen for file drop events
-        unlisten = await webview.onDragDropEvent((event) => {
-          if (event.payload.type === 'enter' || event.payload.type === 'over') {
-            setIsDragging(true);
-          } else if (event.payload.type === 'leave') {
-            setIsDragging(false);
-          } else if (event.payload.type === 'drop') {
-            setIsDragging(false);
-            const paths = event.payload.paths;
-            if (paths && paths.length > 0) {
-              // Filter for supported file types
-              const supportedFiles = paths.filter((p: string) => {
-                const lower = p.toLowerCase();
-                return lower.endsWith('.epub');
-              });
-              if (supportedFiles.length > 0) {
-                importBook(supportedFiles[0]);
-              }
-            }
-          }
-        });
-      } catch (error) {
-        logger.error('Failed to setup drag-drop:', error);
-      }
-    };
-
-    setupDragDrop();
-
-    return () => {
-      if (unlisten) {
-        unlisten();
-      }
-    };
-  }, [importBook]);
 
   return (
     <div className={`app ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isDragging ? 'dragging' : ''} ${isImporting ? 'importing' : ''}`}>

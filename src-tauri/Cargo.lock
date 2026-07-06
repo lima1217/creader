@@ -633,6 +633,7 @@ name = "creader"
 version = "1.0.1"
 dependencies = [
  "async-openai",
+ "base64 0.22.1",
  "futures-util",
  "lru",
  "parking_lot",

@@ -8,6 +8,7 @@ import {
   hydrateConversationMemoryFromStorage,
   hydrateAppPrefsFromStorage,
   hydrateAppPrefsFromLocalStorage,
+  importBookFileThroughLifecycle,
   importBookThroughLifecycle,
   migrateInlineCovers,
   openBookThroughLifecycle,
@@ -453,6 +454,59 @@ describe('App Lifecycle contract', () => {
 
     expect(result).toBe('skipped');
     expect(importBook).not.toHaveBeenCalled();
+  });
+
+  it('surfaces file import failures as a notice and does not add a book', async () => {
+    const addBook = vi.fn();
+    const notice = vi.fn();
+    const file = new File(['x'], 'broken.epub', { type: 'application/epub+zip' });
+
+    const result = await importBookFileThroughLifecycle({
+      file,
+      books: [],
+      addBook,
+      notice,
+      importBookFromFile: vi.fn().mockRejectedValue(new Error('Unreadable EPUB')),
+    });
+
+    expect(result).toBe('failed');
+    expect(addBook).not.toHaveBeenCalled();
+    expect(notice).toHaveBeenCalledWith({
+      title: '无法导入 EPUB',
+      message: 'Unreadable EPUB',
+    });
+  });
+
+  it('imports a new EPUB file and adds it to the library', async () => {
+    const imported = book({ id: 'new-book', filePath: '/library/new.epub' });
+    const added: Book[] = [];
+    const file = new File(['x'], 'new.epub', { type: 'application/epub+zip' });
+
+    const result = await importBookFileThroughLifecycle({
+      file,
+      books: [],
+      addBook: (next) => added.push(next),
+      importBookFromFile: vi.fn().mockResolvedValue({ status: 'imported', book: imported }),
+    });
+
+    expect(result).toBe('imported');
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ id: 'new-book', filePath: '/library/new.epub' });
+  });
+
+  it('skips importing when file import reports a duplicate', async () => {
+    const file = new File(['x'], 'book.epub', { type: 'application/epub+zip' });
+    const importBookFromFile = vi.fn().mockResolvedValue({ status: 'skipped', reason: 'duplicate' });
+
+    const result = await importBookFileThroughLifecycle({
+      file,
+      books: [book({ filePath: '/library/book.epub' })],
+      addBook: vi.fn(),
+      importBookFromFile,
+    });
+
+    expect(result).toBe('skipped');
+    expect(importBookFromFile).toHaveBeenCalledOnce();
   });
 
   it('migrates inline cover data URLs on the lifecycle path and respects cancellation', async () => {

@@ -832,8 +832,7 @@ fn extract_xhtml_text(
         buf.clear();
     }
 
-    // `output` is already normalized inline; only a final trim remains, which
-    // mirrors `normalize_text`'s trailing trim without re-scanning the body.
+    // `output` is already normalized inline; only a final trim remains.
     let normalized = output.trim().to_string();
     let reached_eof = !reached_target;
     let text: String = normalized.chars().skip(skip).take(take.unwrap_or(usize::MAX)).collect();
@@ -841,12 +840,12 @@ fn extract_xhtml_text(
     Ok((text, reached_eof))
 }
 
-/// Streaming counterpart to `normalize_text`. Folds runs of spaces/tabs into a
+/// Incrementally normalizes extracted text. Folds runs of spaces/tabs into a
 /// single space, collapses 3+ newlines to 2, and tracks the normalized char
-/// count incrementally so callers can stop reading once they have enough.
+/// count so callers can stop reading once they have enough.
 ///
-/// Leading whitespace is dropped (mirroring `normalize_text`'s final
-/// `.trim()`), so `char_count` matches the trimmed output the caller will
+/// Leading whitespace is dropped during append (callers typically `.trim()` once
+/// at the end), so `char_count` matches the trimmed output the caller will
 /// slice from — otherwise deep-pagination offsets would drift by the number
 /// of leading whitespace bytes.
 struct NormalizationSink {
@@ -905,37 +904,6 @@ impl NormalizationSink {
     fn char_count(&self) -> usize {
         self.char_count
     }
-}
-
-fn normalize_text(text: &str) -> String {
-    let mut normalized = String::with_capacity(text.len());
-    let mut prev_was_space = false;
-    let mut consecutive_newlines = 0u32;
-
-    for ch in text.replace("\r\n", "\n").chars() {
-        if ch == ' ' || ch == '\t' {
-            if !prev_was_space {
-                normalized.push(' ');
-                prev_was_space = true;
-            }
-            continue;
-        }
-
-        prev_was_space = false;
-
-        if ch == '\n' {
-            consecutive_newlines += 1;
-            if consecutive_newlines <= 2 {
-                normalized.push('\n');
-            }
-            continue;
-        }
-
-        consecutive_newlines = 0;
-        normalized.push(ch);
-    }
-
-    normalized.trim().to_string()
 }
 
 fn is_block_tag(name: &[u8]) -> bool {
@@ -1030,6 +998,14 @@ mod tests {
     fn archive_opens() -> usize {
         super::ARCHIVE_OPENS.load(Ordering::SeqCst)
     }
+
+    fn normalize_with_sink(text: &str) -> String {
+        let mut sink = NormalizationSink::new();
+        let mut out = String::new();
+        sink.append(text, &mut out);
+        out.trim().to_string()
+    }
+
     fn write_test_epub(path: &Path, chapters: &[(&str, &str)], include_nav: bool) {
         let file = File::create(path).expect("create epub");
         let mut zip = ZipWriter::new(file);
@@ -1295,9 +1271,9 @@ mod tests {
     }
 
     #[test]
-    fn normalize_text_matches_frontend_rules() {
+    fn normalization_sink_matches_frontend_rules() {
         let raw = "Hello\tworld\r\n\r\n\r\nLine two";
-        assert_eq!(normalize_text(raw), "Hello world\n\nLine two");
+        assert_eq!(normalize_with_sink(raw), "Hello world\n\nLine two");
     }
 
     #[test]

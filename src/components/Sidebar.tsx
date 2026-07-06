@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { Fragment, useEffect, useState, useRef, useMemo } from 'react';
 import type { SVGProps } from 'react';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useUIStore } from '../stores/uiStore';
@@ -120,6 +120,44 @@ const BOOK_DRAG_TYPE = 'application/x-creader-book-id';
 const FOLDER_DRAG_TYPE = 'application/x-creader-folder-id';
 const FOLDER_AUTO_EXPAND_MS = 500;
 
+type ActiveDrag =
+    | { kind: 'book'; id: string }
+    | { kind: 'folder'; id: string };
+
+type BookDropTarget = string | 'unfiled';
+
+function mountBookDragGhost(cover: HTMLElement): HTMLElement {
+    const ghost = cover.cloneNode(true) as HTMLElement;
+    ghost.classList.add('book-drag-ghost');
+    ghost.querySelectorAll('img').forEach((img) => {
+        img.draggable = false;
+    });
+
+    const mountTarget = cover.closest('.sidebar') ?? document.body;
+    mountTarget.appendChild(ghost);
+    return ghost;
+}
+
+function mountFolderDragGhost(sourceRow: HTMLElement): HTMLElement {
+    const header = sourceRow.querySelector('.organizer-group-header');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'folder-drag-ghost';
+
+    if (header) {
+        const width = Math.ceil(header.getBoundingClientRect().width);
+        wrapper.style.width = `${width}px`;
+
+        const shell = document.createElement('div');
+        shell.className = 'organizer-group-header';
+        shell.innerHTML = header.innerHTML;
+        wrapper.appendChild(shell);
+    }
+
+    const mountTarget = sourceRow.closest('.sidebar') ?? document.body;
+    mountTarget.appendChild(wrapper);
+    return wrapper;
+}
+
 function FolderMoreMenu({
     label,
     items,
@@ -140,14 +178,6 @@ function FolderMoreMenu({
             hasChevron={false}
         />
     );
-}
-
-function getBookDragId(event: React.DragEvent): string {
-    return event.dataTransfer.getData(BOOK_DRAG_TYPE);
-}
-
-function getFolderDragId(event: React.DragEvent): string {
-    return event.dataTransfer.getData(FOLDER_DRAG_TYPE);
 }
 
 // Lazy loaded book cover component
@@ -197,7 +227,7 @@ function LazyBookCover({ book }: { book: Book }) {
     return (
         <div ref={ref} className="book-cover">
             {loadedUrl ? (
-                <img src={loadedUrl} alt={book.title} loading="lazy" />
+                <img src={loadedUrl} alt={book.title} loading="lazy" draggable={false} />
             ) : (
                 <div className="book-cover-placeholder">
                     <BookIcon />
@@ -228,7 +258,15 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const [newFolderName, setNewFolderName] = useState('');
     const [folderNameError, setFolderNameError] = useState('');
     const [bookForFolder, setBookForFolder] = useState<string | null>(null);
+    const [draggingBookId, setDraggingBookId] = useState<string | null>(null);
+    const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
+    const [bookDropTargetId, setBookDropTargetId] = useState<BookDropTarget | null>(null);
+    const [folderReorderTargetId, setFolderReorderTargetId] = useState<string | null>(null);
     const autoExpandTimerRef = useRef<number | null>(null);
+    const activeDragRef = useRef<ActiveDrag | null>(null);
+    const suppressBookClickRef = useRef(false);
+    const folderDragGhostRef = useRef<HTMLElement | null>(null);
+    const bookDragGhostRef = useRef<HTMLElement | null>(null);
 
     const folders = useMemo(
         () => [...(library.folders || [])].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
@@ -263,6 +301,10 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     }, []);
 
     const handleBookClick = (book: Book) => {
+        if (suppressBookClickRef.current) {
+            suppressBookClickRef.current = false;
+            return;
+        }
         openBookThroughLifecycle({ book });
     };
 
@@ -388,20 +430,92 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         setBookFolder(bookId, folderId);
     };
 
+    const resolveBookDragId = (event: React.DragEvent): string => {
+        const fromTransfer = event.dataTransfer.getData(BOOK_DRAG_TYPE);
+        if (fromTransfer) return fromTransfer;
+        if (activeDragRef.current?.kind === 'book') return activeDragRef.current.id;
+        return '';
+    };
+
+    const resolveFolderDragId = (event: React.DragEvent): string => {
+        const fromTransfer = event.dataTransfer.getData(FOLDER_DRAG_TYPE);
+        if (fromTransfer) return fromTransfer;
+        if (activeDragRef.current?.kind === 'folder') return activeDragRef.current.id;
+        return '';
+    };
+
+    const finishDrag = () => {
+        activeDragRef.current = null;
+        setDraggingBookId(null);
+        setDraggingFolderId(null);
+        setBookDropTargetId(null);
+        setFolderReorderTargetId(null);
+        clearAutoExpandTimer();
+        if (folderDragGhostRef.current) {
+            folderDragGhostRef.current.remove();
+            folderDragGhostRef.current = null;
+        }
+        if (bookDragGhostRef.current) {
+            bookDragGhostRef.current.remove();
+            bookDragGhostRef.current = null;
+        }
+    };
+
+    const handleDragEnd = () => {
+        if (activeDragRef.current?.kind === 'book') {
+            suppressBookClickRef.current = true;
+        }
+        finishDrag();
+    };
+
     const handleBookDragStart = (event: React.DragEvent, book: Book) => {
+        activeDragRef.current = { kind: 'book', id: book.id };
+        setDraggingBookId(book.id);
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData(BOOK_DRAG_TYPE, book.id);
+        event.dataTransfer.setData('text/plain', book.id);
+
+        const sourceRow = event.currentTarget as HTMLElement;
+        const cover = sourceRow.querySelector('.book-cover') as HTMLElement | null;
+        if (cover && typeof event.dataTransfer.setDragImage === 'function') {
+            const ghost = mountBookDragGhost(cover);
+            bookDragGhostRef.current = ghost;
+            const coverRect = cover.getBoundingClientRect();
+            const grabbedOnCover =
+                event.clientX >= coverRect.left
+                && event.clientX <= coverRect.right
+                && event.clientY >= coverRect.top
+                && event.clientY <= coverRect.bottom;
+            const offsetX = grabbedOnCover ? event.clientX - coverRect.left : coverRect.width / 2;
+            const offsetY = grabbedOnCover ? event.clientY - coverRect.top : coverRect.height / 2;
+            event.dataTransfer.setDragImage(ghost, offsetX, offsetY);
+        }
     };
 
     const handleFolderDragStart = (event: React.DragEvent, folder: BookFolder) => {
+        activeDragRef.current = { kind: 'folder', id: folder.id };
+        setDraggingFolderId(folder.id);
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData(FOLDER_DRAG_TYPE, folder.id);
+        event.dataTransfer.setData('text/plain', folder.id);
+
+        const sourceRow = event.currentTarget as HTMLElement;
+        if (typeof event.dataTransfer.setDragImage === 'function') {
+            const ghost = mountFolderDragGhost(sourceRow);
+            folderDragGhostRef.current = ghost;
+            const header = sourceRow.querySelector('.organizer-group-header');
+            const headerRect = header?.getBoundingClientRect();
+            const offsetX = headerRect ? Math.max(16, event.clientX - headerRect.left) : 24;
+            const offsetY = headerRect ? Math.max(12, event.clientY - headerRect.top) : 18;
+            event.dataTransfer.setDragImage(ghost, offsetX, offsetY);
+        }
     };
 
     const handleFolderDropTargetDragOver = (event: React.DragEvent, folderId: string | undefined) => {
-        if (!getBookDragId(event)) return;
+        if (activeDragRef.current?.kind !== 'book') return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
+        setBookDropTargetId(folderId ?? 'unfiled');
 
         if (!folderId || expandedFolderIds.has(folderId) || autoExpandTimerRef.current !== null) return;
         autoExpandTimerRef.current = window.setTimeout(() => {
@@ -410,28 +524,35 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         }, FOLDER_AUTO_EXPAND_MS);
     };
 
-    const handleFolderDropTargetDragLeave = () => {
+    const handleFolderDropTargetDragLeave = (event: React.DragEvent) => {
+        const currentTarget = event.currentTarget as HTMLElement;
+        const related = event.relatedTarget;
+        if (related instanceof Node && currentTarget.contains(related)) return;
         clearAutoExpandTimer();
+        setBookDropTargetId(null);
     };
 
     const handleFolderDropTargetDrop = (event: React.DragEvent, folderId: string | undefined) => {
-        const bookId = getBookDragId(event);
+        const bookId = resolveBookDragId(event);
         if (!bookId) return;
         event.preventDefault();
-        clearAutoExpandTimer();
+        finishDrag();
         moveBookToFolder(bookId, folderId);
     };
 
-    const handleFolderReorderDragOver = (event: React.DragEvent) => {
-        if (!getFolderDragId(event)) return;
+    const handleFolderReorderDragOver = (event: React.DragEvent, targetFolderId: string) => {
+        if (activeDragRef.current?.kind !== 'folder') return;
+        if (activeDragRef.current.id === targetFolderId) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
+        setFolderReorderTargetId(targetFolderId);
     };
 
     const handleFolderReorderDrop = (event: React.DragEvent, targetFolderId: string) => {
-        const sourceFolderId = getFolderDragId(event);
+        const sourceFolderId = resolveFolderDragId(event);
         if (!sourceFolderId || sourceFolderId === targetFolderId) return;
         event.preventDefault();
+        finishDrag();
         reorderFolder(sourceFolderId, targetFolderId);
     };
 
@@ -440,11 +561,12 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         return (
             <ListItem
                 key={book.id}
-                className={`book-item ${currentBook?.id === book.id ? 'active' : ''}`}
+                className={`book-item ${currentBook?.id === book.id ? 'active' : ''} ${draggingBookId === book.id ? 'is-dragging' : ''}`}
                 onMouseEnter={() => void onPreloadReader()}
                 onClick={() => handleBookClick(book)}
                 draggable
                 onDragStart={(event) => handleBookDragStart(event, book)}
+                onDragEnd={handleDragEnd}
                 isSelected={currentBook?.id === book.id}
                 startContent={<LazyBookCover book={book} />}
                 label={
@@ -728,28 +850,36 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     {folders.map((folder) => {
                                         const isExpanded = expandedFolderIds.has(folder.id);
                                         const books = groupedBooks[folder.id] || [];
+                                        const showReorderGap =
+                                            folderReorderTargetId === folder.id && draggingFolderId !== folder.id;
                                         return (
-                                            <section
-                                                key={folder.id}
-                                                className="organizer-group folder-nav-group folder-nav-group-nested"
-                                                draggable
-                                                onDragStart={(event) => {
-                                                    if ((event.target as HTMLElement).closest('.book-item')) return;
-                                                    handleFolderDragStart(event, folder);
-                                                }}
-                                                onDragOver={(event) => {
-                                                    handleFolderDropTargetDragOver(event, folder.id);
-                                                    handleFolderReorderDragOver(event);
-                                                }}
-                                                onDragLeave={handleFolderDropTargetDragLeave}
-                                                onDrop={(event) => {
-                                                    handleFolderDropTargetDrop(event, folder.id);
-                                                    handleFolderReorderDrop(event, folder.id);
-                                                }}
-                                            >
-                                                <div className="organizer-group-header-row">
+                                            <Fragment key={folder.id}>
+                                                {showReorderGap && (
+                                                    <div className="organizer-reorder-gap" aria-hidden="true" />
+                                                )}
+                                                <section
+                                                    className="organizer-group folder-nav-group folder-nav-group-nested"
+                                                    onDragOverCapture={(event) => {
+                                                        handleFolderDropTargetDragOver(event, folder.id);
+                                                        handleFolderReorderDragOver(event, folder.id);
+                                                    }}
+                                                    onDragLeave={handleFolderDropTargetDragLeave}
+                                                    onDropCapture={(event) => {
+                                                        handleFolderDropTargetDrop(event, folder.id);
+                                                        handleFolderReorderDrop(event, folder.id);
+                                                    }}
+                                                >
+                                                    <div
+                                                        className={`organizer-group-header-row folder-drag-handle ${draggingFolderId === folder.id ? 'is-folder-dragging' : ''}`}
+                                                        draggable
+                                                        onDragStart={(event) => {
+                                                            if ((event.target as HTMLElement).closest('.folder-actions')) return;
+                                                            handleFolderDragStart(event, folder);
+                                                        }}
+                                                        onDragEnd={handleDragEnd}
+                                                    >
                                                     <button
-                                                        className={`organizer-group-header ${isExpanded ? 'expanded' : ''}`}
+                                                        className={`organizer-group-header ${isExpanded ? 'expanded' : ''} ${bookDropTargetId === folder.id ? 'drop-target' : ''}`}
                                                         onClick={() => toggleFolder(folder.id)}
                                                     >
                                                         <Icon icon={AstryxFolderIcon} size="sm" />
@@ -773,19 +903,22 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                                     </List>
                                                 )}
                                             </section>
+                                            </Fragment>
                                         );
                                     })}
                                 </div>
                             )}
                         </section>
 
-                        <section className="organizer-group folder-nav-group">
+                        <section
+                            className="organizer-group folder-nav-group"
+                            onDragOverCapture={(event) => handleFolderDropTargetDragOver(event, undefined)}
+                            onDragLeave={handleFolderDropTargetDragLeave}
+                            onDropCapture={(event) => handleFolderDropTargetDrop(event, undefined)}
+                        >
                             <div className="organizer-group-header-row">
                                 <button
-                                    className={`organizer-group-header ${isUnfiledExpanded ? 'expanded' : ''}`}
-                                    onDragOver={(event) => handleFolderDropTargetDragOver(event, undefined)}
-                                    onDragLeave={handleFolderDropTargetDragLeave}
-                                    onDrop={(event) => handleFolderDropTargetDrop(event, undefined)}
+                                    className={`organizer-group-header ${isUnfiledExpanded ? 'expanded' : ''} ${bookDropTargetId === 'unfiled' ? 'drop-target' : ''}`}
                                     onClick={() => setIsUnfiledExpanded((expanded) => !expanded)}
                                 >
                                     <Icon icon={AstryxOpenBookIcon} size="sm" />

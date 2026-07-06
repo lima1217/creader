@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { importBookFromPath } from './services/BookImportService';
+import { importBookFromPath, importBookFromFile } from './services/BookImportService';
 import { dataUrlToBlob, deleteCover, revokeCoverUrl, saveCover } from './services/CoverStore';
 import { loadChatMessages, loadConversationMemory, replaceChatMessages } from './services/ChatStore';
 import { validateAndFixLibraryPaths } from './services/BookPathValidator';
@@ -339,6 +339,51 @@ export async function importBookThroughLifecycle(params: {
   }
 }
 
+export async function importBookFileThroughLifecycle(params: {
+  file: File;
+  isImporting?: boolean;
+  books: Book[];
+  addBook: (book: Book) => void;
+  setIsImporting?: (value: boolean) => void;
+  notice?: (options: { title: string; message: string }) => void;
+  importBookFromFile?: typeof importBookFromFile;
+}): Promise<'imported' | 'skipped' | 'busy' | 'failed'> {
+  if (params.isImporting) return 'busy';
+
+  const importBook = params.importBookFromFile ?? importBookFromFile;
+  const existingFilePaths = new Set(params.books.map((book) => book.filePath));
+
+  try {
+    params.setIsImporting?.(true);
+    importLogger.debug('Starting import process for file:', params.file.name);
+
+    const result = await importBook({
+      file: params.file,
+      existingFilePaths,
+    });
+    if (result.status === 'skipped') {
+      importLogger.debug('Import skipped:', result.reason);
+      return 'skipped';
+    }
+
+    const newBook: Book = { ...result.book };
+    importLogger.debug('Adding book to library:', newBook);
+    params.addBook(newBook);
+    importLogger.debug('Import completed successfully');
+    return 'imported';
+  } catch (error) {
+    importLogger.error('Failed to import book:', error);
+    if (error instanceof Error) importLogger.debug('Error details:', error.message, error.stack);
+    params.notice?.({
+      title: '无法导入 EPUB',
+      message: error instanceof Error ? error.message : '未知错误',
+    });
+    return 'failed';
+  } finally {
+    params.setIsImporting?.(false);
+  }
+}
+
 export function prepareBookOpen(params: {
   book: Book;
   storedProgress?: BookProgressById[string];
@@ -551,6 +596,7 @@ export function useAppLifecycleImport(params: {
 }): {
   isImporting: boolean;
   importBook: (filePath: string) => Promise<void>;
+  importBookFile: (file: File) => Promise<void>;
 } {
   const addBook = useLibraryStore((s) => s.addBook);
   const libraryBooks = useLibraryStore((s) => s.library.books);
@@ -567,5 +613,16 @@ export function useAppLifecycleImport(params: {
     });
   }, [addBook, isImporting, libraryBooks, params.notice]);
 
-  return { isImporting, importBook };
+  const importBookFile = useCallback(async (file: File) => {
+    await importBookFileThroughLifecycle({
+      file,
+      isImporting,
+      books: libraryBooks,
+      addBook,
+      setIsImporting,
+      notice: params.notice,
+    });
+  }, [addBook, isImporting, libraryBooks, params.notice]);
+
+  return { isImporting, importBook, importBookFile };
 }

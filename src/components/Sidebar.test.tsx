@@ -179,11 +179,35 @@ function makeDataTransfer() {
   };
 }
 
+/** Simulates browsers that hide payload during dragover (HTML5 DnD security rule). */
+function makeBrowserLikeDataTransfer() {
+  const values = new Map<string, string>();
+  let readable = false;
+  return {
+    effectAllowed: 'all',
+    dropEffect: 'none',
+    setData: (type: string, value: string) => values.set(type, value),
+    getData: (type: string) => (readable ? values.get(type) || '' : ''),
+    markReadable: () => {
+      readable = true;
+    },
+  };
+}
+
 function dispatchDragEvent(element: Element, type: string, dataTransfer = makeDataTransfer()) {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
   element.dispatchEvent(event);
   return { event, dataTransfer };
+}
+
+function dispatchBrowserLikeDropSequence(source: Element, target: Element) {
+  const dataTransfer = makeBrowserLikeDataTransfer();
+  dispatchDragEvent(source, 'dragstart', dataTransfer);
+  dispatchDragEvent(target, 'dragover', dataTransfer);
+  dataTransfer.markReadable();
+  dispatchDragEvent(target, 'drop', dataTransfer);
+  return dataTransfer;
 }
 
 async function clickBookAction(container: HTMLElement, bookTitle: string, actionLabel: string) {
@@ -479,6 +503,22 @@ describe('Sidebar contract — folder nav', () => {
     expect(loadStored(STORAGE_KEYS.libraryOrganizerExpandedFolders, [])).toEqual(['folder1']);
   });
 
+  it('moves a dragged book into a real folder when dragover cannot read payload', async () => {
+    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
+    const book = makeBook({ id: 'b1', title: 'Unfiled' });
+    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
+    const { container } = mountSidebar();
+    await settle();
+
+    dispatchBrowserLikeDropSequence(
+      container.querySelector('.book-item')!,
+      findUserFolderGroup(container, 'Reading'),
+    );
+    await settle();
+
+    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
+  });
+
   it('moves a dragged book into a real folder', async () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const book = makeBook({ id: 'b1', title: 'Unfiled' });
@@ -700,7 +740,7 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     await settle();
 
     const groups = userFolderGroups(container);
-    const { dataTransfer } = dispatchDragEvent(groups[1], 'dragstart');
+    const { dataTransfer } = dispatchDragEvent(groups[1].querySelector('.folder-drag-handle')!, 'dragstart');
     dispatchDragEvent(groups[0], 'dragover', dataTransfer);
     dispatchDragEvent(groups[0], 'drop', dataTransfer);
     await settle();

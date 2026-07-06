@@ -223,6 +223,59 @@
     color: var(--text-primary);
 }
 
+.organizer-group-header.drop-target {
+    background: var(--accent-soft);
+    border-color: transparent;
+    box-shadow: var(--shadow-md);
+    color: var(--text-primary);
+}
+
+.organizer-reorder-gap {
+    height: 34px;
+    margin: 2px 0;
+    border-radius: 6px;
+    background: var(--accent-soft);
+    transition:
+        height var(--transition-fast),
+        margin var(--transition-fast),
+        opacity var(--transition-fast);
+}
+
+.folder-drag-handle.is-folder-dragging {
+    opacity: 0.35;
+    transition: opacity var(--transition-fast);
+}
+
+.folder-drag-handle[draggable="true"] {
+    cursor: grab;
+}
+
+.folder-drag-handle[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.folder-drag-ghost {
+    position: fixed;
+    top: -10000px;
+    left: 0;
+    box-sizing: border-box;
+    --sidebar-nav-icon-slot: var(--spacing-5, 20px);
+    --sidebar-nav-item-padding-inline: var(--spacing-3, 12px);
+    background: var(--bg-elevated);
+    border-radius: 6px;
+    box-shadow: var(--shadow-float);
+    color: var(--text-primary);
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.folder-drag-ghost .organizer-group-header {
+    width: 100%;
+    min-height: 34px;
+    background: transparent;
+    color: var(--text-primary);
+}
+
 .organizer-group-header .astryx-icon:last-child {
     color: var(--text-muted);
     transform: rotate(0deg);
@@ -264,6 +317,10 @@
     cursor: grabbing;
 }
 
+.book-item.is-dragging {
+    opacity: 0.55;
+}
+
 .book-item:hover {
     background: var(--bg-control);
     border-color: transparent;
@@ -292,6 +349,16 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+    -webkit-user-drag: none;
+    user-select: none;
+}
+
+.book-drag-ghost {
+    position: fixed;
+    top: -10000px;
+    left: 0;
+    box-shadow: var(--shadow-float);
+    pointer-events: none;
 }
 
 .book-cover-placeholder {

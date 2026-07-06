@@ -28,7 +28,8 @@
           "y": 24
         },
         "transparent": false,
-        "visible": true
+        "visible": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {
