@@ -7,6 +7,7 @@ import { useSelectionStore } from '../stores/selectionStore';
 import type { Theme } from '../types';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { DropdownMenu, DropdownMenuItem } from '@astryxdesign/core/DropdownMenu';
+import { Selector } from '@astryxdesign/core/Selector';
 import {
     ChapterIcon,
     CheckIcon,
@@ -18,6 +19,7 @@ import {
     EpubTocIcon,
 } from './icons/icons';
 import { TextSizeControl } from './TextSizeControl';
+import { FONT_CATALOG, normalizeFontFamilyKey } from './reader/fontCatalog';
 import { createLogger } from '../utils/logger';
 import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import './Toolbar.css';
@@ -46,6 +48,7 @@ export function Toolbar() {
         : '使用本章';
 
     const themes: Theme[] = ['light', 'dark'];
+    const fontFamilyKey = normalizeFontFamilyKey(settings.fontFamily);
     const themeIcons: Record<Theme, React.ReactNode> = {
         light: <SunIcon size={18} strokeWidth={1.9} />,
         dark: <MoonIcon size={18} strokeWidth={1.9} />,
@@ -144,6 +147,19 @@ export function Toolbar() {
                                     inputLabel="字号"
                                     decrementAriaLabel="减小字号"
                                     incrementAriaLabel="增大字号"
+                                />
+                            </div>
+                        </div>
+                        <div role="group" aria-label="字体" className="toolbar-more-section">
+                            <div className="toolbar-more-section-title" aria-hidden="true">字体</div>
+                            <div className="toolbar-more-font-family">
+                                <Selector
+                                    label="字体"
+                                    isLabelHidden
+                                    size="sm"
+                                    value={fontFamilyKey}
+                                    options={FONT_CATALOG.map(({ key, label }) => ({ value: key, label }))}
+                                    onChange={(key) => setSettings({ ...settings, fontFamily: key })}
                                 />
                             </div>
                         </div>

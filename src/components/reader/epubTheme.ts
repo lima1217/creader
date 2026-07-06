@@ -23,10 +23,6 @@ export const EPUB_LINE_HEIGHT = 1.6;
  * via `buildSectionTypographyCss` because they depend on each document's
  * `<html lang>`.
  */
-export function buildFontStack(fontFamily: string): string {
-  return `${fontFamily}, Georgia, serif`;
-}
-
 export function applyEpubTheme(
   rendition: ReaderRendition,
   options: { theme: Theme; fontStack: string; fontSize: number },

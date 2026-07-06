@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
-import { applyEpubTheme, buildFontStack, EPUB_LINE_HEIGHT } from './epubTheme';
+import { applyEpubTheme, EPUB_LINE_HEIGHT } from './epubTheme';
 import { paperBodyPalette } from '../../theme/paperTheme';
 
 function captureThemeDefault() {
@@ -16,12 +16,6 @@ function captureThemeDefault() {
 }
 
 const baseOptions = { fontStack: 'Georgia, "Times New Roman", serif', fontSize: 16 };
-
-describe('buildFontStack', () => {
-  it('appends Georgia serif fallbacks until #92 whitelist lands', () => {
-    expect(buildFontStack('Merriweather')).toBe('Merriweather, Georgia, serif');
-  });
-});
 
 describe('applyEpubTheme', () => {
   it('uses the current app page colors for the isolated book body document', () => {

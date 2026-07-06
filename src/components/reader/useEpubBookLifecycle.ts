@@ -3,7 +3,8 @@ import type { RefObject } from 'react';
 import { readFile } from '@tauri-apps/plugin-fs';
 import type { Settings, Book, NavItem } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
-import { applyEpubTheme, buildFontStack } from './epubTheme';
+import { resolveFontStack } from './fontCatalog';
+import { applyEpubTheme } from './epubTheme';
 import { foliateEngineAdapter } from '../../services/reader/foliateEngine';
 import { DEFAULT_READING_LAYOUT } from '../../services/reader/readingEngine';
 import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
@@ -89,7 +90,7 @@ export function useEpubBookLifecycle(params: {
 
         applyEpubTheme(rendition, {
           theme: settings.theme,
-          fontStack: buildFontStack(settings.fontFamily),
+          fontStack: resolveFontStack(settings.fontFamily),
           fontSize: settings.fontSize,
         });
 

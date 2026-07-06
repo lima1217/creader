@@ -1,4 +1,5 @@
 import type { Settings, Library, ReadingProgress } from '../../types';
+import { normalizeFontFamilyKey } from '../../components/reader/fontCatalog';
 import { loadStored, STORAGE_KEYS } from '../../services/LocalStore';
 import { readThemePlaceholder } from '../../services/themePlaceholder';
 import {
@@ -12,7 +13,7 @@ export type BookProgressById = Record<string, ReadingProgress & { lastReadAt: nu
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'light',
   fontSize: 16,
-  fontFamily: 'Georgia',
+  fontFamily: 'serif-latin',
   lineHeight: 1.6,
   readingMemoryPath: undefined,
   readingMemoryAutoIngest: true,
@@ -86,6 +87,9 @@ export function resolveSettings(stored: Partial<Settings>, defaultSettings: Sett
     aiThinkingEnabled: typeof stored.aiThinkingEnabled === 'boolean'
       ? stored.aiThinkingEnabled
       : defaultSettings.aiThinkingEnabled,
+    fontFamily: typeof stored.fontFamily === 'string'
+      ? normalizeFontFamilyKey(stored.fontFamily)
+      : defaultSettings.fontFamily,
   };
 }
 

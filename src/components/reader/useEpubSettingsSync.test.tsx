@@ -10,13 +10,19 @@ import { useEpubSettingsSync } from './useEpubSettingsSync';
 const themeMock = vi.hoisted(() => ({ applyEpubTheme: vi.fn() }));
 vi.mock('./epubTheme', () => ({
   applyEpubTheme: themeMock.applyEpubTheme,
-  buildFontStack: (f: string) => `${f}, serif`,
+}));
+vi.mock('./fontCatalog', () => ({
+  resolveFontStack: (key: string) => (
+    key === 'Georgia' || key === 'serif-latin'
+      ? 'Georgia, "Times New Roman", serif'
+      : `${key}-stack`
+  ),
 }));
 
 const baseSettings: Settings = {
   theme: 'light',
   fontSize: 16,
-  fontFamily: 'Georgia',
+  fontFamily: 'serif-latin',
   lineHeight: 1.6,
   readingMemoryAutoIngest: false,
   aiTextSize: 14,
@@ -78,7 +84,11 @@ describe('useEpubSettingsSync', () => {
     expect(rendition.setLayout).toHaveBeenCalledWith(DEFAULT_READING_LAYOUT);
     expect(themeMock.applyEpubTheme).toHaveBeenCalledWith(
       rendition as unknown as ReaderRendition,
-      expect.objectContaining({ theme: 'light', fontStack: 'Georgia, serif', fontSize: 16 }),
+      expect.objectContaining({
+        theme: 'light',
+        fontStack: 'Georgia, "Times New Roman", serif',
+        fontSize: 16,
+      }),
     );
   });
 

@@ -217,6 +217,14 @@
     padding: 2px 10px 8px;
 }
 
+.toolbar-more-font-family {
+    padding: 2px 10px 8px;
+}
+
+.toolbar-more-font-family .astryx-selector {
+    width: 100%;
+}
+
 .astryx-dropdown-menu-item[role="menuitem"] {
     min-height: 42px !important;
     gap: 10px !important;

@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import type { Settings } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import type { ReadingEngineRendition } from '../../services/reader/readingEngine';
-import { applyEpubTheme, buildFontStack } from './epubTheme';
+import { resolveFontStack } from './fontCatalog';
+import { applyEpubTheme } from './epubTheme';
 import { DEFAULT_READING_LAYOUT } from '../../services/reader/readingEngine';
 
 /**
@@ -34,7 +35,7 @@ export function useEpubSettingsSync(
 
     applyEpubTheme(rendition, {
       theme: settings.theme,
-      fontStack: buildFontStack(settings.fontFamily),
+      fontStack: resolveFontStack(settings.fontFamily),
       fontSize: settings.fontSize,
     });
     // Layout/theme only — intentionally no `display()`. `renditionRef` is a
