@@ -36,7 +36,7 @@ function createHarness(
   options: {
     onChatInvoke?: (channel: { onmessage: ((event: StreamEvent) => void) | null }) => void;
     failChatInvoke?: boolean;
-    holdResetInvoke?: boolean;
+    holdChatInvoke?: boolean;
   } = {},
 ) {
   let state: AIConversationSessionState = {
@@ -62,7 +62,7 @@ function createHarness(
   let now = 1000;
   const ingestCalls: unknown[] = [];
   const invokeCalls: Array<{ cmd: string; args: unknown }> = [];
-  let releaseResetInvoke: (() => void) | null = null;
+  let releaseChatInvoke: (() => void) | null = null;
   let toolActivity: string | null = null;
 
   const deps: AIConversationSessionDeps = {
@@ -95,9 +95,9 @@ function createHarness(
     },
     invoke: vi.fn(async (cmd: string, args?: unknown) => {
       invokeCalls.push({ cmd, args });
-      if (cmd === 'reset_ai_cancel' && options.holdResetInvoke) {
+      if (cmd === 'chat_with_ai_streaming' && options.holdChatInvoke) {
         await new Promise<void>(resolve => {
-          releaseResetInvoke = resolve;
+          releaseChatInvoke = resolve;
         });
       }
       if (cmd === 'summarize_ai_conversation') return 'older turns summary';
@@ -153,8 +153,8 @@ function createHarness(
     },
     invokeCalls,
     ingestCalls,
-    releaseResetInvoke() {
-      releaseResetInvoke?.();
+    releaseChatInvoke() {
+      releaseChatInvoke?.();
     },
     flushRaf() {
       rafQueue.splice(0).forEach(callback => callback());
@@ -226,11 +226,11 @@ describe('AIConversationSession', () => {
   });
 
   it('prevents a duplicate send while the first send is still in flight', async () => {
-    const h = createHarness({}, { holdResetInvoke: true });
+    const h = createHarness({}, { holdChatInvoke: true });
     const first = h.session.send('first');
     await Promise.resolve();
     await h.session.send('second');
-    h.releaseResetInvoke();
+    h.releaseChatInvoke();
     await first;
 
     const users = h.state.chatMessages.filter(message => message.role === 'user');

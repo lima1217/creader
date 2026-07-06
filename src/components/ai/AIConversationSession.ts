@@ -140,7 +140,6 @@ export class AIConversationSession {
         return;
       }
 
-      await this.deps.invoke('reset_ai_cancel');
       const conversationSummary = await this.ensureConversationMemory(state);
       const request: ChatRequest = buildChatRequest({
         message: messageToSend,
