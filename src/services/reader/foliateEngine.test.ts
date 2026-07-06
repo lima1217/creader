@@ -580,7 +580,7 @@ describe('foliateEngine scrolled boundary bridge', () => {
       addEventListener: vi.fn((type: string, listener: ScrollListener | WheelListener, options?: AddEventListenerOptions) => {
         if (type === 'scroll') scrollListener = listener as ScrollListener;
         if (type === 'wheel') wheelListener = listener as WheelListener;
-        if (type === 'wheel') expect(options).toEqual({ passive: false });
+        if (type === 'wheel') expect(options).toEqual({ passive: false, capture: true });
       }),
       removeEventListener: vi.fn(),
       goTo: vi.fn(),
@@ -634,7 +634,16 @@ describe('foliateEngine scrolled boundary bridge', () => {
     instance.rendition.setLayout?.({ flow: 'scrolled' });
 
     expect(mockRenderer.addEventListener).toHaveBeenCalledWith('scroll', expect.any(Function));
-    expect(mockRenderer.addEventListener).toHaveBeenCalledWith('wheel', expect.any(Function), { passive: false });
+    expect(mockRenderer.addEventListener).toHaveBeenCalledWith(
+      'wheel',
+      expect.any(Function),
+      { passive: false, capture: true },
+    );
+    expect(mockView.addEventListener).toHaveBeenCalledWith(
+      'wheel',
+      expect.any(Function),
+      { passive: false, capture: true },
+    );
     expect(scrollListener).toBeTypeOf('function');
     expect(wheelListener).toBeTypeOf('function');
   });
@@ -703,6 +712,11 @@ describe('foliateEngine scrolled boundary bridge', () => {
     const instance = await openTestInstance();
     instance.rendition.setLayout?.({ flow: 'scrolled' });
 
+    rendererState.start = 900;
+    rendererState.end = 995;
+    rendererState.viewSize = 1000;
+    scrollListener?.();
+
     rendererState.start = 998;
     rendererState.end = 1000;
     scrollListener?.();
@@ -716,6 +730,11 @@ describe('foliateEngine scrolled boundary bridge', () => {
   it('does not call next again when scroll stays at the bottom', async () => {
     const instance = await openTestInstance();
     instance.rendition.setLayout?.({ flow: 'scrolled' });
+
+    rendererState.start = 900;
+    rendererState.end = 995;
+    rendererState.viewSize = 1000;
+    scrollListener?.();
 
     rendererState.start = 998;
     rendererState.end = 1000;
