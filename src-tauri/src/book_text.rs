@@ -87,6 +87,22 @@ impl Default for BookTextCache {
     }
 }
 
+/// Process-wide chapter text LRU cache, registered as Tauri managed state so
+/// consecutive chat requests reuse decompressed chapter text.
+pub struct AppBookTextCache(pub Arc<BookTextCache>);
+
+impl AppBookTextCache {
+    pub fn new() -> Self {
+        Self(Arc::new(BookTextCache::with_default_capacity()))
+    }
+}
+
+impl Default for AppBookTextCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 pub fn list_chapters(book_path: &Path) -> Result<Vec<ChapterInfo>, String> {
     let book_path = book_path.to_path_buf();

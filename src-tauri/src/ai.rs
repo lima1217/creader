@@ -8,7 +8,9 @@ use tauri::ipc::Channel;
 use tauri::Manager;
 
 use crate::book_files::validate_book_path_inner;
-use crate::book_text::{get_chapter_text_async, list_chapters_async, BookTextCache};
+use crate::book_text::{
+    get_chapter_text_async, list_chapters_async, AppBookTextCache, BookTextCache,
+};
 use crate::reading_memory::{
     allowed_reading_memory_dir, write_reading_memory_from_tool,
     ReadingMemoryDirectDecision, ReadingMemoryDirectIngestRequest,
@@ -750,6 +752,98 @@ fn validated_book_path(app: &tauri::AppHandle, book_file_path: &str) -> Result<P
         .map_err(|e| format!("Failed to resolve book path: {}", e))
 }
 
+fn resolve_book_text_cache(app: Option<&tauri::AppHandle>) -> Arc<BookTextCache> {
+    if let Some(handle) = app {
+        if let Some(state) = handle.try_state::<AppBookTextCache>() {
+            return Arc::clone(&state.0);
+        }
+    }
+    Arc::new(BookTextCache::with_default_capacity())
+}
+
+fn is_deduplicable_readonly_tool(name: &str) -> bool {
+    matches!(name, "list_chapters" | "get_chapter_text")
+}
+
+fn canonicalize_json_value(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut sorted = serde_json::Map::new();
+            let mut keys: Vec<_> = map.keys().collect();
+            keys.sort();
+            for key in keys {
+                sorted.insert(key.clone(), canonicalize_json_value(&map[key]));
+            }
+            serde_json::Value::Object(sorted)
+        }
+        serde_json::Value::Array(items) => serde_json::Value::Array(
+            items.iter().map(canonicalize_json_value).collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+fn canonical_tool_arguments(arguments: &str) -> Result<String, String> {
+    let value: serde_json::Value = serde_json::from_str(arguments)
+        .map_err(|e| format!("Invalid tool arguments JSON: {}", e))?;
+    serde_json::to_string(&canonicalize_json_value(&value))
+        .map_err(|e| format!("Failed to canonicalize tool arguments: {}", e))
+}
+
+fn tool_call_cache_key(name: &str, arguments: &str) -> Option<(String, String)> {
+    if !is_deduplicable_readonly_tool(name) {
+        return None;
+    }
+    let canonical_args = canonical_tool_arguments(arguments).ok()?;
+    Some((name.to_string(), canonical_args))
+}
+
+fn mark_duplicate_tool_result(result_json: &str) -> String {
+    let value = serde_json::from_str::<serde_json::Value>(result_json)
+        .unwrap_or_else(|_| serde_json::json!({ "result": result_json }));
+
+    match value {
+        serde_json::Value::Object(mut obj) => {
+            obj.insert(
+                "duplicate_call".to_string(),
+                serde_json::Value::Bool(true),
+            );
+            serde_json::to_string(&serde_json::Value::Object(obj))
+                .unwrap_or_else(|_| result_json.to_string())
+        }
+        serde_json::Value::Array(chapters) => serde_json::to_string(&serde_json::json!({
+            "duplicate_call": true,
+            "chapters": chapters,
+        }))
+        .unwrap_or_else(|_| result_json.to_string()),
+        other => serde_json::to_string(&serde_json::json!({
+            "duplicate_call": true,
+            "result": other,
+        }))
+        .unwrap_or_else(|_| result_json.to_string()),
+    }
+}
+
+#[derive(Default)]
+struct ToolCallResultCache {
+    entries: HashMap<(String, String), String>,
+}
+
+impl ToolCallResultCache {
+    fn lookup(&self, name: &str, arguments: &str) -> Option<String> {
+        let key = tool_call_cache_key(name, arguments)?;
+        self.entries
+            .get(&key)
+            .map(|result| mark_duplicate_tool_result(result))
+    }
+
+    fn store(&mut self, name: &str, arguments: &str, result: &str) {
+        if let Some(key) = tool_call_cache_key(name, arguments) {
+            self.entries.insert(key, result.to_string());
+        }
+    }
+}
+
 async fn execute_local_tool(
     app: Option<&tauri::AppHandle>,
     tool_ctx: &AiToolContext,
@@ -899,7 +993,8 @@ where
     let tools = tool_ctx.map(|_| reading_ai_tools());
     let mut tools_active = tools.is_some();
     let mut tool_rounds_used = 0usize;
-    let chapter_cache = Arc::new(BookTextCache::with_default_capacity());
+    let chapter_cache = resolve_book_text_cache(app);
+    let mut tool_result_cache = ToolCallResultCache::default();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(AI_TIMEOUT_SECS);
     let chat = client.chat();
 
@@ -1011,14 +1106,22 @@ where
         for (id, name, arguments) in resolved_calls {
             let detail = tool_activity_detail(&name, "started", &arguments);
             on_tool_activity(&name, "started", detail);
-            let tool_result = execute_local_tool(
-                app,
-                tool_ctx,
-                &chapter_cache,
-                &name,
-                &arguments,
-            )
-            .await;
+            let tool_result = if let Some(cached) = tool_result_cache.lookup(&name, &arguments) {
+                Ok(cached)
+            } else {
+                let result = execute_local_tool(
+                    app,
+                    tool_ctx,
+                    &chapter_cache,
+                    &name,
+                    &arguments,
+                )
+                .await;
+                if let Ok(ref ok) = result {
+                    tool_result_cache.store(&name, &arguments, ok);
+                }
+                result
+            };
             let (tool_result, status) = match tool_result {
                 Ok(result) => (result, "completed"),
                 Err(err) => (serde_json::json!({ "error": err }).to_string(), "failed"),
@@ -1457,6 +1560,130 @@ mod tests {
         assert_eq!(calls[0].0, "call_1");
         assert_eq!(calls[0].1, "list_chapters");
         assert_eq!(calls[0].2, "{}");
+    }
+
+    #[test]
+    fn canonical_tool_arguments_sorts_object_keys() {
+        let a = canonical_tool_arguments(r#"{"index":5,"limit":10}"#).unwrap();
+        let b = canonical_tool_arguments(r#"{"limit":10,"index":5}"#).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn tool_result_cache_marks_duplicate_list_chapters() {
+        let mut cache = ToolCallResultCache::default();
+        let first = r#"[{"index":0,"title":"Alpha","byte_len":120}]"#;
+        cache.store("list_chapters", "{}", first);
+
+        let cached = cache.lookup("list_chapters", "{}").expect("cache hit");
+        let json: serde_json::Value = serde_json::from_str(&cached).unwrap();
+        assert_eq!(json["duplicate_call"], true);
+        assert_eq!(json["chapters"][0]["title"], "Alpha");
+    }
+
+    #[test]
+    fn tool_result_cache_marks_duplicate_get_chapter_text() {
+        let mut cache = ToolCallResultCache::default();
+        let first = r#"{"text":"Chapter body","index":5,"offset":0,"next_offset":null}"#;
+        cache.store("get_chapter_text", r#"{"index":5}"#, first);
+
+        let cached = cache
+            .lookup("get_chapter_text", r#"{"index":5}"#)
+            .expect("cache hit");
+        let json: serde_json::Value = serde_json::from_str(&cached).unwrap();
+        assert_eq!(json["duplicate_call"], true);
+        assert_eq!(json["text"], "Chapter body");
+        assert_eq!(json["index"], 5);
+    }
+
+    #[test]
+    fn tool_result_cache_does_not_deduplicate_write_reading_memory() {
+        let mut cache = ToolCallResultCache::default();
+        cache.store(
+            "write_reading_memory",
+            r#"{"target_dir":"notes","title":"Note","body":"Body","confidence":0.9}"#,
+            r#"{"written":true}"#,
+        );
+        assert!(cache
+            .lookup(
+                "write_reading_memory",
+                r#"{"target_dir":"notes","title":"Note","body":"Body","confidence":0.9}"#,
+            )
+            .is_none());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn shared_book_text_cache_reuses_chapter_text_across_requests() {
+        use crate::book_text::CHAPTER_EXTRACTIONS;
+        use std::io::Write;
+        use std::sync::atomic::Ordering;
+        use zip::write::SimpleFileOptions;
+        use zip::ZipWriter;
+
+        fn write_minimal_epub(path: &std::path::Path) {
+            let file = std::fs::File::create(path).expect("create epub");
+            let mut zip = ZipWriter::new(file);
+            let options = SimpleFileOptions::default();
+            zip.start_file("mimetype", options).unwrap();
+            zip.write_all(b"application/epub+zip").unwrap();
+            zip.start_file("META-INF/container.xml", options).unwrap();
+            zip.write_all(
+                br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+            )
+            .unwrap();
+            zip.start_file("OEBPS/content.opf", options).unwrap();
+            zip.write_all(
+                br#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Shared</dc:title></metadata>
+  <manifest>
+    <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="ch1"/></spine>
+</package>"#,
+            )
+            .unwrap();
+            zip.start_file("OEBPS/chapter1.xhtml", options).unwrap();
+            zip.write_all(
+                br#"<?xml version="1.0"?><html><body><p>Shared cache body.</p></body></html>"#,
+            )
+            .unwrap();
+            zip.finish().unwrap();
+        }
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "creader_shared_cache_{}_{}.epub",
+            std::process::id(),
+            nanos
+        ));
+        write_minimal_epub(&path);
+
+        let shared = Arc::new(BookTextCache::with_default_capacity());
+        CHAPTER_EXTRACTIONS.store(0, Ordering::SeqCst);
+
+        let first = get_chapter_text_async(path.clone(), 0, None, None, Arc::clone(&shared))
+            .await
+            .unwrap();
+        assert_eq!(first.text, "Shared cache body.");
+        assert_eq!(CHAPTER_EXTRACTIONS.load(Ordering::SeqCst), 1);
+
+        let second = get_chapter_text_async(path.clone(), 0, None, None, Arc::clone(&shared))
+            .await
+            .unwrap();
+        assert_eq!(second.text, "Shared cache body.");
+        assert_eq!(CHAPTER_EXTRACTIONS.load(Ordering::SeqCst), 1);
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]

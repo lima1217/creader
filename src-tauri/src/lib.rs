@@ -3,6 +3,8 @@ mod book_files;
 mod book_text;
 mod reading_memory;
 
+use tauri::Manager;
+
 // ============================================================
 // App entry
 // ============================================================
@@ -13,6 +15,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            app.manage(book_text::AppBookTextCache::new());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             ai::chat_with_ai_streaming,
             ai::summarize_ai_conversation,
