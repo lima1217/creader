@@ -74,6 +74,7 @@ pub enum StreamEvent {
         message: String,
         provider: Option<String>,
     },
+    #[serde(rename = "tool_activity")]
     ToolActivity {
         name: String,
         status: String,
@@ -1338,6 +1339,20 @@ mod tests {
         "data: {\"id\":\"chatcmpl-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"reader-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" answer\"},\"finish_reason\":\"stop\"}]}\n\n",
         "data: [DONE]\n\n"
     );
+
+    #[test]
+    fn stream_event_serializes_tool_activity_for_frontend() {
+        let event = StreamEvent::ToolActivity {
+            name: "get_chapter_text".to_string(),
+            status: "started".to_string(),
+            detail: Some("正在查阅第 2 章…".to_string()),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(
+            json.contains(r#""event":"tool_activity""#),
+            "expected snake_case event tag for frontend Channel handler, got: {json}"
+        );
+    }
 
     #[test]
     fn tool_activity_detail_formats_user_facing_labels() {
