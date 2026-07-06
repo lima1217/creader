@@ -27,15 +27,20 @@ function createRendition() {
 function Harness({
   rendition,
   updateBookProgress,
+  setCurrentChapterLocation,
+  setCurrentChapterSlice,
 }: {
   rendition: ReturnType<typeof createRendition>;
   updateBookProgress: ReturnType<typeof vi.fn>;
+  setCurrentChapterLocation: ReturnType<typeof vi.fn>;
+  setCurrentChapterSlice: ReturnType<typeof vi.fn>;
 }) {
   useEpubProgressTracking({
     rendition: rendition as unknown as ReaderRendition,
     bookId: 'book-1',
     updateBookProgress,
-    setCurrentChapterContent: () => {},
+    setCurrentChapterSlice,
+    setCurrentChapterLocation,
   });
 
   return null;
@@ -45,6 +50,8 @@ describe('useEpubProgressTracking', () => {
   it('records foliate reported progress immediately', async () => {
     const rendition = createRendition();
     const updateBookProgress = vi.fn();
+    const setCurrentChapterLocation = vi.fn();
+    const setCurrentChapterSlice = vi.fn();
     const container = document.createElement('div');
     const root = createRoot(container);
 
@@ -53,6 +60,8 @@ describe('useEpubProgressTracking', () => {
         <Harness
           rendition={rendition}
           updateBookProgress={updateBookProgress}
+          setCurrentChapterLocation={setCurrentChapterLocation}
+          setCurrentChapterSlice={setCurrentChapterSlice}
         />,
       );
     });
@@ -60,6 +69,10 @@ describe('useEpubProgressTracking', () => {
     expect(updateBookProgress).toHaveBeenCalledWith('book-1', {
       currentCfi: location.start.cfi,
       percentage: 62,
+    });
+    expect(setCurrentChapterLocation).toHaveBeenCalledWith({
+      index: 4,
+      title: 'Chapter 5',
     });
 
     flushSync(() => root.unmount());

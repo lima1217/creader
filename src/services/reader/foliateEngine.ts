@@ -175,6 +175,7 @@ class FoliateRendition implements ReadingEngineRendition {
       start: {
         cfi,
         href: location?.tocItem?.href,
+        label: location?.tocItem?.label,
         index: location?.index,
         percentage,
       },

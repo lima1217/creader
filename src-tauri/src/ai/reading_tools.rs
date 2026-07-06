@@ -26,6 +26,7 @@ pub(crate) struct AiToolContext {
     pub book_title: Option<String>,
     pub book_author: Option<String>,
     pub source_chapter: Option<String>,
+    pub source_chapter_index: Option<u32>,
     pub source_cfi: Option<String>,
     pub source_progress: Option<f64>,
     pub reading_memory_path: Option<String>,
@@ -40,6 +41,7 @@ impl AiToolContext {
             book_title: request.book_title.clone(),
             book_author: request.book_author.clone(),
             source_chapter: request.source_chapter.clone(),
+            source_chapter_index: request.source_chapter_index,
             source_cfi: request.source_cfi.clone(),
             source_progress: request.source_progress,
             reading_memory_path: request.reading_memory_path.clone(),
@@ -167,9 +169,46 @@ struct WriteReadingMemoryToolArgs {
     reason: Option<String>,
 }
 
-pub(crate) fn tool_activity_detail(name: &str, status: &str, arguments: &str) -> Option<String> {
+fn chapter_activity_label(tool_ctx: Option<&AiToolContext>, index: usize) -> String {
+    if let Some(ctx) = tool_ctx {
+        if ctx.source_chapter_index == Some(index as u32) {
+            if let Some(title) = ctx
+                .source_chapter
+                .as_ref()
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+            {
+                return format!("当前章「{title}」");
+            }
+            return "当前章".to_string();
+        }
+    }
+    format!("第 {index} 章")
+}
+
+pub(crate) fn tool_activity_detail(
+    name: &str,
+    status: &str,
+    arguments: &str,
+    tool_ctx: Option<&AiToolContext>,
+) -> Option<String> {
     match (name, status) {
-        ("list_chapters", "started") => Some("正在获取目录…".to_string()),
+        ("list_chapters", "started") => {
+            if let Some(ctx) = tool_ctx {
+                if let Some(index) = ctx.source_chapter_index {
+                    if let Some(title) = ctx
+                        .source_chapter
+                        .as_ref()
+                        .map(|value| value.trim())
+                        .filter(|value| !value.is_empty())
+                    {
+                        return Some(format!("正在获取目录（当前：{title}，index={index}）…"));
+                    }
+                    return Some(format!("正在获取目录（当前 index={index}）…"));
+                }
+            }
+            Some("正在获取目录…".to_string())
+        }
         ("list_chapters", "completed") => Some("已获取目录".to_string()),
         ("list_chapters", "failed") => Some("获取目录失败".to_string()),
         ("get_chapter_text", "started") | ("get_chapter_text", "completed")
@@ -178,11 +217,17 @@ pub(crate) fn tool_activity_detail(name: &str, status: &str, arguments: &str) ->
                 .ok()
                 .map(|args| args.index);
             match (status, chapter_index) {
-                ("started", Some(index)) => Some(format!("正在查阅第 {} 章…", index)),
+                ("started", Some(index)) => {
+                    Some(format!("正在查阅{}…", chapter_activity_label(tool_ctx, index)))
+                }
                 ("started", None) => Some("正在查阅章节…".to_string()),
-                ("completed", Some(index)) => Some(format!("已查阅第 {} 章", index)),
+                ("completed", Some(index)) => {
+                    Some(format!("已查阅{}", chapter_activity_label(tool_ctx, index)))
+                }
                 ("completed", None) => Some("已查阅章节".to_string()),
-                ("failed", Some(index)) => Some(format!("查阅第 {} 章失败", index)),
+                ("failed", Some(index)) => {
+                    Some(format!("查阅{}失败", chapter_activity_label(tool_ctx, index)))
+                }
                 ("failed", None) => Some("查阅章节失败".to_string()),
                 _ => None,
             }
@@ -205,6 +250,53 @@ pub(crate) fn tool_activity_detail(name: &str, status: &str, arguments: &str) ->
         ("write_reading_memory", "failed") => Some("写入阅读记忆失败".to_string()),
         _ => None,
     }
+}
+
+fn serialize_list_chapters_result(
+    chapters: &[crate::book_text::ChapterInfo],
+    tool_ctx: &AiToolContext,
+) -> Result<String, String> {
+    let mut value = serde_json::json!({ "chapters": chapters });
+    if let Some(index) = tool_ctx.source_chapter_index {
+        value["current_spine_index"] = serde_json::Value::from(index);
+        if let Some(title) = tool_ctx
+            .source_chapter
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            value["current_chapter"] = serde_json::Value::String(title.to_string());
+        }
+    }
+    serde_json::to_string(&value).map_err(|e| format!("Failed to serialize chapter list: {}", e))
+}
+
+fn annotate_current_chapter_text_result(
+    slice_json: String,
+    tool_ctx: &AiToolContext,
+    index: usize,
+) -> Result<String, String> {
+    if tool_ctx.source_chapter_index != Some(index as u32) {
+        return Ok(slice_json);
+    }
+    let mut value: serde_json::Value = serde_json::from_str(&slice_json)
+        .map_err(|e| format!("Failed to parse chapter text result: {}", e))?;
+    let Some(obj) = value.as_object_mut() else {
+        return Ok(slice_json);
+    };
+    obj.insert("is_current_chapter".to_string(), serde_json::Value::Bool(true));
+    if let Some(title) = tool_ctx
+        .source_chapter
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        obj.insert(
+            "current_chapter".to_string(),
+            serde_json::Value::String(title.to_string()),
+        );
+    }
+    serde_json::to_string(&value).map_err(|e| format!("Failed to serialize chapter text: {}", e))
 }
 
 fn validated_book_path(app: &tauri::AppHandle, book_file_path: &str) -> Result<PathBuf, String> {
@@ -363,8 +455,7 @@ pub(crate) async fn execute_local_tool(
                 .ok_or_else(|| "No book file path available for list_chapters".to_string())?;
             let book_path = validated_book_path(app, book_path)?;
             let chapters = list_chapters_async(book_path).await?;
-            serde_json::to_string(&chapters)
-                .map_err(|e| format!("Failed to serialize chapter list: {}", e))
+            serialize_list_chapters_result(&chapters, tool_ctx)
         }
         "get_chapter_text" => {
             let app = app.ok_or_else(|| {
@@ -385,8 +476,9 @@ pub(crate) async fn execute_local_tool(
                 Arc::clone(cache),
             )
             .await?;
-            serde_json::to_string(&slice)
-                .map_err(|e| format!("Failed to serialize chapter text: {}", e))
+            let slice_json = serde_json::to_string(&slice)
+                .map_err(|e| format!("Failed to serialize chapter text: {}", e))?;
+            annotate_current_chapter_text_result(slice_json, tool_ctx, args.index)
         }
         "search_book" => {
             let app = app.ok_or_else(|| {
@@ -467,50 +559,94 @@ mod tests {
 
     #[test]
     fn tool_activity_detail_formats_user_facing_labels() {
+        let current_ctx = AiToolContext {
+            book_file_path: None,
+            book_title: Some("Book".to_string()),
+            book_author: None,
+            source_chapter: Some("第三章".to_string()),
+            source_chapter_index: Some(2),
+            source_cfi: None,
+            source_progress: None,
+            reading_memory_path: None,
+            user_question: String::new(),
+            selected_excerpt: None,
+        };
+
         assert_eq!(
-            tool_activity_detail("get_chapter_text", "started", r#"{"index":2}"#),
-            Some("正在查阅第 2 章…".to_string())
+            tool_activity_detail("get_chapter_text", "started", r#"{"index":2}"#, Some(&current_ctx)),
+            Some("正在查阅当前章「第三章」…".to_string())
         );
         assert_eq!(
-            tool_activity_detail("get_chapter_text", "completed", r#"{"index":2}"#),
-            Some("已查阅第 2 章".to_string())
+            tool_activity_detail("get_chapter_text", "completed", r#"{"index":2}"#, Some(&current_ctx)),
+            Some("已查阅当前章「第三章」".to_string())
         );
         assert_eq!(
-            tool_activity_detail("get_chapter_text", "failed", r#"{"index":2}"#),
-            Some("查阅第 2 章失败".to_string())
+            tool_activity_detail("get_chapter_text", "failed", r#"{"index":2}"#, Some(&current_ctx)),
+            Some("查阅当前章「第三章」失败".to_string())
         );
         assert_eq!(
-            tool_activity_detail("get_chapter_text", "failed", "{}"),
+            tool_activity_detail("get_chapter_text", "started", r#"{"index":5}"#, Some(&current_ctx)),
+            Some("正在查阅第 5 章…".to_string())
+        );
+        assert_eq!(
+            tool_activity_detail("get_chapter_text", "failed", "{}", None),
             Some("查阅章节失败".to_string())
         );
         assert_eq!(
-            tool_activity_detail("list_chapters", "started", "{}"),
-            Some("正在获取目录…".to_string())
+            tool_activity_detail("list_chapters", "started", "{}", Some(&current_ctx)),
+            Some("正在获取目录（当前：第三章，index=2）…".to_string())
         );
         assert_eq!(
-            tool_activity_detail("list_chapters", "failed", "{}"),
+            tool_activity_detail("list_chapters", "failed", "{}", None),
             Some("获取目录失败".to_string())
         );
         assert_eq!(
-            tool_activity_detail("search_book", "started", r#"{"query":"量子"}"#),
+            tool_activity_detail("search_book", "started", r#"{"query":"量子"}"#, None),
             Some("正在搜索「量子」…".to_string())
         );
         assert_eq!(
-            tool_activity_detail("search_book", "completed", r#"{"query":"量子"}"#),
+            tool_activity_detail("search_book", "completed", r#"{"query":"量子"}"#, None),
             Some("已完成全书搜索".to_string())
         );
         assert_eq!(
-            tool_activity_detail("search_book", "failed", r#"{"query":"量子"}"#),
+            tool_activity_detail("search_book", "failed", r#"{"query":"量子"}"#, None),
             Some("全书搜索失败".to_string())
         );
         assert_eq!(
-            tool_activity_detail("write_reading_memory", "completed", "{}"),
+            tool_activity_detail("write_reading_memory", "completed", "{}", None),
             Some("已写入阅读记忆".to_string())
         );
         assert_eq!(
-            tool_activity_detail("write_reading_memory", "failed", "{}"),
+            tool_activity_detail("write_reading_memory", "failed", "{}", None),
             Some("写入阅读记忆失败".to_string())
         );
+    }
+
+    #[test]
+    fn serialize_list_chapters_result_includes_current_spine_index() {
+        let chapters = vec![crate::book_text::ChapterInfo {
+            index: 2,
+            title: "第三章".to_string(),
+            byte_len: 120,
+        }];
+        let tool_ctx = AiToolContext {
+            book_file_path: None,
+            book_title: None,
+            book_author: None,
+            source_chapter: Some("第三章".to_string()),
+            source_chapter_index: Some(2),
+            source_cfi: None,
+            source_progress: None,
+            reading_memory_path: None,
+            user_question: String::new(),
+            selected_excerpt: None,
+        };
+
+        let json = serialize_list_chapters_result(&chapters, &tool_ctx).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["current_spine_index"], 2);
+        assert_eq!(value["current_chapter"], "第三章");
+        assert_eq!(value["chapters"][0]["title"], "第三章");
     }
 
     #[test]
@@ -523,7 +659,7 @@ mod tests {
     #[test]
     fn tool_result_cache_marks_duplicate_list_chapters() {
         let mut cache = ToolCallResultCache::default();
-        let first = r#"[{"index":0,"title":"Alpha","byte_len":120}]"#;
+        let first = r#"{"chapters":[{"index":0,"title":"Alpha","byte_len":120}]}"#;
         cache.store("list_chapters", "{}", first);
 
         let cached = cache.lookup("list_chapters", "{}").expect("cache hit");
@@ -633,6 +769,7 @@ mod tests {
             book_title: Some("Book".to_string()),
             book_author: None,
             source_chapter: None,
+            source_chapter_index: None,
             source_cfi: None,
             source_progress: None,
             book_file_path: None,

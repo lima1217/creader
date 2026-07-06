@@ -95,6 +95,9 @@ export interface ChatMessage {
   timestamp: number;
   context?: string; // Selected text from book
   contextCfi?: string; // EPUB CFI range for selected text
+  sourceChapter?: string;
+  sourceChapterIndex?: number;
+  sourceProgress?: number;
 }
 
 export interface ConversationMemory {

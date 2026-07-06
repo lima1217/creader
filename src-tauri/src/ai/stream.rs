@@ -251,7 +251,7 @@ where
         let mut calls: Vec<ResolvedToolCall> = Vec::with_capacity(resolved_calls.len());
         let mut pending_readonly_keys: HashMap<(String, String), usize> = HashMap::new();
         for (id, name, arguments) in resolved_calls {
-            let detail = tool_activity_detail(&name, "started", &arguments);
+            let detail = tool_activity_detail(&name, "started", &arguments, Some(tool_ctx));
             on_tool_activity(&name, "started", detail);
             let execution = if let Some(cached) = tool_result_cache.lookup(&name, &arguments) {
                 CallExecution::Resolved {
@@ -372,7 +372,7 @@ where
             else {
                 unreachable!("all tool calls should be resolved before emitting results")
             };
-            let detail = tool_activity_detail(&call.name, status, &call.arguments);
+            let detail = tool_activity_detail(&call.name, status, &call.arguments, Some(tool_ctx));
             on_tool_activity(&call.name, status, detail);
             messages.push(ChatCompletionRequestMessage::Tool(
                 ChatCompletionRequestToolMessage {
@@ -590,6 +590,7 @@ mod tests {
             book_title: Some("Test Book".to_string()),
             book_author: Some("Author".to_string()),
             source_chapter: Some("Chapter 1".to_string()),
+            source_chapter_index: Some(0),
             source_cfi: None,
             source_progress: Some(10.0),
             reading_memory_path: None,

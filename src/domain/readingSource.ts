@@ -14,6 +14,10 @@ export interface ReadingContextSnapshot {
   selection?: ReadingSelection;
   accumulatedTexts: string[];
   chapterContent?: string;
+  chapterContentOffset?: number;
+  chapterSliceTruncatedEnd?: boolean;
+  chapterIndex?: number;
+  chapterTitle?: string;
 }
 
 export function buildReadingContextSnapshot(params: {
@@ -23,6 +27,10 @@ export function buildReadingContextSnapshot(params: {
   selectedCfiRange?: string;
   accumulatedTexts?: string[];
   chapterContent?: string;
+  chapterContentOffset?: number;
+  chapterSliceTruncatedEnd?: boolean;
+  chapterIndex?: number | null;
+  chapterTitle?: string | null;
 }): ReadingContextSnapshot {
   const selectedText = (params.selectedText || '').trim();
   const selectedCfiRange = (params.selectedCfiRange || '').trim();
@@ -49,6 +57,10 @@ export function buildReadingContextSnapshot(params: {
       .map(text => text.trim())
       .filter(Boolean),
     chapterContent: params.chapterContent,
+    chapterContentOffset: params.chapterContentOffset ?? undefined,
+    chapterSliceTruncatedEnd: params.chapterSliceTruncatedEnd ?? undefined,
+    chapterIndex: params.chapterIndex ?? undefined,
+    chapterTitle: params.chapterTitle?.trim() || undefined,
   };
 }
 

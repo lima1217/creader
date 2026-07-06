@@ -74,6 +74,8 @@ describe('AI request domain', () => {
       book,
       selectedText: focus,
       chapterContent: `Intro. Before details. ${focus} After details. End.`,
+      chapterIndex: 2,
+      chapterTitle: 'Chapter 2',
     });
     const request = buildChatRequest({
       message: 'What does this mean?',
@@ -86,6 +88,8 @@ describe('AI request domain', () => {
     expect(request.message).toBe('What does this mean?');
     expect(request.context).toBe(focus);
     expect(request.book_title).toBe('Book');
+    expect(request.source_chapter).toBe('Chapter 2');
+    expect(request.source_chapter_index).toBe(2);
     expect(request.max_tool_rounds).toBe(8);
     expect(request.conversation_summary).toBe('Older discussion summary');
     expect(request.history).toHaveLength(5);
@@ -120,5 +124,48 @@ describe('AI request domain', () => {
     expect(request.context).toBe(`${focus}\n\n---\n\nsaved excerpt`);
     expect(request.book_title).toBe('Book');
     expect(request.chapter_content).toContain('Surrounding chapter context near the selected text');
+  });
+
+  it('falls back to progress CFI when there is no selection', () => {
+    const readingContext = buildReadingContextSnapshot({
+      book,
+      progress: { currentCfi: 'epubcfi(/6/20)', percentage: 55 },
+    });
+    const request = buildChatRequest({
+      message: 'Explain',
+      readingContext,
+      chatMessages: [],
+      settings,
+    });
+
+    expect(request.source_cfi).toBe('epubcfi(/6/20)');
+  });
+
+  it('adds frozen source labels to user history messages', () => {
+    const readingContext = buildReadingContextSnapshot({
+      book,
+      chapterIndex: 7,
+      chapterTitle: '第七章',
+      progress: { currentCfi: 'epubcfi(/6/20)', percentage: 55, currentChapter: '第七章' },
+    });
+    const request = buildChatRequest({
+      message: '继续',
+      readingContext,
+      chatMessages: [{
+        id: '1',
+        role: 'user',
+        content: '这里什么意思？',
+        timestamp: 1,
+        context: 'selected excerpt from chapter seven',
+        sourceChapter: '第七章',
+        sourceChapterIndex: 7,
+        sourceProgress: 55,
+      }],
+      settings,
+    });
+
+    expect(request.history?.[0].content).toContain('[来源: index=7「第七章」·55.0%]');
+    expect(request.history?.[0].content).toContain('[选区: selected excerpt from chapter seven]');
+    expect(request.history?.[0].content).toContain('这里什么意思？');
   });
 });

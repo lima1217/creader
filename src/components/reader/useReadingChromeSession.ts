@@ -24,7 +24,8 @@ export function useReadingChromeSession(params: {
   const showToc = useUIStore((s) => s.isTocOpen);
   const setShowToc = useUIStore((s) => s.setTocOpen);
   const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
-  const setCurrentChapterContent = useAIStore((s) => s.setCurrentChapterContent);
+  const setCurrentChapterSlice = useAIStore((s) => s.setCurrentChapterSlice);
+  const setCurrentChapterLocation = useAIStore((s) => s.setCurrentChapterLocation);
   const selectedText = useSelectionStore((s) => s.selectedText);
   const setSelectedText = useSelectionStore((s) => s.setSelectedText);
   const setSelectedCfiRange = useSelectionStore((s) => s.setSelectedCfiRange);
@@ -88,7 +89,8 @@ export function useReadingChromeSession(params: {
     rendition,
     bookId: currentBook?.id ?? null,
     updateBookProgress,
-    setCurrentChapterContent,
+    setCurrentChapterSlice,
+    setCurrentChapterLocation,
   });
 
   useEpubSelectionTracking({

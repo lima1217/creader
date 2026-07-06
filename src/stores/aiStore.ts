@@ -19,11 +19,16 @@ const logger = createLogger('aiStore');
  * every mutator fires the corresponding async write. Hydration from Dexie on
  * startup (including the one-time legacy localStorage-chat migration) lives in
  * `AppBootstrap`, which calls {@link hydrateChatMessages} /
- * {@link hydrateConversationMemory}. `currentChapterContent` is ephemeral.
+ * {@link hydrateConversationMemory}. Chapter location fields are ephemeral.
  */
 type AIState = {
   currentChapterContent: string;
-  setCurrentChapterContent: (content: string) => void;
+  currentChapterContentOffset: number;
+  currentChapterSliceTruncatedEnd: boolean;
+  currentChapterIndex: number | null;
+  currentChapterTitle: string | null;
+  setCurrentChapterSlice: (slice: { content: string; offset: number; truncatedEnd: boolean }) => void;
+  setCurrentChapterLocation: (location: { index: number | null; title: string | null }) => void;
   chatMessages: ChatMessage[];
   conversationMemory: ConversationMemory | null;
   addChatMessage: (message: ChatMessage) => void;
@@ -34,7 +39,19 @@ type AIState = {
 
 export const useAIStore = create<AIState>((set, get) => ({
   currentChapterContent: '',
-  setCurrentChapterContent: (content) => set({ currentChapterContent: content }),
+  currentChapterContentOffset: 0,
+  currentChapterSliceTruncatedEnd: false,
+  currentChapterIndex: null,
+  currentChapterTitle: null,
+  setCurrentChapterSlice: (slice) => set({
+    currentChapterContent: slice.content,
+    currentChapterContentOffset: slice.offset,
+    currentChapterSliceTruncatedEnd: slice.truncatedEnd,
+  }),
+  setCurrentChapterLocation: (location) => set({
+    currentChapterIndex: location.index,
+    currentChapterTitle: location.title,
+  }),
 
   chatMessages: [],
   conversationMemory: null,

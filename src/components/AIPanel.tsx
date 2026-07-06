@@ -60,6 +60,10 @@ export function AIPanel() {
     const setConversationMemory = useAIStore((s) => s.setConversationMemory);
     const clearChat = useAIStore((s) => s.clearChat);
     const currentChapterContent = useAIStore((s) => s.currentChapterContent);
+    const currentChapterContentOffset = useAIStore((s) => s.currentChapterContentOffset);
+    const currentChapterSliceTruncatedEnd = useAIStore((s) => s.currentChapterSliceTruncatedEnd);
+    const currentChapterIndex = useAIStore((s) => s.currentChapterIndex);
+    const currentChapterTitle = useAIStore((s) => s.currentChapterTitle);
     const selectedText = useSelectionStore((s) => s.selectedText);
     const setSelectedText = useSelectionStore((s) => s.setSelectedText);
     const selectedCfiRange = useSelectionStore((s) => s.selectedCfiRange);
@@ -112,6 +116,10 @@ export function AIPanel() {
         selectedCfiRange,
         accumulatedTexts,
         currentChapterContent,
+        currentChapterContentOffset,
+        currentChapterSliceTruncatedEnd,
+        currentChapterIndex,
+        currentChapterTitle,
         settings,
     };
 

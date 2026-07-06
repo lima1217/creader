@@ -51,6 +51,10 @@ function createHarness(
     selectedCfiRange: 'epubcfi(/6/4)',
     accumulatedTexts: [],
     currentChapterContent: 'chapter body',
+    currentChapterContentOffset: 0,
+    currentChapterSliceTruncatedEnd: false,
+    currentChapterIndex: 1,
+    currentChapterTitle: 'Chapter 2',
     settings: { ...baseSettings },
     ...overrides,
   };

@@ -1,45 +1,70 @@
 import { useEffect, useRef } from 'react';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { getRenditionContents } from '../../services/reader/epubAdapter';
+import { sliceChapterContent } from '../../domain/contextWindow';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { computeEpubPercentage } from './epubProgress';
 import { CHAPTER_EXTRACT_INTERVAL_MS, MAX_CHAPTER_CONTENT_LENGTH, PROGRESS_UPDATE_INTERVAL_MS, PROGRESS_UPDATE_THRESHOLD_PERCENT } from '../../constants';
 import { createLogger } from '../../utils/logger';
 
 const logger = createLogger('useEpubProgressTracking');
 
+function readLocationStart(location: unknown): {
+  cfi: string;
+  index: number | null;
+  title: string | null;
+} {
+  if (!location || typeof location !== 'object') {
+    return { cfi: '', index: null, title: null };
+  }
+
+  const start = (location as { start?: Record<string, unknown> }).start;
+  if (!start) {
+    if (typeof location === 'string') {
+      return { cfi: location, index: null, title: null };
+    }
+    return { cfi: '', index: null, title: null };
+  }
+
+  const cfi = typeof start.cfi === 'string' ? start.cfi : '';
+  const index = typeof start.index === 'number' && Number.isFinite(start.index)
+    ? start.index
+    : null;
+  const label = typeof start.label === 'string' ? start.label.trim() : '';
+  const title = label || (index !== null ? `Chapter ${index + 1}` : null);
+
+  return { cfi, index, title };
+}
+
 export function useEpubProgressTracking(params: {
   rendition: ReaderRendition | null;
   bookId: string | null;
   updateBookProgress: (bookId: string, update: { currentCfi: string; percentage: number }) => void;
-  setCurrentChapterContent: (content: string) => void;
+  setCurrentChapterSlice: (slice: { content: string; offset: number; truncatedEnd: boolean }) => void;
+  setCurrentChapterLocation: (location: { index: number | null; title: string | null }) => void;
 }) {
-  const { rendition, bookId, updateBookProgress, setCurrentChapterContent } = params;
+  const { rendition, bookId, updateBookProgress, setCurrentChapterSlice, setCurrentChapterLocation } = params;
   const progressStateRef = useRef({ lastTs: 0, lastCfi: '', lastPercentage: 0 });
   const chapterStateRef = useRef({ lastTs: 0, lastCfi: '' });
 
   useEffect(() => {
     progressStateRef.current = { lastTs: 0, lastCfi: '', lastPercentage: 0 };
     chapterStateRef.current = { lastTs: 0, lastCfi: '' };
-  }, [bookId]);
+    setCurrentChapterLocation({ index: null, title: null });
+    setCurrentChapterSlice({ content: '', offset: 0, truncatedEnd: false });
+  }, [bookId, setCurrentChapterLocation, setCurrentChapterSlice]);
 
   useEffect(() => {
     if (!rendition || !bookId) return;
 
-    const handleLocationChange = (location: any) => {
+    const handleLocationChange = (location: unknown) => {
       if (!location) return;
 
-      let cfi = '';
-      let percentage = 0;
-
-      if (location.start?.cfi) {
-        cfi = location.start.cfi;
-      } else if (typeof location === 'string') {
-        cfi = location;
-      }
-
-      percentage = computeEpubPercentage({ location, cfi });
+      const { cfi, index, title } = readLocationStart(location);
+      setCurrentChapterLocation({ index, title });
 
       if (cfi) {
+        const percentage = computeEpubPercentage({ location, cfi });
         const now = Date.now();
         const last = progressStateRef.current;
         const percentageDelta = Math.abs(percentage - last.lastPercentage);
@@ -70,7 +95,19 @@ export function useEpubProgressTracking(params: {
             .replace(/\r\n/g, '\n')
             .replace(/\n{3,}/g, '\n\n')
             .trim();
-          if (normalized) setCurrentChapterContent(normalized.slice(0, MAX_CHAPTER_CONTENT_LENGTH));
+            if (normalized) {
+            const selectedText = useSelectionStore.getState().selectedText.trim();
+            const slice = sliceChapterContent(
+              normalized,
+              MAX_CHAPTER_CONTENT_LENGTH,
+              selectedText || undefined,
+            );
+            setCurrentChapterSlice({
+              content: slice.text,
+              offset: slice.offset,
+              truncatedEnd: slice.truncatedEnd,
+            });
+          }
         }
       } catch (e) {
         logger.warn('Failed to extract chapter content:', e);
@@ -94,5 +131,5 @@ export function useEpubProgressTracking(params: {
       rendition.off('locationChanged', handleLocationChange);
       rendition.off('relocated', handleLocationChange);
     };
-  }, [rendition, bookId, updateBookProgress, setCurrentChapterContent]);
+  }, [rendition, bookId, updateBookProgress, setCurrentChapterSlice, setCurrentChapterLocation]);
 }

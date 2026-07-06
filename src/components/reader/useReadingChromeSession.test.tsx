@@ -100,7 +100,15 @@ describe('useReadingChromeSession', () => {
       currentBook: book,
     });
     useUIStore.setState({ isSidebarOpen: true, isAIPanelOpen: false });
-    useAIStore.setState({ currentChapterContent: '', chatMessages: [], conversationMemory: null });
+    useAIStore.setState({
+      currentChapterContent: '',
+      currentChapterContentOffset: 0,
+      currentChapterSliceTruncatedEnd: false,
+      currentChapterIndex: null,
+      currentChapterTitle: null,
+      chatMessages: [],
+      conversationMemory: null,
+    });
     useSelectionStore.setState({ selectedText: '', selectedCfiRange: '', accumulatedTexts: [] });
     useProgressStore.setState({ bookProgressById: {} });
     Object.defineProperty(navigator, 'clipboard', {
@@ -174,7 +182,7 @@ describe('useReadingChromeSession', () => {
     const progressParams = hookMocks.progressParams as {
       bookId: string;
       updateBookProgress: (id: string, update: { currentCfi: string; percentage: number }) => void;
-      setCurrentChapterContent: (content: string) => void;
+      setCurrentChapterSlice: (slice: { content: string; offset: number; truncatedEnd: boolean }) => void;
     };
 
     flushSync(() => {
@@ -182,7 +190,7 @@ describe('useReadingChromeSession', () => {
         currentCfi: 'epubcfi(/6/8)',
         percentage: 44,
       });
-      progressParams.setCurrentChapterContent('fresh chapter body');
+      progressParams.setCurrentChapterSlice({ content: 'fresh chapter body', offset: 0, truncatedEnd: false });
     });
 
     expect(progressParams.bookId).toBe('book-1');

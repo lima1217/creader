@@ -42,6 +42,10 @@ export type AIConversationSessionState = {
   selectedCfiRange: string;
   accumulatedTexts: string[];
   currentChapterContent: string;
+  currentChapterContentOffset: number;
+  currentChapterSliceTruncatedEnd: boolean;
+  currentChapterIndex: number | null;
+  currentChapterTitle: string | null;
   settings: Settings;
 };
 
@@ -116,6 +120,9 @@ export class AIConversationSession {
       timestamp: userMessageTimestamp,
       context: combinedContext,
       contextCfi: readingContext.selection?.cfiRange,
+      sourceChapter: readingContext.chapterTitle || readingContext.progress?.currentChapter,
+      sourceChapterIndex: readingContext.chapterIndex,
+      sourceProgress: readingContext.progress?.percentage,
     });
 
     this.deps.addChatMessage(userMessage);
@@ -299,6 +306,10 @@ export class AIConversationSession {
       selectedCfiRange: state.selectedCfiRange,
       accumulatedTexts: state.accumulatedTexts,
       chapterContent: state.currentChapterContent,
+      chapterContentOffset: state.currentChapterContentOffset,
+      chapterSliceTruncatedEnd: state.currentChapterSliceTruncatedEnd,
+      chapterIndex: state.currentChapterIndex ?? undefined,
+      chapterTitle: state.currentChapterTitle ?? undefined,
     });
   }
 
