@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useLibraryStore } from '../stores/libraryStore';
+import { useProgressStore } from '../stores/progressStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { NavItem } from '../types';
 import type { ReaderRendition } from '../services/reader/epubAdapter';
@@ -11,6 +12,7 @@ import { SelectionToolbar } from './reader/SelectionToolbar';
 import { useEpubBookLifecycle } from './reader/useEpubBookLifecycle';
 import { useEpubSettingsSync } from './reader/useEpubSettingsSync';
 import { useReadingChromeSession } from './reader/useReadingChromeSession';
+import { ReaderProgressBar } from './reader/ReaderProgressBar';
 import './EPUBReader.css';
 import './SelectionToolbar.css';
 import { AILogoIcon, PlusIcon as SelectionPlusIcon } from './ai/icons';
@@ -20,6 +22,10 @@ const logger = createLogger('EPUBReader');
 
 export function EPUBReader() {
     const currentBook = useLibraryStore((s) => s.currentBook);
+    const bookPercentage = useProgressStore((s) => {
+        if (!currentBook) return 0;
+        return s.bookProgressById[currentBook.id]?.percentage ?? currentBook.progress.percentage;
+    });
     const updateBookFilePath = useLibraryStore((s) => s.updateBookFilePath);
     const settings = useSettingsStore((s) => s.settings);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -251,6 +257,12 @@ export function EPUBReader() {
             <button className="reader-chrome-control reader-nav reader-nav-next" onClick={chrome.handleNext} aria-label="下一页">
                 <ChevronRightIcon />
             </button>
+
+            <ReaderProgressBar
+                percentage={bookPercentage}
+                rendition={activeRendition}
+                onSeek={chrome.handleSeek}
+            />
         </div>
     );
 }

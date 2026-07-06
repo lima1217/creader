@@ -1,4 +1,5 @@
 .reader {
+    --reader-progress-height: 28px;
     flex: 1;
     position: relative;
     display: flex;
@@ -225,7 +226,7 @@
 .reader-accumulated-indicator {
     position: absolute;
     right: var(--space-4);
-    bottom: var(--space-4);
+    bottom: calc(var(--space-4) + var(--reader-progress-height, 0px));
     z-index: 50;
     display: flex;
     flex-direction: column;

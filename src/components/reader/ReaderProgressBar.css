@@ -1,0 +1,17 @@
+.reader-progress-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    height: var(--reader-progress-height);
+    padding: 0 var(--space-4);
+    box-sizing: border-box;
+    background: var(--bg-reader);
+}
+
+.reader-progress-bar astryx-slider {
+    width: 100%;
+}

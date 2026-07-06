@@ -254,6 +254,110 @@ describe('foliateEngine chapter edge navigation', () => {
   });
 });
 
+describe('foliateEngine whole-book progress', () => {
+  let mockView: {
+    renderer: {
+      setAttribute: ReturnType<typeof vi.fn>;
+      removeAttribute: ReturnType<typeof vi.fn>;
+      getContents: ReturnType<typeof vi.fn>;
+      setStyles: ReturnType<typeof vi.fn>;
+      addEventListener: ReturnType<typeof vi.fn>;
+      removeEventListener: ReturnType<typeof vi.fn>;
+    };
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+    lastLocation: unknown;
+    open: ReturnType<typeof vi.fn>;
+    init: ReturnType<typeof vi.fn>;
+    goTo: ReturnType<typeof vi.fn>;
+    goToFraction: ReturnType<typeof vi.fn>;
+    getSectionFractions: ReturnType<typeof vi.fn>;
+    prev: ReturnType<typeof vi.fn>;
+    next: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+    classList: { add: ReturnType<typeof vi.fn> };
+    remove: ReturnType<typeof vi.fn>;
+  };
+
+  let originalCreateElement: typeof document.createElement;
+
+  beforeEach(() => {
+    mockView = {
+      renderer: {
+        setAttribute: vi.fn(),
+        removeAttribute: vi.fn(),
+        getContents: vi.fn(() => []),
+        setStyles: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      },
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      lastLocation: null,
+      open: vi.fn(),
+      init: vi.fn(),
+      goTo: vi.fn(),
+      goToFraction: vi.fn(),
+      getSectionFractions: vi.fn(() => [0, 0.25, 0.5, 0.75]),
+      prev: vi.fn(),
+      next: vi.fn(),
+      close: vi.fn(),
+      classList: { add: vi.fn() },
+      remove: vi.fn(),
+    };
+
+    originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'foliate-view') return mockView as unknown as HTMLElement;
+      return originalCreateElement(tag);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function openTestInstance() {
+    return foliateEngineAdapter.open({
+      appBook: { title: 'Test Book' } as any,
+      arrayBuffer: new ArrayBuffer(0),
+      container: document.createElement('div'),
+    });
+  }
+
+  it('seekToFraction forwards to foliate view goToFraction', async () => {
+    const instance = await openTestInstance();
+
+    await instance.rendition.seekToFraction?.(0.5);
+
+    expect(mockView.goToFraction).toHaveBeenCalledWith(0.5);
+    expect(mockView.goTo).not.toHaveBeenCalled();
+  });
+
+  it('seekToFraction falls back to goTo({ fraction }) when goToFraction is unavailable', async () => {
+    mockView.goToFraction = undefined as any;
+    const instance = await openTestInstance();
+
+    await instance.rendition.seekToFraction?.(0.42);
+
+    expect(mockView.goTo).toHaveBeenCalledWith({ fraction: 0.42 });
+  });
+
+  it('getSectionFractions returns foliate view section fractions', async () => {
+    const instance = await openTestInstance();
+
+    expect(instance.rendition.getSectionFractions?.()).toEqual([0, 0.25, 0.5, 0.75]);
+    expect(mockView.getSectionFractions).toHaveBeenCalled();
+  });
+
+  it('getSectionFractions returns an empty array when foliate view does not expose it', async () => {
+    mockView.getSectionFractions = undefined as any;
+    const instance = await openTestInstance();
+
+    expect(instance.rendition.getSectionFractions?.()).toEqual([]);
+  });
+});
+
 describe('foliateEngine section typography', () => {
   let loadHandler: ((event: Event) => void) | undefined;
 
