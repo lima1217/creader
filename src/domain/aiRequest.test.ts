@@ -23,6 +23,7 @@ const settings: Settings = {
   readingMemoryAutoIngest: true,
   aiTextSize: 14,
   aiContextWindow: 5,
+  aiToolRounds: 8,
   aiAutoSummarize: true,
   aiThinkingEnabled: false,
 };
@@ -85,6 +86,7 @@ describe('AI request domain', () => {
     expect(request.message).toBe('What does this mean?');
     expect(request.context).toBe(focus);
     expect(request.book_title).toBe('Book');
+    expect(request.max_tool_rounds).toBe(8);
     expect(request.conversation_summary).toBe('Older discussion summary');
     expect(request.history).toHaveLength(5);
     expect(request.history?.[0]).toEqual({ role: 'user', content: 'message 3' });

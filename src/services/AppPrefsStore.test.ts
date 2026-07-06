@@ -39,6 +39,7 @@ describe('AppPrefsStore Dexie persistence', () => {
       readingMemoryAutoIngest: true,
       aiTextSize: 15,
       aiContextWindow: 20,
+      aiToolRounds: 8,
       aiAutoSummarize: false,
       aiThinkingEnabled: false,
     };

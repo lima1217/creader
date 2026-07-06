@@ -17,6 +17,7 @@ export interface ChatRequest {
   conversation_summary?: string;
   history?: { role: string; content: string }[];
   thinking_enabled?: boolean;
+  max_tool_rounds?: number;
 }
 
 export function buildContextFromReadingSnapshot(snapshot: ReadingContextSnapshot): {
@@ -52,7 +53,7 @@ export function buildChatRequest(params: {
   readingContext: ReadingContextSnapshot;
   conversationSummary?: string;
   chatMessages: ChatMessage[];
-  settings: Pick<Settings, 'aiContextWindow' | 'readingMemoryPath' | 'aiThinkingEnabled'>;
+  settings: Pick<Settings, 'aiContextWindow' | 'aiToolRounds' | 'readingMemoryPath' | 'aiThinkingEnabled'>;
 }): ChatRequest {
   const derivedContext = buildContextFromReadingSnapshot(params.readingContext);
 
@@ -79,5 +80,6 @@ export function buildChatRequest(params: {
       content: message.content,
     })),
     thinking_enabled: params.settings.aiThinkingEnabled ? true : undefined,
+    max_tool_rounds: params.settings.aiToolRounds,
   };
 }

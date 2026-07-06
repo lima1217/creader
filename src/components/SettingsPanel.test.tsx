@@ -102,6 +102,7 @@ function resetSettings() {
       readingMemoryAutoIngest: true,
       aiTextSize: 14,
       aiContextWindow: 20,
+      aiToolRounds: 8,
       aiAutoSummarize: true,
       aiThinkingEnabled: false,
     },
@@ -221,6 +222,8 @@ describe('SettingsPanel — 三项一级菜单 (#62-#65)', () => {
     expect(container.textContent ?? '').toContain('对话行为');
     expect(container.querySelector('.settings-conversation-behavior')).not.toBeNull();
     expect(container.querySelector('.settings-conversation-grid')).not.toBeNull();
+    expect(container.textContent ?? '').toContain('上下文轮次');
+    expect(container.textContent ?? '').toContain('工具调用轮次');
     expect(container.textContent ?? '').toContain('自动压缩');
     expect(container.textContent ?? '').toContain('AI 文字大小');
     expect(container.textContent ?? '').not.toContain('px');
@@ -228,9 +231,17 @@ describe('SettingsPanel — 三项一级菜单 (#62-#65)', () => {
     expect(container.textContent ?? '').not.toContain('超过轮次后');
     expect(container.textContent ?? '').not.toContain('调整旁注正文和输入框文字');
     expect(container.querySelector('#settings-context-window')).not.toBeNull();
+    expect(container.querySelector('#settings-tool-rounds')).not.toBeNull();
     expect(container.querySelector('#settings-ai-text-size')).not.toBeNull();
-    expect(container.querySelector('.astryx-number-input input')?.getAttribute('min')).toBe('13');
-    expect(container.querySelector('.astryx-number-input input')?.getAttribute('max')).toBe('20');
+
+    const numberInputs = Array.from(container.querySelectorAll('.astryx-number-input input'));
+    expect(numberInputs).toHaveLength(3);
+    expect(numberInputs.find(input => input.closest('#settings-context-window'))?.getAttribute('min')).toBe('1');
+    expect(numberInputs.find(input => input.closest('#settings-context-window'))?.getAttribute('max')).toBe('100');
+    expect(numberInputs.find(input => input.closest('#settings-tool-rounds'))?.getAttribute('min')).toBe('2');
+    expect(numberInputs.find(input => input.closest('#settings-tool-rounds'))?.getAttribute('max')).toBe('24');
+    expect(numberInputs.find(input => input.closest('#settings-ai-text-size'))?.getAttribute('min')).toBe('13');
+    expect(numberInputs.find(input => input.closest('#settings-ai-text-size'))?.getAttribute('max')).toBe('20');
 
     const increaseTextSize = container.querySelector('button[aria-label="增大 AI 文字大小"]') as HTMLButtonElement;
     expect(increaseTextSize).not.toBeNull();

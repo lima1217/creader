@@ -15,6 +15,7 @@ const baseSettings: Settings = {
   lineHeight: 1.6,
   aiTextSize: 14,
   aiContextWindow: 20,
+  aiToolRounds: 8,
   aiAutoSummarize: false,
   aiThinkingEnabled: false,
   readingMemoryAutoIngest: false,

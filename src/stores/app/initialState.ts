@@ -1,6 +1,11 @@
 import type { Settings, Library, ReadingProgress } from '../../types';
 import { loadStored, STORAGE_KEYS } from '../../services/LocalStore';
 import { readThemePlaceholder } from '../../services/themePlaceholder';
+import {
+  clampAIContextWindow,
+  clampAITextSize,
+  clampAIToolRounds,
+} from '../../domain/aiSettingsBounds';
 
 export type BookProgressById = Record<string, ReadingProgress & { lastReadAt: number }>;
 
@@ -13,6 +18,7 @@ export const DEFAULT_SETTINGS: Settings = {
   readingMemoryAutoIngest: true,
   aiTextSize: 14,
   aiContextWindow: 20,
+  aiToolRounds: 10,
   aiAutoSummarize: true,
   aiThinkingEnabled: false,
 };
@@ -53,10 +59,6 @@ function asStoredEntry(value: unknown): (ReadingProgress & { lastReadAt: number 
   return null;
 }
 
-function normalizeAIContextWindow(value: unknown, fallback: Settings['aiContextWindow']): Settings['aiContextWindow'] {
-  return value === 5 || value === 20 || value === 40 ? value : fallback;
-}
-
 export { normalizeLibrary } from '../../domain/libraryNormalization';
 
 export function getEmptyLibrary(): Library {
@@ -70,9 +72,14 @@ export function resolveSettings(stored: Partial<Settings>, defaultSettings: Sett
     // Sepia was retired in Astryx Phase 1; coerce any stale persisted value to light.
     theme: stored.theme === 'dark' ? 'dark' : 'light',
     aiTextSize: typeof stored.aiTextSize === 'number'
-      ? Math.min(20, Math.max(13, stored.aiTextSize))
+      ? clampAITextSize(stored.aiTextSize)
       : defaultSettings.aiTextSize,
-    aiContextWindow: normalizeAIContextWindow(stored.aiContextWindow, defaultSettings.aiContextWindow),
+    aiContextWindow: typeof stored.aiContextWindow === 'number'
+      ? clampAIContextWindow(stored.aiContextWindow)
+      : defaultSettings.aiContextWindow,
+    aiToolRounds: typeof stored.aiToolRounds === 'number'
+      ? clampAIToolRounds(stored.aiToolRounds)
+      : defaultSettings.aiToolRounds,
     aiAutoSummarize: typeof stored.aiAutoSummarize === 'boolean'
       ? stored.aiAutoSummarize
       : defaultSettings.aiAutoSummarize,

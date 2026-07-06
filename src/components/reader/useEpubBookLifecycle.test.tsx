@@ -76,6 +76,7 @@ function Harness({
       readingMemoryAutoIngest: false,
       aiTextSize: 14,
       aiContextWindow: 20,
+      aiToolRounds: 8,
       aiAutoSummarize: false,
       aiThinkingEnabled: false,
     },

@@ -67,7 +67,8 @@ export interface Settings {
   readingMemoryPath?: string;
   readingMemoryAutoIngest: boolean;
   aiTextSize: number; // 13-20
-  aiContextWindow: 5 | 20 | 40;
+  aiContextWindow: number;
+  aiToolRounds: number;
   aiAutoSummarize: boolean;
   aiThinkingEnabled: boolean;
 }

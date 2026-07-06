@@ -52,7 +52,8 @@ describe('visual CSS contracts', () => {
 
   it('groups conversation behavior controls and styles quick prompt edit fields', () => {
     expect(settingsPanelCss).toContain('.settings-conversation-behavior');
-    expect(settingsPanelCss).toContain('.settings-text-size-field');
+    expect(settingsPanelCss).toContain('.settings-conversation-grid');
+    expect(settingsPanelCss).toContain('.settings-stepper-field');
     expect(textSizeControlCss).toContain('.text-size-step');
     expect(textSizeControlCss).toContain('.text-size-control');
     expect(settingsPanelCss).toContain('.settings-dialog .astryx-switch-field[data-label-spacing="spread"]');

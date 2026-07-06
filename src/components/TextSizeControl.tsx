@@ -1,5 +1,4 @@
-import { Button } from '@astryxdesign/core/Button';
-import { NumberInput } from '@astryxdesign/core/NumberInput';
+import { NumberStepperControl } from './NumberStepperControl';
 import './TextSizeControl.css';
 
 export interface TextSizeControlProps {
@@ -14,10 +13,6 @@ export interface TextSizeControlProps {
     id?: string;
 }
 
-function clampTextSize(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-}
-
 export function TextSizeControl({
     value,
     min,
@@ -29,44 +24,19 @@ export function TextSizeControl({
     className,
     id,
 }: TextSizeControlProps) {
-    const adjust = (delta: number) => {
-        onChange(clampTextSize(value + delta, min, max));
-    };
-
     return (
-        <div
-            className={['text-size-control', className].filter(Boolean).join(' ')}
+        <NumberStepperControl
             id={id}
-        >
-            <Button
-                className="text-size-step"
-                variant="secondary"
-                size="sm"
-                label="A-"
-                aria-label={decrementAriaLabel}
-                onClick={() => adjust(-1)}
-                isDisabled={value <= min}
-            />
-            <NumberInput
-                label={inputLabel}
-                isLabelHidden
-                value={value}
-                onChange={next => onChange(clampTextSize(next, min, max))}
-                min={min}
-                max={max}
-                step={1}
-                isIntegerOnly
-                size="sm"
-            />
-            <Button
-                className="text-size-step"
-                variant="secondary"
-                size="sm"
-                label="A+"
-                aria-label={incrementAriaLabel}
-                onClick={() => adjust(1)}
-                isDisabled={value >= max}
-            />
-        </div>
+            className={className}
+            value={value}
+            min={min}
+            max={max}
+            onChange={onChange}
+            inputLabel={inputLabel}
+            decrementAriaLabel={decrementAriaLabel}
+            incrementAriaLabel={incrementAriaLabel}
+            decrementLabel="A-"
+            incrementLabel="A+"
+        />
     );
 }

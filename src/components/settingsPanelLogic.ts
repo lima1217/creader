@@ -5,17 +5,6 @@ import {
 } from './ai/quickActions';
 import type { QuickActionConfig } from './ai/quickActions';
 
-// AI text-size clamp bounds (matches the historical inline clamp in SettingsPanel).
-export const AI_TEXT_SIZE_MIN = 13;
-export const AI_TEXT_SIZE_MAX = 20;
-
-/**
- * Clamp an AI text-size value to the allowed range. Pure: input -> output.
- */
-export function clampAITextSize(size: number): number {
-  return Math.min(AI_TEXT_SIZE_MAX, Math.max(AI_TEXT_SIZE_MIN, size));
-}
-
 /**
  * Clear the configured Reading Memory repository path while leaving the user's
  * auto-ingest preference intact. Disconnect never deletes local Markdown

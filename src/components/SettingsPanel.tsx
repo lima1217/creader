@@ -12,14 +12,14 @@ import { Button } from '@astryxdesign/core/Button';
 import { ButtonGroup } from '@astryxdesign/core/ButtonGroup';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Tab, TabList } from '@astryxdesign/core/TabList';
-import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { TextSizeControl } from './TextSizeControl';
+import { NumberStepperControl } from './NumberStepperControl';
 import { useSettingsStore } from '../stores/settingsStore';
 import { ensureReadingMemoryRepository } from '../services/ReadingMemory';
 import { isTauriRuntime } from '../utils/tauri';
 import { createLogger } from '../utils/logger';
 import { useAIProviders } from './ai/hooks/useAIProviders';
-import type { AIProviderConfig, AIProviderStatus, Settings } from '../types';
+import type { AIProviderConfig, AIProviderStatus } from '../types';
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, PlusIcon } from './ai/icons';
 import {
     getMissingDefaultQuickActions,
@@ -30,9 +30,17 @@ import type { QuickActionConfig } from './ai/quickActions';
 import {
     AI_TEXT_SIZE_MAX,
     AI_TEXT_SIZE_MIN,
+    AI_CONTEXT_WINDOW_MAX,
+    AI_CONTEXT_WINDOW_MIN,
+    AI_TOOL_ROUNDS_MAX,
+    AI_TOOL_ROUNDS_MIN,
+    clampAIContextWindow,
+    clampAITextSize,
+    clampAIToolRounds,
+} from '../domain/aiSettingsBounds';
+import {
     addQuickAction,
     applyProviderTemplate,
-    clampAITextSize,
     commitQuickActionDraft,
     createCustomQuickAction,
     formatQuickPromptStatus,
@@ -70,12 +78,6 @@ type ProviderTestState = {
     status: 'loading' | 'success' | 'error';
     message: string;
 };
-
-const contextWindowOptions = [
-    { value: 5, label: '近 5 条', hint: '快' },
-    { value: 20, label: '近 20 条', hint: '平衡' },
-    { value: 40, label: '近 40 条', hint: '长对话' },
-] as const;
 
 type SettingsTabId = 'ai' | 'reading-memory' | 'quick-prompts';
 
@@ -513,31 +515,41 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             <section className="settings-subsection settings-subsection-separated">
                                 <div className="settings-section-title">对话行为</div>
                                 <div className="settings-conversation-behavior">
-                                    <Field
-                                        className="settings-field settings-conversation-control settings-conversation-primary"
-                                        inputID="settings-context-window"
-                                        label="上下文轮次"
-                                    >
-                                        <div id="settings-context-window">
-                                            <SegmentedControl
-                                                label="AI 上下文轮次"
-                                                size="sm"
-                                                layout="fill"
-                                                value={String(settings.aiContextWindow)}
-                                                onChange={value => setSettings({ ...settings, aiContextWindow: Number(value) as Settings['aiContextWindow'] })}
-                                            >
-                                                {contextWindowOptions.map(option => (
-                                                    <SegmentedControlItem
-                                                        key={option.value}
-                                                        value={String(option.value)}
-                                                        label={option.label}
-                                                    />
-                                                ))}
-                                            </SegmentedControl>
-                                        </div>
-                                    </Field>
-
                                     <div className="settings-conversation-grid">
+                                        <Field
+                                            className="settings-field settings-conversation-control settings-stepper-field"
+                                            inputID="settings-context-window"
+                                            label="上下文轮次"
+                                        >
+                                            <NumberStepperControl
+                                                id="settings-context-window"
+                                                value={settings.aiContextWindow}
+                                                min={AI_CONTEXT_WINDOW_MIN}
+                                                max={AI_CONTEXT_WINDOW_MAX}
+                                                onChange={value => setSettings({ ...settings, aiContextWindow: clampAIContextWindow(value) })}
+                                                inputLabel="上下文轮次"
+                                                decrementAriaLabel="减少上下文轮次"
+                                                incrementAriaLabel="增加上下文轮次"
+                                            />
+                                        </Field>
+
+                                        <Field
+                                            className="settings-field settings-conversation-control settings-stepper-field"
+                                            inputID="settings-tool-rounds"
+                                            label="工具调用轮次"
+                                        >
+                                            <NumberStepperControl
+                                                id="settings-tool-rounds"
+                                                value={settings.aiToolRounds}
+                                                min={AI_TOOL_ROUNDS_MIN}
+                                                max={AI_TOOL_ROUNDS_MAX}
+                                                onChange={value => setSettings({ ...settings, aiToolRounds: clampAIToolRounds(value) })}
+                                                inputLabel="工具调用轮次"
+                                                decrementAriaLabel="减少工具调用轮次"
+                                                incrementAriaLabel="增加工具调用轮次"
+                                            />
+                                        </Field>
+
                                         <div className="settings-conversation-control settings-conversation-switch-control">
                                             <Switch
                                                 label="自动压缩"
@@ -549,7 +561,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                         </div>
 
                                         <Field
-                                            className="settings-field settings-conversation-control settings-text-size-field"
+                                            className="settings-field settings-conversation-control settings-stepper-field"
                                             inputID="settings-ai-text-size"
                                             label="AI 文字大小"
                                         >

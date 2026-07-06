@@ -16,7 +16,10 @@ use crate::reading_memory::{
 
 pub(crate) static AI_CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
 const AI_TIMEOUT_SECS: u64 = 120;
-const MAX_TOOL_ROUNDS: usize = 4;
+/// Default tool rounds when the client omits `max_tool_rounds`.
+const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
+const MIN_MAX_TOOL_ROUNDS: usize = 2;
+const HARD_MAX_TOOL_ROUNDS: usize = 24;
 
 // ============================================================
 // Chat request / response structures
@@ -29,21 +32,23 @@ pub struct ChatRequest {
     pub book_title: Option<String>,
     #[serde(default)]
     pub book_author: Option<String>,
-    #[serde(default, rename = "bookFilePath")]
+    #[serde(default)]
     pub book_file_path: Option<String>,
-    #[serde(default, rename = "sourceChapter")]
+    #[serde(default)]
     pub source_chapter: Option<String>,
-    #[serde(default, rename = "sourceCfi")]
+    #[serde(default)]
     pub source_cfi: Option<String>,
-    #[serde(default, rename = "sourceProgress")]
+    #[serde(default)]
     pub source_progress: Option<f64>,
-    #[serde(default, rename = "readingMemoryPath")]
+    #[serde(default)]
     pub reading_memory_path: Option<String>,
     pub chapter_content: Option<String>,
     pub conversation_summary: Option<String>,
     pub history: Option<Vec<ChatHistoryItem>>,
-    #[serde(default, rename = "thinkingEnabled")]
+    #[serde(default)]
     pub thinking_enabled: Option<bool>,
+    #[serde(default)]
+    pub max_tool_rounds: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -731,6 +736,12 @@ fn tool_activity_detail(name: &str, status: &str, arguments: &str) -> Option<Str
     }
 }
 
+fn resolve_max_tool_rounds(limit: Option<usize>) -> usize {
+    limit
+        .unwrap_or(DEFAULT_MAX_TOOL_ROUNDS)
+        .clamp(MIN_MAX_TOOL_ROUNDS, HARD_MAX_TOOL_ROUNDS)
+}
+
 fn validated_book_path(app: &tauri::AppHandle, book_file_path: &str) -> Result<PathBuf, String> {
     if !validate_book_path_inner(app, book_file_path) {
         return Err("Book file path is not allowed or does not exist".to_string());
@@ -864,6 +875,7 @@ pub(crate) async fn chat_completion_stream_typed<F, G>(
     tool_ctx: Option<&AiToolContext>,
     app: Option<&tauri::AppHandle>,
     thinking_enabled: bool,
+    max_tool_rounds: usize,
     mut on_chunk: F,
     mut on_tool_activity: G,
 ) -> Result<String, String>
@@ -885,13 +897,15 @@ where
     let client = openai_client(config, api_key);
     let mut messages = build_initial_messages(prompt);
     let tools = tool_ctx.map(|_| reading_ai_tools());
+    let mut tools_active = tools.is_some();
+    let mut tool_rounds_used = 0usize;
     let chapter_cache = Arc::new(BookTextCache::with_default_capacity());
     let deadline = tokio::time::Instant::now() + Duration::from_secs(AI_TIMEOUT_SECS);
     let chat = client.chat();
 
     let mut full_text = String::new();
 
-    for round in 0..MAX_TOOL_ROUNDS {
+    loop {
         if AI_CANCEL_FLAG.load(Ordering::Relaxed) {
             break;
         }
@@ -900,8 +914,8 @@ where
             messages.clone(),
             &config.model,
             true,
-            1.0,
-            tools.clone(),
+            0.7,
+            if tools_active { tools.clone() } else { None },
             thinking_enabled,
         )?;
 
@@ -954,6 +968,10 @@ where
             break;
         }
 
+        if !tools_active {
+            break;
+        }
+
         let resolved_calls = tool_accumulator.into_resolved_calls();
         if resolved_calls.is_empty() {
             break;
@@ -989,6 +1007,7 @@ where
             },
         ));
 
+        tool_rounds_used += 1;
         for (id, name, arguments) in resolved_calls {
             let detail = tool_activity_detail(&name, "started", &arguments);
             on_tool_activity(&name, "started", detail);
@@ -1014,10 +1033,8 @@ where
             ));
         }
 
-        if round + 1 >= MAX_TOOL_ROUNDS {
-            full_text.push_str("\n\n[Tool loop limit reached]");
-            on_chunk("\n\n[Tool loop limit reached]".to_string());
-            break;
+        if tool_rounds_used >= max_tool_rounds {
+            tools_active = false;
         }
     }
 
@@ -1033,13 +1050,14 @@ async fn chat_completion_stream(
     tool_ctx: Option<&AiToolContext>,
     app: Option<&tauri::AppHandle>,
     thinking_enabled: bool,
+    max_tool_rounds: usize,
     on_event: &Channel<StreamEvent>,
 ) -> Result<String, String> {
     let _ = on_event.send(StreamEvent::Started {
         provider: config.name.clone(),
     });
 
-    chat_completion_stream_typed(prompt, config, api_key, tool_ctx, app, thinking_enabled, |piece| {
+    chat_completion_stream_typed(prompt, config, api_key, tool_ctx, app, thinking_enabled, max_tool_rounds, |piece| {
         let _ = on_event.send(StreamEvent::Chunk { text: piece });
     }, |name, status, detail| {
         let _ = on_event.send(StreamEvent::ToolActivity {
@@ -1066,7 +1084,7 @@ pub(crate) async fn chat_completion_oneshot_typed(
     api_key: &str,
 ) -> Result<String, String> {
     let client = openai_client(config, api_key);
-    let request = build_openai_chat_request_from_prompt(prompt, &config.model, None, false, 1.0)?;
+    let request = build_openai_chat_request_from_prompt(prompt, &config.model, None, false, 0.3)?;
 
     let chat = client.chat();
     let response = tokio::time::timeout(Duration::from_secs(AI_TIMEOUT_SECS), chat.create(request))
@@ -1157,6 +1175,7 @@ pub(crate) async fn chat_with_ai_streaming(
     let prompt = build_prompt(&request);
     let tool_ctx = AiToolContext::from_chat_request(&request);
     let thinking_enabled = request.thinking_enabled.unwrap_or(false);
+    let max_tool_rounds = resolve_max_tool_rounds(request.max_tool_rounds);
 
     match chat_completion_stream(
         &prompt,
@@ -1165,6 +1184,7 @@ pub(crate) async fn chat_with_ai_streaming(
         Some(&tool_ctx),
         Some(&app),
         thinking_enabled,
+        max_tool_rounds,
         &on_event,
     )
     .await
@@ -1460,6 +1480,7 @@ mod tests {
             Some(&tool_ctx),
             None,
             false,
+            DEFAULT_MAX_TOOL_ROUNDS,
             |piece| chunks.push(piece),
             |_, _, _| {},
         )
@@ -1506,6 +1527,7 @@ mod tests {
             Some(&tool_ctx),
             None,
             false,
+            DEFAULT_MAX_TOOL_ROUNDS,
             |_| {},
             |_, _, _| {},
         )
@@ -1540,6 +1562,7 @@ mod tests {
             Some(&tool_ctx),
             None,
             false,
+            DEFAULT_MAX_TOOL_ROUNDS,
             |_| {},
             |_, _, _| {},
         )
@@ -1559,14 +1582,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn typed_stream_stops_safely_at_max_tool_rounds() {
+    async fn typed_stream_disables_tools_after_max_rounds_and_finishes() {
         AI_CANCEL_FLAG.store(false, Ordering::Relaxed);
-        let (base_url, request_rx, server) = spawn_sequential_chat_server(vec![
-            TOOL_CALL_ROUND,
-            TOOL_CALL_ROUND,
-            TOOL_CALL_ROUND,
-            TOOL_CALL_ROUND,
-        ]);
+        let limit = 4usize;
+        let mut responses = vec![TOOL_CALL_ROUND; limit];
+        responses.push(FINAL_TEXT_ROUND);
+        let (base_url, request_rx, server) = spawn_sequential_chat_server(responses);
         let config = AIProviderConfig {
             id: "local".to_string(),
             name: "Local".to_string(),
@@ -1582,14 +1603,15 @@ mod tests {
             Some(&tool_ctx),
             None,
             false,
+            limit,
             |_| {},
             |_, _, _| {},
         )
         .await
         .unwrap();
 
-        assert!(full_text.ends_with("[Tool loop limit reached]"));
-        assert_eq!(request_rx.recv().unwrap().len(), MAX_TOOL_ROUNDS);
+        assert_eq!(full_text, "Final answer");
+        assert_eq!(request_rx.recv().unwrap().len(), limit + 1);
         server.join().unwrap();
     }
 
@@ -1647,6 +1669,51 @@ mod tests {
     }
 
     #[test]
+    fn chat_request_deserializes_frontend_snake_case_fields() {
+        let json = r#"{
+            "message": "What happens in chapter 2?",
+            "book_title": "Test Book",
+            "book_author": "Author",
+            "book_file_path": "/tmp/book.epub",
+            "source_chapter": "Chapter 1",
+            "source_cfi": "epubcfi(/6/2)",
+            "source_progress": 12.5,
+            "reading_memory_path": "/tmp/memory",
+            "thinking_enabled": true
+        }"#;
+
+        let request: ChatRequest = serde_json::from_str(json).expect("deserialize chat request");
+        assert_eq!(request.message, "What happens in chapter 2?");
+        assert_eq!(request.book_title.as_deref(), Some("Test Book"));
+        assert_eq!(request.book_author.as_deref(), Some("Author"));
+        assert_eq!(request.book_file_path.as_deref(), Some("/tmp/book.epub"));
+        assert_eq!(request.source_chapter.as_deref(), Some("Chapter 1"));
+        assert_eq!(request.source_cfi.as_deref(), Some("epubcfi(/6/2)"));
+        assert_eq!(request.source_progress, Some(12.5));
+        assert_eq!(request.reading_memory_path.as_deref(), Some("/tmp/memory"));
+        assert_eq!(request.thinking_enabled, Some(true));
+
+        let tool_ctx = AiToolContext::from_chat_request(&request);
+        assert_eq!(tool_ctx.book_file_path.as_deref(), Some("/tmp/book.epub"));
+        assert_eq!(tool_ctx.source_chapter.as_deref(), Some("Chapter 1"));
+    }
+
+    #[test]
+    fn resolve_max_tool_rounds_clamps_and_defaults() {
+        assert_eq!(resolve_max_tool_rounds(None), DEFAULT_MAX_TOOL_ROUNDS);
+        assert_eq!(resolve_max_tool_rounds(Some(12)), 12);
+        assert_eq!(resolve_max_tool_rounds(Some(1)), MIN_MAX_TOOL_ROUNDS);
+        assert_eq!(resolve_max_tool_rounds(Some(99)), HARD_MAX_TOOL_ROUNDS);
+    }
+
+    #[test]
+    fn chat_request_deserializes_max_tool_rounds_from_frontend() {
+        let json = r#"{ "message": "read more", "max_tool_rounds": 16 }"#;
+        let request: ChatRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(resolve_max_tool_rounds(request.max_tool_rounds), 16);
+    }
+
+    #[test]
     fn build_prompt_includes_context_and_truncates() {
         let request = ChatRequest {
             message: "What does this mean?".to_string(),
@@ -1675,6 +1742,7 @@ mod tests {
                 },
             ]),
             thinking_enabled: None,
+            max_tool_rounds: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1720,6 +1788,7 @@ mod tests {
             conversation_summary: None,
             history: None,
             thinking_enabled: None,
+            max_tool_rounds: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1751,6 +1820,7 @@ mod tests {
             conversation_summary: None,
             history: None,
             thinking_enabled: None,
+            max_tool_rounds: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1775,6 +1845,7 @@ mod tests {
             conversation_summary: None,
             history: None,
             thinking_enabled: None,
+            max_tool_rounds: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1799,6 +1870,7 @@ mod tests {
             conversation_summary: None,
             history: None,
             thinking_enabled: None,
+            max_tool_rounds: None,
         };
 
         let prompt = build_prompt(&request);
@@ -1928,7 +2000,7 @@ mod tests {
         let mut chunks = Vec::new();
 
         let full_text =
-            chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, false, |piece| {
+            chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, false, DEFAULT_MAX_TOOL_ROUNDS, |piece| {
                 chunks.push(piece)
             }, |_, _, _| {})
             .await
@@ -1970,6 +2042,7 @@ mod tests {
             None,
             None,
             false,
+            DEFAULT_MAX_TOOL_ROUNDS,
             |piece| chunks.push(piece),
             |_, _, _| {},
         )
@@ -2123,7 +2196,7 @@ mod tests {
             model: "reader-model".to_string(),
         };
 
-        let err = chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, false, |_| {}, |_, _, _| {})
+        let err = chat_completion_stream_typed("prompt text", &config, "secret-key", None, None, false, DEFAULT_MAX_TOOL_ROUNDS, |_| {}, |_, _, _| {})
             .await
             .unwrap_err();
 

@@ -190,11 +190,7 @@
 }
 
 .settings-conversation-behavior {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    padding: 0;
-    overflow: hidden;
+    padding: var(--spacing-4);
     background: var(--bg-secondary);
     border: 0;
     border-radius: var(--radius-element);
@@ -202,58 +198,27 @@
 
 .settings-conversation-control {
     min-width: 0;
-    padding: var(--spacing-3) var(--spacing-4);
+    padding: 0;
     margin-bottom: 0;
 }
 
 .settings-conversation-control.settings-field {
-    min-height: 0;
-}
-
-.settings-conversation-primary.settings-field {
-    align-items: center;
-    flex-direction: row;
-    gap: var(--spacing-4);
-    justify-content: space-between;
-    min-height: calc(var(--spacing-9) + var(--spacing-5));
-}
-
-.settings-conversation-primary.settings-field > .astryx-field-label {
-    flex: 0 0 auto;
-}
-
-.settings-conversation-primary.settings-field > div {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
-.settings-conversation-primary #settings-context-window {
-    flex: 1;
-    min-width: min(100%, calc(var(--spacing-9) * 8));
-}
-
-.settings-conversation-primary .astryx-segmented-control {
-    width: 100%;
-}
-
-.settings-conversation-primary .astryx-segmented-control-item span {
-    white-space: nowrap;
+    min-height: var(--spacing-12);
+    margin-bottom: 0;
 }
 
 .settings-conversation-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(calc(var(--spacing-9) * 5), 1fr);
-    border-top: var(--border-width) solid var(--border-soft);
-}
-
-.settings-conversation-grid > .settings-conversation-control + .settings-conversation-control {
-    border-left: var(--border-width) solid var(--border-soft);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-4) var(--spacing-5);
+    align-items: center;
 }
 
 .settings-conversation-switch-control {
     display: flex;
     align-items: center;
-    min-height: calc(var(--spacing-9) + var(--spacing-3));
+    min-height: var(--spacing-12);
+    padding-block: var(--spacing-1);
 }
 
 .settings-dialog .astryx-switch-field[data-label-spacing="spread"] {
@@ -281,17 +246,16 @@
     box-shadow: var(--shadow-popover);
 }
 
-.settings-text-size-field {
+.settings-stepper-field {
     align-items: center;
     flex-direction: row;
     gap: var(--spacing-3);
     justify-content: space-between;
-    min-height: calc(var(--spacing-9) + var(--spacing-3));
 }
 
-.settings-text-size-field .astryx-field-label,
-.settings-text-size-field .astryx-field-copy,
-.settings-text-size-field .astryx-field-text {
+.settings-stepper-field .astryx-field-label,
+.settings-stepper-field .astryx-field-copy,
+.settings-stepper-field .astryx-field-text {
     min-width: 0;
 }
 
@@ -774,26 +738,21 @@
         flex-direction: column;
     }
 
-    .settings-conversation-primary {
-        align-items: stretch;
-        flex-direction: column;
+    .settings-conversation-behavior {
+        padding: var(--spacing-3);
     }
 
     .settings-conversation-grid {
         grid-template-columns: 1fr;
+        gap: var(--spacing-4);
     }
 
-    .settings-conversation-grid > .settings-conversation-control + .settings-conversation-control {
-        border-top: var(--border-width) solid var(--border-soft);
-        border-left: 0;
-    }
-
-    .settings-text-size-field {
+    .settings-stepper-field {
         align-items: stretch;
         flex-direction: column;
     }
 
-    .settings-text-size-field .text-size-control {
+    .settings-stepper-field .text-size-control {
         justify-content: flex-start;
         width: 100%;
     }

@@ -3,12 +3,9 @@ import type { AIProviderConfig, Settings } from '../types';
 import type { QuickActionConfig } from './ai/quickActions';
 import { defaultQuickActions } from './ai/quickActions';
 import {
-  AI_TEXT_SIZE_MAX,
-  AI_TEXT_SIZE_MIN,
   QUICK_PROMPT_DIRECT_BUTTON_COUNT,
   addQuickAction,
   applyProviderTemplate,
-  clampAITextSize,
   clearReadingMemoryPath,
   commitQuickActionDraft,
   createCustomQuickAction,
@@ -39,6 +36,7 @@ function createSettings(overrides: Partial<Settings> = {}): Settings {
     readingMemoryAutoIngest: true,
     aiTextSize: 14,
     aiContextWindow: 20,
+    aiToolRounds: 8,
     aiAutoSummarize: true,
     aiThinkingEnabled: false,
     ...overrides,
@@ -46,20 +44,6 @@ function createSettings(overrides: Partial<Settings> = {}): Settings {
 }
 
 describe('settingsPanelLogic', () => {
-  describe('clampAITextSize', () => {
-    it('clamps below the minimum to the minimum', () => {
-      expect(clampAITextSize(10)).toBe(AI_TEXT_SIZE_MIN);
-    });
-
-    it('clamps above the maximum to the maximum', () => {
-      expect(clampAITextSize(30)).toBe(AI_TEXT_SIZE_MAX);
-    });
-
-    it('passes through in-range values unchanged', () => {
-      expect(clampAITextSize(16)).toBe(16);
-    });
-  });
-
   describe('validateProviderDraft', () => {
     it('returns null for a complete draft', () => {
       expect(validateProviderDraft(createDraft())).toBeNull();
