@@ -11,6 +11,9 @@ const themeMock = vi.hoisted(() => ({ applyEpubTheme: vi.fn() }));
 vi.mock('./epubTheme', () => ({
   applyEpubTheme: themeMock.applyEpubTheme,
 }));
+vi.mock('./useFontFaceCss', () => ({
+  useFontFaceCss: () => '',
+}));
 vi.mock('./fontCatalog', () => ({
   resolveFontStack: (key: string) => (
     key === 'Georgia' || key === 'serif-latin'
@@ -23,6 +26,7 @@ const baseSettings: Settings = {
   theme: 'light',
   fontSize: 16,
   fontFamily: 'serif-latin',
+  customFonts: [],
   lineHeight: 1.6,
   readingMemoryAutoIngest: false,
   aiTextSize: 14,

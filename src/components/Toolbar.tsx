@@ -19,7 +19,7 @@ import {
     EpubTocIcon,
 } from './icons/icons';
 import { TextSizeControl } from './TextSizeControl';
-import { FONT_CATALOG, normalizeFontFamilyKey } from './reader/fontCatalog';
+import { listFontCatalogEntries, normalizeFontFamilyKey } from './reader/fontCatalog';
 import { createLogger } from '../utils/logger';
 import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import './Toolbar.css';
@@ -48,7 +48,8 @@ export function Toolbar() {
         : '使用本章';
 
     const themes: Theme[] = ['light', 'dark'];
-    const fontFamilyKey = normalizeFontFamilyKey(settings.fontFamily);
+    const fontFamilyKey = normalizeFontFamilyKey(settings.fontFamily, settings.customFonts);
+    const fontOptions = listFontCatalogEntries(settings.customFonts);
     const themeIcons: Record<Theme, React.ReactNode> = {
         light: <SunIcon size={18} strokeWidth={1.9} />,
         dark: <MoonIcon size={18} strokeWidth={1.9} />,
@@ -158,7 +159,7 @@ export function Toolbar() {
                                     isLabelHidden
                                     size="sm"
                                     value={fontFamilyKey}
-                                    options={FONT_CATALOG.map(({ key, label }) => ({ value: key, label }))}
+                                    options={fontOptions.map(({ key, label }) => ({ value: key, label }))}
                                     onChange={(key) => setSettings({ ...settings, fontFamily: key })}
                                 />
                             </div>

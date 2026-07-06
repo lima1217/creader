@@ -1,14 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import { applyEpubTheme, EPUB_LINE_HEIGHT } from './epubTheme';
 import { paperBodyPalette } from '../../theme/paperTheme';
 
 function captureThemeDefault() {
-  const captured: Record<string, Record<string, string>> = {};
+  const captured: {
+    styles: Record<string, Record<string, string>>;
+    options?: { fontFaceCss?: string };
+  } = { styles: {} };
   const rendition = {
     themes: {
-      default: (styles: Record<string, Record<string, string>>) => {
-        Object.assign(captured, styles);
+      default: (
+        styles: Record<string, Record<string, string>>,
+        options?: { fontFaceCss?: string },
+      ) => {
+        Object.assign(captured.styles, styles);
+        captured.options = options;
       },
     },
   } as unknown as ReaderRendition;
@@ -32,12 +39,12 @@ describe('applyEpubTheme', () => {
 
     applyEpubTheme(rendition, { ...baseOptions, theme: 'light' });
 
-    expect(captured.body.color).toBe(`${paperBodyPalette.light.text} !important`);
-    expect(captured.body.background).toBe(`${paperBodyPalette.light.background} !important`);
-    expect(captured.a.color).toBe(`${paperBodyPalette.light.link} !important`);
-    expect(captured.p).toEqual({ 'margin-bottom': '1em' });
-    expect(captured['span, div']).toBeUndefined();
-    expect(captured['h1, h2, h3, h4, h5, h6']).toBeUndefined();
+    expect(captured.styles.body.color).toBe(`${paperBodyPalette.light.text} !important`);
+    expect(captured.styles.body.background).toBe(`${paperBodyPalette.light.background} !important`);
+    expect(captured.styles.a.color).toBe(`${paperBodyPalette.light.link} !important`);
+    expect(captured.styles.p).toEqual({ 'margin-bottom': '1em' });
+    expect(captured.styles['span, div']).toBeUndefined();
+    expect(captured.styles['h1, h2, h3, h4, h5, h6']).toBeUndefined();
   });
 
   it('injects the dark palette so book text/links match chrome in dark mode', () => {
@@ -45,9 +52,9 @@ describe('applyEpubTheme', () => {
 
     applyEpubTheme(rendition, { ...baseOptions, theme: 'dark' });
 
-    expect(captured.body.color).toBe(`${paperBodyPalette.dark.text} !important`);
-    expect(captured.body.background).toBe(`${paperBodyPalette.dark.background} !important`);
-    expect(captured.a.color).toBe(`${paperBodyPalette.dark.link} !important`);
+    expect(captured.styles.body.color).toBe(`${paperBodyPalette.dark.text} !important`);
+    expect(captured.styles.body.background).toBe(`${paperBodyPalette.dark.background} !important`);
+    expect(captured.styles.a.color).toBe(`${paperBodyPalette.dark.link} !important`);
   });
 
   it('keeps the body background opaque to cover the engine document canvas', () => {
@@ -55,8 +62,8 @@ describe('applyEpubTheme', () => {
 
     applyEpubTheme(rendition, { ...baseOptions, theme: 'dark' });
 
-    expect(captured.body.background).not.toBe('transparent !important');
-    expect(captured.body.background).toBe(`${paperBodyPalette.dark.background} !important`);
+    expect(captured.styles.body.background).not.toBe('transparent !important');
+    expect(captured.styles.body.background).toBe(`${paperBodyPalette.dark.background} !important`);
   });
 
   it('uses fixed line height and font stack without padding', () => {
@@ -68,10 +75,32 @@ describe('applyEpubTheme', () => {
       theme: 'dark',
     });
 
-    expect(captured.body['font-family']).toBe('Merriweather, Georgia, serif');
-    expect(captured.body['font-size']).toBe('20px');
-    expect(captured.body['line-height']).toBe(String(EPUB_LINE_HEIGHT));
-    expect(captured.body.padding).toBeUndefined();
-    expect(captured.body.margin).toBe('0 auto !important');
+    expect(captured.styles.body['font-family']).toBe('Merriweather, Georgia, serif');
+    expect(captured.styles.body['font-size']).toBe('20px');
+    expect(captured.styles.body['line-height']).toBe(String(EPUB_LINE_HEIGHT));
+    expect(captured.styles.body.padding).toBeUndefined();
+    expect(captured.styles.body.margin).toBe('0 auto !important');
+  });
+
+  it('forwards font-face css through themes.default', () => {
+    const defaultTheme = vi.fn();
+    const rendition = {
+      themes: { default: defaultTheme },
+    } as unknown as ReaderRendition;
+
+    applyEpubTheme(rendition, {
+      ...baseOptions,
+      theme: 'light',
+      fontFaceCss: '@font-face { font-family: "CReader Literata"; }',
+    });
+
+    expect(defaultTheme).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          'font-family': 'Georgia, "Times New Roman", serif',
+        }),
+      }),
+      { fontFaceCss: '@font-face { font-family: "CReader Literata"; }' },
+    );
   });
 });

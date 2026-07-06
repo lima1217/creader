@@ -1,6 +1,7 @@
 mod ai;
 mod book_files;
 mod book_text;
+mod font_files;
 mod reading_memory;
 
 use std::sync::Arc;
@@ -78,6 +79,8 @@ pub fn run() {
             book_files::validate_book_path,
             book_files::validate_book_paths,
             book_files::find_book_in_library,
+            font_files::read_font_file_base64,
+            font_files::read_bundled_font_base64,
             reading_memory::ensure_reading_memory_repository,
             reading_memory::review_reading_memory_direct,
             reading_memory::write_reading_memory_note,

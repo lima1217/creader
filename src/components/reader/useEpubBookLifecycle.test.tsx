@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Book, NavItem } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
+import { DEFAULT_READING_LAYOUT } from '../../services/reader/readingEngine';
 import { useEpubBookLifecycle } from './useEpubBookLifecycle';
 
 const mocks = vi.hoisted(() => ({
@@ -77,6 +78,7 @@ function Harness({
       theme: 'light',
       fontSize: 16,
       fontFamily: 'Georgia',
+      customFonts: [],
       lineHeight: 1.6,
       readingMemoryAutoIngest: false,
       aiTextSize: 14,
@@ -261,7 +263,7 @@ describe('useEpubBookLifecycle opening critical path', () => {
 
     expect(mocks.setLayout).toHaveBeenCalledWith({
       flow: 'scrolled',
-      maxInlineSize: 700,
+      maxInlineSize: DEFAULT_READING_LAYOUT.maxInlineSize,
       animated: true,
     });
     expect(mocks.setLayout).toHaveBeenCalledBefore(mocks.display);
@@ -287,7 +289,7 @@ describe('useEpubBookLifecycle opening critical path', () => {
 
     expect(instance.rendition.setLayout).toHaveBeenCalledWith({
       flow: 'scrolled',
-      maxInlineSize: 700,
+      maxInlineSize: DEFAULT_READING_LAYOUT.maxInlineSize,
       animated: true,
     });
     expect(mocks.display).toHaveBeenCalledOnce();

@@ -534,6 +534,61 @@
     margin-bottom: var(--spacing-4);
 }
 
+.settings-section-description {
+    margin: 0 0 var(--spacing-3);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+
+.settings-custom-font-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+    margin-bottom: var(--spacing-3);
+}
+
+.settings-custom-font-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-3);
+    padding: var(--spacing-3);
+    background: var(--bg-elevated);
+    border-radius: var(--settings-control-radius);
+}
+
+.settings-custom-font-meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1);
+    min-width: 0;
+}
+
+.settings-custom-font-meta strong {
+    color: var(--text-primary);
+    font-size: var(--font-size-base);
+    font-weight: 600;
+}
+
+.settings-custom-font-meta code {
+    padding: var(--spacing-1) var(--spacing-2);
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border-radius: var(--settings-control-radius);
+    color: var(--text-secondary);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-custom-font-empty {
+    display: block;
+    margin-bottom: var(--spacing-3);
+    color: var(--text-secondary);
+}
+
 .settings-memory-status strong {
     color: var(--text-primary);
     font-size: var(--font-size-base);

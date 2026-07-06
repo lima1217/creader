@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyFoliateManagedStyles,
+  composeFoliateThemeCss,
   toFoliateThemeCss,
   foliateEngineAdapter,
   isScrolledAtBottom,
@@ -27,6 +28,16 @@ describe('foliateEngine theme bridge', () => {
     });
 
     expect(css).toBe('body{color:#111 !important;background:#fff !important;}\na{color:#33526E !important;}');
+  });
+
+  it('prepends @font-face rules before selector blocks', () => {
+    const css = composeFoliateThemeCss(
+      { body: { color: '#111' } },
+      '@font-face { font-family: "CReader Literata"; src: url("data:font/woff2;base64,AA") format("woff2"); }',
+    );
+
+    expect(css.startsWith('@font-face')).toBe(true);
+    expect(css).toContain('body{color:#111;}');
   });
 
   it('uses foliate renderer.setStyles so theme switches refresh the paginator background layer', () => {
@@ -502,7 +513,7 @@ describe('foliateEngine scrolled boundary helpers', () => {
       get end() {
         return 0;
       },
-      get viewSize() {
+      get viewSize(): number {
         throw new TypeError("Cannot read properties of null (reading 'element')");
       },
       atStart: false,

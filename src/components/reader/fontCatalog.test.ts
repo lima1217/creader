@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import type { CustomFontEntry } from '../../types';
 import {
+  BUILTIN_FONT_DEFINITIONS,
   FONT_CATALOG,
+  customFontFamilyKey,
+  fontFamilyNeedsInjection,
+  listFontCatalogEntries,
   normalizeFontFamilyKey,
   resolveFontStack,
 } from './fontCatalog';
+
+const customFonts: CustomFontEntry[] = [
+  { id: 'cf_1', label: '霞鹜文楷', path: '/tmp/LXGWWenKai.woff2' },
+];
 
 describe('fontCatalog', () => {
   it('exposes five whitelist entries with labels', () => {
@@ -23,14 +32,29 @@ describe('fontCatalog', () => {
     ]);
   });
 
+  it('lists builtin and custom entries after the whitelist', () => {
+    const keys = listFontCatalogEntries(customFonts).map((entry) => entry.key);
+    expect(keys).toEqual([
+      'system',
+      'serif-cjk',
+      'sans-cjk',
+      'serif-latin',
+      'sans-latin',
+      'builtin-literata',
+      'custom:cf_1',
+    ]);
+  });
+
   it.each([
     ['system', 'system-ui, -apple-system, "PingFang SC", sans-serif'],
     ['serif-cjk', '"Songti SC", "Source Han Serif SC", Georgia, serif'],
     ['sans-cjk', '"PingFang SC", "Source Han Sans SC", "Helvetica Neue", sans-serif'],
     ['serif-latin', 'Georgia, "Times New Roman", serif'],
     ['sans-latin', '"Helvetica Neue", Arial, sans-serif'],
+    ['builtin-literata', '"CReader Literata", Georgia, "Times New Roman", serif'],
+    ['custom:cf_1', '"CReader Custom cf_1", Georgia, "Times New Roman", serif'],
   ] as const)('resolveFontStack(%s) returns the catalog stack', (key, stack) => {
-    expect(resolveFontStack(key)).toBe(stack);
+    expect(resolveFontStack(key, customFonts)).toBe(stack);
   });
 
   it('migrates legacy Georgia to serif-latin stack', () => {
@@ -41,5 +65,16 @@ describe('fontCatalog', () => {
   it('falls back unknown values to serif-latin', () => {
     expect(normalizeFontFamilyKey('Merriweather')).toBe('serif-latin');
     expect(resolveFontStack('Merriweather')).toBe('Georgia, "Times New Roman", serif');
+  });
+
+  it('drops removed custom font keys to the default whitelist option', () => {
+    expect(normalizeFontFamilyKey('custom:missing', customFonts)).toBe('serif-latin');
+  });
+
+  it('flags builtin and custom keys as injectable', () => {
+    expect(fontFamilyNeedsInjection('serif-latin', customFonts)).toBe(false);
+    expect(fontFamilyNeedsInjection('builtin-literata', customFonts)).toBe(true);
+    expect(fontFamilyNeedsInjection(customFontFamilyKey('cf_1'), customFonts)).toBe(true);
+    expect(BUILTIN_FONT_DEFINITIONS[0]?.faces).toHaveLength(2);
   });
 });

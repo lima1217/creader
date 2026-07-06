@@ -25,7 +25,7 @@ export const EPUB_LINE_HEIGHT = 1.6;
  */
 export function applyEpubTheme(
   rendition: ReaderRendition,
-  options: { theme: Theme; fontStack: string; fontSize: number },
+  options: { theme: Theme; fontStack: string; fontSize: number; fontFaceCss?: string },
 ) {
   const palette = paperBodyPalette[options.theme];
   rendition.themes.default({
@@ -43,5 +43,5 @@ export function applyEpubTheme(
     a: {
       'color': `${palette.link} !important`,
     },
-  });
+  }, { fontFaceCss: options.fontFaceCss });
 }

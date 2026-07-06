@@ -3,8 +3,9 @@ import type { RefObject } from 'react';
 import { readFile } from '@tauri-apps/plugin-fs';
 import type { Settings, Book, NavItem } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
-import { resolveFontStack } from './fontCatalog';
+import { resolveFontStack, fontFamilyNeedsInjection } from './fontCatalog';
 import { applyEpubTheme } from './epubTheme';
+import { resolveFontFaceCss } from '../../services/reader/fontLoader';
 import { foliateEngineAdapter } from '../../services/reader/foliateEngine';
 import { DEFAULT_READING_LAYOUT } from '../../services/reader/readingEngine';
 import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
@@ -88,10 +89,22 @@ export function useEpubBookLifecycle(params: {
         setToc(toc);
         if (onRenditionCreated) onRenditionCreated(rendition);
 
+        const fontStack = resolveFontStack(settings.fontFamily, settings.customFonts);
+        let fontFaceCss = '';
+        if (fontFamilyNeedsInjection(settings.fontFamily, settings.customFonts)) {
+          try {
+            fontFaceCss = await resolveFontFaceCss(settings.fontFamily, settings.customFonts);
+          } catch (error) {
+            logger.warn('Failed to inject reading font faces:', error);
+          }
+          if (cancelled) return;
+        }
+
         applyEpubTheme(rendition, {
           theme: settings.theme,
-          fontStack: resolveFontStack(settings.fontFamily),
+          fontStack,
           fontSize: settings.fontSize,
+          fontFaceCss,
         });
 
         // Pin the engine to the fixed scrolled layout before the first display

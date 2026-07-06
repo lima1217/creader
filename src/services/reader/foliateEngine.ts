@@ -142,6 +142,14 @@ export function toFoliateThemeCss(styles: Record<string, Record<string, string>>
     .join('\n');
 }
 
+export function composeFoliateThemeCss(
+  styles: Record<string, Record<string, string>>,
+  fontFaceCss = '',
+): string {
+  const rules = toFoliateThemeCss(styles);
+  return fontFaceCss ? `${fontFaceCss}\n${rules}` : rules;
+}
+
 export function applyFoliateManagedStyles(renderer: FoliateRenderer | undefined, css: string): boolean {
   if (!renderer?.setStyles) return false;
   renderer.setStyles(css);
@@ -186,12 +194,21 @@ class FoliateRenditionEventBridge {
 class FoliateRendition implements ReadingEngineRendition {
   readonly engineName = 'foliate' as const;
   readonly themes = {
-    default: (styles: Record<string, Record<string, string>>) => {
+    default: (
+      styles: Record<string, Record<string, string>>,
+      options?: { fontFaceCss?: string },
+    ) => {
       this.themeStyles = styles;
+      this.fontFaceCss = options?.fontFaceCss ?? '';
       this.applyTheme();
     },
-    register: (_name: string, styles: Record<string, Record<string, string>>) => {
+    register: (
+      _name: string,
+      styles: Record<string, Record<string, string>>,
+      options?: { fontFaceCss?: string },
+    ) => {
       this.themeStyles = styles;
+      this.fontFaceCss = options?.fontFaceCss ?? '';
       this.applyTheme();
     },
     select: () => {
@@ -204,6 +221,7 @@ class FoliateRendition implements ReadingEngineRendition {
   private readonly boundaryCleanups: Array<() => void> = [];
   private readonly prefetchedSectionIndices = new Set<number>();
   private themeStyles: Record<string, Record<string, string>> = {};
+  private fontFaceCss = '';
   private initialized = false;
   private sectionFraction: number | null = null;
   private boundaryNavLock = false;
@@ -543,12 +561,12 @@ class FoliateRendition implements ReadingEngineRendition {
   }
 
   private applyTheme(): void {
-    const css = toFoliateThemeCss(this.themeStyles);
+    const css = composeFoliateThemeCss(this.themeStyles, this.fontFaceCss);
     applyFoliateManagedStyles(this.view.renderer, css);
     for (const content of this.getContents()) this.applyThemeToDocument(content.document, css);
   }
 
-  private applyThemeToDocument(doc?: Document, css = toFoliateThemeCss(this.themeStyles)): void {
+  private applyThemeToDocument(doc?: Document, css = composeFoliateThemeCss(this.themeStyles, this.fontFaceCss)): void {
     if (!doc) return;
     if (!this.view.renderer?.setStyles) {
       const id = 'creader-foliate-theme';

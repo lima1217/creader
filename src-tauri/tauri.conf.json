@@ -48,6 +48,9 @@
       "icons/icon.ico"
     ],
     "category": "Education",
+    "resources": {
+      "resources/fonts/*": "fonts/"
+    },
     "shortDescription": "A lightweight EPUB reader with AI assistant",
     "longDescription": "CReader is a minimalist EPUB reader built with Tauri. Features include library management, reading progress tracking, dark/light themes, and an AI assistant for discussing your books."
   }

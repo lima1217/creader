@@ -51,6 +51,13 @@ import {
     restoreQuickAction,
     validateProviderDraft,
 } from './settingsPanelLogic';
+import type { CustomFontEntry } from '../types';
+import {
+    customFontFamilyKey,
+    normalizeFontFamilyKey,
+} from './reader/fontCatalog';
+import { clearFontFaceCache } from '../services/reader/fontLoader';
+import { readFontFileBase64 } from '../services/reader/fontFileService';
 import {
     isAiServiceReady,
     resolveProviderCandidate,
@@ -70,6 +77,33 @@ const providerTemplates: Array<{ name: string; baseUrl: string; model: string }>
 
 function newProviderId() {
     return `prov_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function newCustomFontId() {
+    return `cf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function labelFromFontPath(path: string): string {
+    const fileName = path.split(/[/\\]/).pop() ?? path;
+    const base = fileName.replace(/\.(woff2?|ttf|otf)$/i, '');
+    return base || '自定义字体';
+}
+
+function removeCustomFont(
+    settings: ReturnType<typeof useSettingsStore.getState>['settings'],
+    fontId: string,
+) {
+    const nextFonts = settings.customFonts.filter((entry) => entry.id !== fontId);
+    const removedKey = customFontFamilyKey(fontId);
+    const nextFontFamily = settings.fontFamily === removedKey
+        ? normalizeFontFamilyKey('serif-latin', nextFonts)
+        : settings.fontFamily;
+    clearFontFaceCache();
+    return {
+        ...settings,
+        customFonts: nextFonts,
+        fontFamily: nextFontFamily,
+    };
 }
 
 // Session-only UI state for an explicit AI Service connection test. Never
@@ -218,6 +252,41 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         } catch (error) {
             logger.error('Failed to open Reading Memory:', error);
         }
+    };
+
+    const addCustomFont = async () => {
+        if (!isTauri) return;
+        try {
+            const selected = await openDialog({
+                directory: false,
+                multiple: false,
+                title: '选择字体文件',
+                filters: [{
+                    name: '字体文件',
+                    extensions: ['woff2', 'woff', 'ttf', 'otf'],
+                }],
+            });
+            if (!selected || Array.isArray(selected)) return;
+
+            await readFontFileBase64(selected);
+
+            const entry: CustomFontEntry = {
+                id: newCustomFontId(),
+                label: labelFromFontPath(selected),
+                path: selected,
+            };
+            clearFontFaceCache();
+            setSettings({
+                ...settings,
+                customFonts: [...settings.customFonts, entry],
+            });
+        } catch (error) {
+            logger.error('Failed to add custom font:', error);
+        }
+    };
+
+    const removeCustomFontHandler = (fontId: string) => {
+        setSettings(removeCustomFont(settings, fontId));
     };
 
     const persistQuickActions = (actions: QuickActionConfig[]) => {
@@ -578,6 +647,43 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                         </Field>
                                     </div>
                                 </div>
+                            </section>
+
+                            <section className="settings-subsection">
+                                <div className="settings-section-title">阅读字体</div>
+                                <p className="settings-section-description">
+                                    内置与自定义字体会通过阅读引擎注入到正文中；字体选择在阅读器工具栏的「更多阅读工具」菜单。
+                                </p>
+
+                                {settings.customFonts.length > 0 ? (
+                                    <div className="settings-custom-font-list">
+                                        {settings.customFonts.map((font) => (
+                                            <div key={font.id} className="settings-custom-font-row">
+                                                <div className="settings-custom-font-meta">
+                                                    <strong>{font.label}</strong>
+                                                    <code>{font.path}</code>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    label={`移除 ${font.label}`}
+                                                    onClick={() => removeCustomFontHandler(font.id)}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <small className="settings-custom-font-empty">尚未添加自定义字体。</small>
+                                )}
+
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    label="添加本地字体"
+                                    icon={<PlusIcon />}
+                                    isDisabled={!isTauri}
+                                    onClick={() => { void addCustomFont(); }}
+                                />
                             </section>
                         </div>
                     )}

@@ -1,4 +1,4 @@
-import type { Settings, Library, ReadingProgress } from '../../types';
+import type { Settings, Library, ReadingProgress, CustomFontEntry } from '../../types';
 import { normalizeFontFamilyKey } from '../../components/reader/fontCatalog';
 import { loadStored, STORAGE_KEYS } from '../../services/LocalStore';
 import { readThemePlaceholder } from '../../services/themePlaceholder';
@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'light',
   fontSize: 16,
   fontFamily: 'serif-latin',
+  customFonts: [],
   lineHeight: 1.6,
   readingMemoryPath: undefined,
   readingMemoryAutoIngest: true,
@@ -88,8 +89,17 @@ export function resolveSettings(stored: Partial<Settings>, defaultSettings: Sett
       ? stored.aiThinkingEnabled
       : defaultSettings.aiThinkingEnabled,
     fontFamily: typeof stored.fontFamily === 'string'
-      ? normalizeFontFamilyKey(stored.fontFamily)
+      ? normalizeFontFamilyKey(stored.fontFamily, stored.customFonts ?? [])
       : defaultSettings.fontFamily,
+    customFonts: Array.isArray(stored.customFonts)
+      ? stored.customFonts.filter((entry): entry is Settings['customFonts'][number] => (
+        !!entry
+        && typeof entry === 'object'
+        && typeof (entry as CustomFontEntry).id === 'string'
+        && typeof (entry as CustomFontEntry).label === 'string'
+        && typeof (entry as CustomFontEntry).path === 'string'
+      ))
+      : defaultSettings.customFonts,
   };
 }
 

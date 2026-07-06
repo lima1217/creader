@@ -5,8 +5,15 @@ export type RenditionContent = {
 
 export type ReaderRendition = {
   themes: {
-    default: (styles: Record<string, Record<string, string>>) => void;
-    register?: (name: string, styles: Record<string, Record<string, string>>) => void;
+    default: (
+      styles: Record<string, Record<string, string>>,
+      options?: { fontFaceCss?: string },
+    ) => void;
+    register?: (
+      name: string,
+      styles: Record<string, Record<string, string>>,
+      options?: { fontFaceCss?: string },
+    ) => void;
     select?: (name?: string) => void;
   };
   display: (target?: string) => Promise<unknown> | void;

@@ -39,7 +39,7 @@ fn canonicalize_if_exists(path: &Path) -> Option<PathBuf> {
     std::fs::canonicalize(path).ok()
 }
 
-fn allowed_read_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
+pub(crate) fn allowed_read_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
     if let Ok(dir) = app.path().document_dir() {
