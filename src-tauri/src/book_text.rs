@@ -8,11 +8,16 @@ use std::io::{BufRead, Read};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use zip::read::ZipArchive;
 
 const DEFAULT_CHAPTER_CACHE_CAPACITY: usize = 32;
 const MAX_CACHEABLE_CHAPTER_CHARS: usize = 512_000;
 const DEFAULT_SLICE_LIMIT: usize = 16_000;
+pub const MAX_SEARCH_CHAPTERS: usize = 200;
+pub const MAX_SEARCH_HITS: usize = 20;
+pub const SEARCH_TOOL_TIMEOUT_SECS: u64 = 15;
+const SEARCH_EXCERPT_CONTEXT_CHARS: usize = 120;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChapterInfo {
@@ -31,6 +36,19 @@ pub struct ChapterTextSlice {
     pub index: usize,
     pub offset: usize,
     pub next_offset: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BookSearchHit {
+    pub index: usize,
+    pub title: String,
+    pub excerpt: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BookSearchResult {
+    pub hits: Vec<BookSearchHit>,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +159,30 @@ pub async fn get_chapter_text_async(
     .map_err(|e| format!("get_chapter_text task failed: {}", e))?
 }
 
+#[allow(dead_code)]
+pub fn search_book(
+    book_path: &Path,
+    query: &str,
+    limit: Option<usize>,
+    cache: &BookTextCache,
+) -> Result<BookSearchResult, String> {
+    let book_path = book_path.to_path_buf();
+    blocking_search_book(&book_path, query, limit, cache)
+}
+
+pub async fn search_book_async(
+    book_path: PathBuf,
+    query: String,
+    limit: Option<usize>,
+    cache: Arc<BookTextCache>,
+) -> Result<BookSearchResult, String> {
+    tokio::task::spawn_blocking(move || {
+        blocking_search_book(&book_path, &query, limit, cache.as_ref())
+    })
+    .await
+    .map_err(|e| format!("search_book task failed: {}", e))?
+}
+
 fn blocking_list_chapters(book_path: &Path) -> Result<Vec<ChapterInfo>, String> {
     let mut archive = open_epub_archive(book_path)?;
     let package = load_epub_package(&mut archive)?;
@@ -230,6 +272,119 @@ fn blocking_get_chapter_text(
         offset,
         next_offset,
     })
+}
+
+fn blocking_search_book(
+    book_path: &Path,
+    query: &str,
+    limit: Option<usize>,
+    cache: &BookTextCache,
+) -> Result<BookSearchResult, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Err("query must not be empty".to_string());
+    }
+
+    let max_hits = limit
+        .unwrap_or(MAX_SEARCH_HITS)
+        .clamp(1, MAX_SEARCH_HITS);
+    let deadline = Instant::now() + Duration::from_secs(SEARCH_TOOL_TIMEOUT_SECS);
+
+    let chapters = blocking_list_chapters(book_path)?;
+    let mut truncated = chapters.len() > MAX_SEARCH_CHAPTERS;
+    let mut hits = Vec::new();
+
+    for chapter in chapters.iter().take(MAX_SEARCH_CHAPTERS) {
+        if Instant::now() >= deadline {
+            truncated = true;
+            break;
+        }
+
+        let full_text =
+            blocking_load_full_chapter_text(book_path, chapter.index, cache)?;
+
+        if full_text.contains(query) {
+            hits.push(BookSearchHit {
+                index: chapter.index,
+                title: chapter.title.clone(),
+                excerpt: build_search_excerpt(&full_text, query),
+            });
+            if hits.len() >= max_hits {
+                truncated = true;
+                break;
+            }
+        }
+    }
+
+    Ok(BookSearchResult { hits, truncated })
+}
+
+fn blocking_load_full_chapter_text(
+    book_path: &Path,
+    index: usize,
+    cache: &BookTextCache,
+) -> Result<String, String> {
+    let book_key = canonical_book_key(book_path)?;
+    if let Some(full_text) = cache.get(&book_key, index) {
+        return Ok(full_text);
+    }
+
+    let mut archive = open_epub_archive(book_path)?;
+    let package = load_epub_package(&mut archive)?;
+    let idref = package
+        .spine
+        .get(index)
+        .ok_or_else(|| format!("Chapter index {} out of range", index))?;
+    let item = package
+        .manifest
+        .get(idref)
+        .ok_or_else(|| format!("Spine itemref '{}' missing from manifest", idref))?;
+    let entry_path = join_epub_path(&package.opf_base, &item.href);
+
+    if !is_xhtml_like(&item.media_type, &item.href) {
+        return Err(format!("Spine item '{}' is not XHTML content", idref));
+    }
+
+    let mut entry = archive
+        .by_name(&entry_path)
+        .map_err(|e| format!("Failed to read chapter entry '{}': {}", entry_path, e))?;
+
+    let mut buffered = std::io::BufReader::new(&mut entry);
+    let (extracted, _) = extract_xhtml_text(&mut buffered, 0, None)?;
+
+    if extracted.chars().count() <= MAX_CACHEABLE_CHAPTER_CHARS {
+        cache.put(&book_key, index, extracted.clone());
+    }
+
+    Ok(extracted)
+}
+
+fn build_search_excerpt(text: &str, query: &str) -> String {
+    let Some(byte_start) = text.find(query) else {
+        return String::new();
+    };
+
+    let char_start = text[..byte_start].chars().count();
+    let excerpt_start = char_start.saturating_sub(SEARCH_EXCERPT_CONTEXT_CHARS);
+    let match_char_len = query.chars().count();
+    let total_chars = text.chars().count();
+    let excerpt_end = (char_start + match_char_len + SEARCH_EXCERPT_CONTEXT_CHARS).min(total_chars);
+
+    let excerpt: String = text
+        .chars()
+        .skip(excerpt_start)
+        .take(excerpt_end.saturating_sub(excerpt_start))
+        .collect();
+
+    let mut result = String::new();
+    if excerpt_start > 0 {
+        result.push('…');
+    }
+    result.push_str(&excerpt);
+    if excerpt_end < total_chars {
+        result.push('…');
+    }
+    result
 }
 
 fn slice_chapter_text(full_text: &str, index: usize, offset: usize, limit: usize) -> ChapterTextSlice {
@@ -1266,6 +1421,110 @@ mod tests {
         let chapters = list_chapters(&path).expect("list degrades");
         assert_eq!(chapters.len(), 1);
         assert_eq!(chapters[0].title, "Chapter 1");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    #[serial]
+    fn search_book_finds_keyword_and_returns_excerpt() {
+        let path = temp_epub("search-hit");
+        write_test_epub(
+            &path,
+            &[
+                ("Intro", "<p>Nothing relevant here.</p>"),
+                ("Middle", "<p>The quantum observer effect appears in this chapter.</p>"),
+                ("End", "<p>Closing remarks only.</p>"),
+            ],
+            true,
+        );
+
+        let result = search_book(&path, "quantum observer", None, &BookTextCache::default())
+            .expect("search");
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].index, 1);
+        assert_eq!(result.hits[0].title, "Middle");
+        assert!(result.hits[0].excerpt.contains("quantum observer"));
+        assert!(!result.truncated);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn search_book_rejects_empty_query() {
+        let path = temp_epub("search-empty");
+        write_test_epub(&path, &[("One", "<p>Body</p>")], false);
+
+        let err = search_book(&path, "   ", None, &BookTextCache::default())
+            .expect_err("empty query");
+        assert!(err.contains("empty"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    #[serial]
+    fn search_book_truncates_when_hit_limit_reached() {
+        let path = temp_epub("search-limit");
+        write_test_epub(
+            &path,
+            &[
+                ("One", "<p>needle in chapter one</p>"),
+                ("Two", "<p>needle in chapter two</p>"),
+                ("Three", "<p>needle in chapter three</p>"),
+            ],
+            true,
+        );
+
+        let result = search_book(&path, "needle", Some(2), &BookTextCache::default())
+            .expect("search");
+        assert_eq!(result.hits.len(), 2);
+        assert!(result.truncated);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    #[serial]
+    fn search_book_uses_chapter_cache_on_repeat_scan() {
+        let path = temp_epub("search-cache");
+        write_test_epub(
+            &path,
+            &[("Cached", "<p>unique-token-for-cache-test</p>")],
+            false,
+        );
+
+        let cache = BookTextCache::with_default_capacity();
+        reset_test_counters();
+        let before = chapter_extractions();
+
+        let first = search_book(&path, "unique-token", None, &cache).expect("first search");
+        assert_eq!(first.hits.len(), 1);
+        assert_eq!(chapter_extractions() - before, 1);
+
+        let second = search_book(&path, "unique-token", None, &cache).expect("second search");
+        assert_eq!(second.hits.len(), 1);
+        assert_eq!(chapter_extractions() - before, 1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn search_book_async_runs_on_spawn_blocking() {
+        let path = temp_epub("search-async");
+        write_test_epub(
+            &path,
+            &[("Async", "<p>async-search-marker</p>")],
+            false,
+        );
+
+        let cache = Arc::new(BookTextCache::default());
+        let result = search_book_async(path.clone(), "async-search".to_string(), None, cache)
+            .await
+            .expect("async search");
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].title, "Chapter 1");
 
         let _ = std::fs::remove_file(path);
     }
