@@ -92,7 +92,7 @@
 
 当用户问「书里哪里讲了 X」「哪一章提到 Y」等定位问题时，优先用 `search_book` 按关键词扫描章节，拿到 `index` 与 `excerpt` 后再用 `get_chapter_text` 精读相关章节。不要为定位问题逐章盲翻。
 
-`truncated` 为 `true` 表示结果因章节数、命中数或超时被截断；应缩小关键词、换表述，或结合 `list_chapters` 缩小范围。
+当 `search_book` 返回 `truncated: true` 时，意味着匹配数超过上限或扫描超时被截断。此时应：要么收窄查询词（更具体的短语），要么对最相关的 1-2 个命中章节直接调用 `get_chapter_text` 确认全文，而不是停留在搜索结果摘要上。
 
 ### write_reading_memory
 

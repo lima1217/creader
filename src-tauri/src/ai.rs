@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::book_files::validate_book_path_inner;
 use crate::book_text::{
     get_chapter_text_async, list_chapters_async, search_book_async, AppBookTextCache,
-    BookTextCache,
+    BookSearchResult, BookTextCache,
 };
 use crate::reading_memory::{
     allowed_reading_memory_dir, write_reading_memory_from_tool,
@@ -23,6 +23,10 @@ const AI_TIMEOUT_SECS: u64 = 120;
 const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
 const MIN_MAX_TOOL_ROUNDS: usize = 2;
 const HARD_MAX_TOOL_ROUNDS: usize = 24;
+const TOOLS_EXHAUSTED_SYSTEM_PROMPT: &str =
+    "工具调用次数已用尽。请基于已获取的信息直接作答，并在末尾用一行说明还缺少哪些信息或无法确认的部分，不要继续要求调用工具。";
+const SEARCH_BOOK_TRUNCATED_HINT: &str =
+    "结果已截断：请收窄查询词，或对最相关的 1-2 个命中章节调用 get_chapter_text 确认全文。";
 
 // ============================================================
 // Chat request / response structures
@@ -903,6 +907,19 @@ impl ToolCallResultCache {
     }
 }
 
+fn serialize_search_book_tool_result(result: &BookSearchResult) -> Result<String, String> {
+    if result.truncated {
+        let mut value = serde_json::to_value(result)
+            .map_err(|e| format!("Failed to serialize search results: {}", e))?;
+        value["hint"] = serde_json::Value::String(SEARCH_BOOK_TRUNCATED_HINT.to_string());
+        serde_json::to_string(&value)
+            .map_err(|e| format!("Failed to serialize search results: {}", e))
+    } else {
+        serde_json::to_string(result)
+            .map_err(|e| format!("Failed to serialize search results: {}", e))
+    }
+}
+
 async fn execute_local_tool(
     app: Option<&tauri::AppHandle>,
     tool_ctx: &AiToolContext,
@@ -964,8 +981,7 @@ async fn execute_local_tool(
                 Arc::clone(cache),
             )
             .await?;
-            serde_json::to_string(&result)
-                .map_err(|e| format!("Failed to serialize search results: {}", e))
+            serialize_search_book_tool_result(&result)
         }
         "write_reading_memory" => {
             let args: WriteReadingMemoryToolArgs = serde_json::from_str(arguments)
@@ -1054,7 +1070,8 @@ where
     use async_openai::types::chat::{
         ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
         ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage,
-        ChatCompletionRequestToolMessage, FinishReason, FunctionCall,
+        ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage, FinishReason,
+        FunctionCall,
     };
     use futures_util::StreamExt;
 
@@ -1208,6 +1225,12 @@ where
 
         if tool_rounds_used >= max_tool_rounds {
             tools_active = false;
+            messages.push(ChatCompletionRequestMessage::System(
+                ChatCompletionRequestSystemMessage {
+                    content: TOOLS_EXHAUSTED_SYSTEM_PROMPT.into(),
+                    ..Default::default()
+                },
+            ));
         }
     }
 
@@ -1948,7 +1971,18 @@ mod tests {
         .unwrap();
 
         assert_eq!(full_text, "Final answer");
-        assert_eq!(request_rx.recv().unwrap().len(), limit + 1);
+        let requests = request_rx.recv().unwrap();
+        assert_eq!(requests.len(), limit + 1);
+        let last_body = requests.last().unwrap().split("\r\n\r\n").nth(1).unwrap();
+        let last_json: serde_json::Value = serde_json::from_str(last_body).unwrap();
+        let messages = last_json["messages"].as_array().unwrap();
+        assert!(messages.iter().any(|message| {
+            message["role"] == "system"
+                && message["content"]
+                    .as_str()
+                    .is_some_and(|content| content.contains("工具调用次数已用尽"))
+        }));
+        assert!(last_json.get("tools").is_none());
         server.join().unwrap();
     }
 
@@ -2052,6 +2086,46 @@ mod tests {
         let tool_ctx = AiToolContext::from_chat_request(&request);
         assert_eq!(tool_ctx.book_file_path.as_deref(), Some("/tmp/book.epub"));
         assert_eq!(tool_ctx.source_chapter.as_deref(), Some("Chapter 1"));
+    }
+
+    #[test]
+    fn reading_ai_system_prompt_covers_search_truncation() {
+        assert!(READING_AI_SYSTEM_PROMPT.contains("truncated"));
+        assert!(READING_AI_SYSTEM_PROMPT.contains("get_chapter_text"));
+    }
+
+    #[test]
+    fn search_book_truncated_result_includes_hint() {
+        use crate::book_text::{BookSearchHit, BookSearchResult};
+
+        let result = BookSearchResult {
+            hits: vec![BookSearchHit {
+                index: 1,
+                title: "Chapter".to_string(),
+                excerpt: "excerpt".to_string(),
+            }],
+            truncated: true,
+        };
+        let json = serialize_search_book_tool_result(&result).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["truncated"], true);
+        assert!(value["hint"]
+            .as_str()
+            .is_some_and(|hint| hint.contains("get_chapter_text")));
+    }
+
+    #[test]
+    fn search_book_untruncated_result_omits_hint() {
+        use crate::book_text::BookSearchResult;
+
+        let result = BookSearchResult {
+            hits: vec![],
+            truncated: false,
+        };
+        let json = serialize_search_book_tool_result(&result).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["truncated"], false);
+        assert!(value.get("hint").is_none());
     }
 
     #[test]
