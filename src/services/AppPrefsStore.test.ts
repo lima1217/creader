@@ -34,8 +34,6 @@ describe('AppPrefsStore Dexie persistence', () => {
     const settings: Settings = {
       theme: 'dark',
       fontSize: 18,
-      fontFamily: 'Georgia',
-      customFonts: [],
       lineHeight: 1.8,
       readingMemoryAutoIngest: true,
       aiTextSize: 15,

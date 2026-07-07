@@ -15,18 +15,14 @@ vi.mock('./useFontFaceCss', () => ({
   useFontFaceCss: () => '',
 }));
 vi.mock('./fontCatalog', () => ({
-  resolveFontStack: (key: string) => (
-    key === 'Georgia' || key === 'serif-latin'
-      ? 'Georgia, "Times New Roman", serif'
-      : `${key}-stack`
+  resolveFontStack: () => (
+    '"CReader Roboto", "CReader LXGW WenKai", -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif'
   ),
 }));
 
 const baseSettings: Settings = {
   theme: 'light',
   fontSize: 16,
-  fontFamily: 'serif-latin',
-  customFonts: [],
   lineHeight: 1.6,
   readingMemoryAutoIngest: false,
   aiTextSize: 14,
@@ -90,7 +86,7 @@ describe('useEpubSettingsSync', () => {
       rendition as unknown as ReaderRendition,
       expect.objectContaining({
         theme: 'light',
-        fontStack: 'Georgia, "Times New Roman", serif',
+        fontStack: '"CReader Roboto", "CReader LXGW WenKai", -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
         fontSize: 16,
       }),
     );

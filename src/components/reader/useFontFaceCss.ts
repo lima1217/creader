@@ -1,23 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { CustomFontEntry } from '../../types';
+import { FIXED_FONT_FAMILY_KEY } from './fontCatalog';
 import { resolveFontFaceCss } from '../../services/reader/fontLoader';
 
-function serializeCustomFonts(customFonts: readonly CustomFontEntry[]): string {
-  return customFonts.map((entry) => `${entry.id}:${entry.path}`).join('|');
-}
-
-export function useFontFaceCss(
-  fontFamily: string,
-  customFonts: readonly CustomFontEntry[],
-): string {
+export function useFontFaceCss(): string {
   const [fontFaceCss, setFontFaceCss] = useState('');
-  const customFontsKey = serializeCustomFonts(customFonts);
 
   useEffect(() => {
     let cancelled = false;
     setFontFaceCss('');
 
-    void resolveFontFaceCss(fontFamily, customFonts)
+    void resolveFontFaceCss(FIXED_FONT_FAMILY_KEY)
       .then((css) => {
         if (!cancelled) setFontFaceCss(css);
       })
@@ -28,7 +20,7 @@ export function useFontFaceCss(
     return () => {
       cancelled = true;
     };
-  }, [fontFamily, customFontsKey]);
+  }, []);
 
   return fontFaceCss;
 }

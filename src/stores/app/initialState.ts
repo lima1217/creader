@@ -1,5 +1,4 @@
-import type { Settings, Library, ReadingProgress, CustomFontEntry } from '../../types';
-import { normalizeFontFamilyKey } from '../../components/reader/fontCatalog';
+import type { Settings, Library, ReadingProgress } from '../../types';
 import { loadStored, STORAGE_KEYS } from '../../services/LocalStore';
 import { readThemePlaceholder } from '../../services/themePlaceholder';
 import {
@@ -13,8 +12,6 @@ export type BookProgressById = Record<string, ReadingProgress & { lastReadAt: nu
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'light',
   fontSize: 16,
-  fontFamily: 'serif-latin',
-  customFonts: [],
   lineHeight: 1.6,
   readingMemoryPath: undefined,
   readingMemoryAutoIngest: true,
@@ -68,38 +65,35 @@ export function getEmptyLibrary(): Library {
 }
 
 export function resolveSettings(stored: Partial<Settings>, defaultSettings: Settings): Settings {
+  const {
+    fontFamily: _legacyFontFamily,
+    customFonts: _legacyCustomFonts,
+    ...persisted
+  } = stored as Partial<Settings> & {
+    fontFamily?: string;
+    customFonts?: unknown;
+  };
+
   return {
     ...defaultSettings,
-    ...stored,
+    ...persisted,
     // Sepia was retired in Astryx Phase 1; coerce any stale persisted value to light.
-    theme: stored.theme === 'dark' ? 'dark' : 'light',
-    aiTextSize: typeof stored.aiTextSize === 'number'
-      ? clampAITextSize(stored.aiTextSize)
+    theme: persisted.theme === 'dark' ? 'dark' : 'light',
+    aiTextSize: typeof persisted.aiTextSize === 'number'
+      ? clampAITextSize(persisted.aiTextSize)
       : defaultSettings.aiTextSize,
-    aiContextWindow: typeof stored.aiContextWindow === 'number'
-      ? clampAIContextWindow(stored.aiContextWindow)
+    aiContextWindow: typeof persisted.aiContextWindow === 'number'
+      ? clampAIContextWindow(persisted.aiContextWindow)
       : defaultSettings.aiContextWindow,
-    aiToolRounds: typeof stored.aiToolRounds === 'number'
-      ? clampAIToolRounds(stored.aiToolRounds)
+    aiToolRounds: typeof persisted.aiToolRounds === 'number'
+      ? clampAIToolRounds(persisted.aiToolRounds)
       : defaultSettings.aiToolRounds,
-    aiAutoSummarize: typeof stored.aiAutoSummarize === 'boolean'
-      ? stored.aiAutoSummarize
+    aiAutoSummarize: typeof persisted.aiAutoSummarize === 'boolean'
+      ? persisted.aiAutoSummarize
       : defaultSettings.aiAutoSummarize,
-    aiThinkingEnabled: typeof stored.aiThinkingEnabled === 'boolean'
-      ? stored.aiThinkingEnabled
+    aiThinkingEnabled: typeof persisted.aiThinkingEnabled === 'boolean'
+      ? persisted.aiThinkingEnabled
       : defaultSettings.aiThinkingEnabled,
-    fontFamily: typeof stored.fontFamily === 'string'
-      ? normalizeFontFamilyKey(stored.fontFamily, stored.customFonts ?? [])
-      : defaultSettings.fontFamily,
-    customFonts: Array.isArray(stored.customFonts)
-      ? stored.customFonts.filter((entry): entry is Settings['customFonts'][number] => (
-        !!entry
-        && typeof entry === 'object'
-        && typeof (entry as CustomFontEntry).id === 'string'
-        && typeof (entry as CustomFontEntry).label === 'string'
-        && typeof (entry as CustomFontEntry).path === 'string'
-      ))
-      : defaultSettings.customFonts,
   };
 }
 

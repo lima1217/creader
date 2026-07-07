@@ -26,7 +26,7 @@ export function useEpubSettingsSync(
   renditionRef: React.RefObject<ReaderRendition | null>,
   settings: Settings,
 ): void {
-  const fontFaceCss = useFontFaceCss(settings.fontFamily, settings.customFonts);
+  const fontFaceCss = useFontFaceCss();
 
   useEffect(() => {
     const rendition = renditionRef.current;
@@ -38,7 +38,7 @@ export function useEpubSettingsSync(
 
     applyEpubTheme(rendition, {
       theme: settings.theme,
-      fontStack: resolveFontStack(settings.fontFamily, settings.customFonts),
+      fontStack: resolveFontStack(),
       fontSize: settings.fontSize,
       fontFaceCss,
     });
@@ -46,5 +46,5 @@ export function useEpubSettingsSync(
     // stable mutable ref, so it is omitted from deps; the effect re-runs only
     // when a settings field that actually affects layout/theme changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.fontSize, settings.fontFamily, settings.customFonts, settings.theme, fontFaceCss]);
+  }, [settings.fontSize, settings.theme, fontFaceCss]);
 }

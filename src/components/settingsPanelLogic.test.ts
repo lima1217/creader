@@ -30,8 +30,6 @@ function createSettings(overrides: Partial<Settings> = {}): Settings {
   return {
     theme: 'light',
     fontSize: 16,
-    fontFamily: 'Georgia',
-    customFonts: [],
     lineHeight: 1.6,
     readingMemoryPath: '/mem/root',
     readingMemoryAutoIngest: true,

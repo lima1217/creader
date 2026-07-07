@@ -59,17 +59,9 @@ export interface Library {
 export type Theme = 'light' | 'dark';
 
 // App settings
-export interface CustomFontEntry {
-  id: string;
-  label: string;
-  path: string;
-}
-
 export interface Settings {
   theme: Theme;
   fontSize: number; // 12-24
-  fontFamily: string;
-  customFonts: CustomFontEntry[];
   lineHeight: number; // 1.4-2.0
   readingMemoryPath?: string;
   readingMemoryAutoIngest: boolean;

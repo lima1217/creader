@@ -77,8 +77,6 @@ function Harness({
     settings: {
       theme: 'light',
       fontSize: 16,
-      fontFamily: 'Georgia',
-      customFonts: [],
       lineHeight: 1.6,
       readingMemoryAutoIngest: false,
       aiTextSize: 14,
