@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSectionTypographyCss, isCjkLang, shouldUseLeftAlign } from './epubTypography';
+import { buildSectionTypographyCss, CODE_FONT_STACK, isCjkLang, shouldUseLeftAlign } from './epubTypography';
 
 describe('isCjkLang', () => {
   it('detects zh, ja, and ko primary subtags', () => {
@@ -33,6 +33,12 @@ describe('buildSectionTypographyCss', () => {
     const css = buildSectionTypographyCss('en');
     expect(css).toContain('text-align:justify');
     expect(css).toContain('hyphens:auto');
+    expect(css).toContain('-webkit-hyphenate-limit-before:3');
+    expect(css).toContain('-webkit-hyphenate-limit-after:2');
+    expect(css).toContain('-webkit-hyphenate-limit-lines:2');
+    expect(css).toContain('hyphenate-limit-before:3');
+    expect(css).toContain('hyphenate-limit-after:2');
+    expect(css).toContain('hyphenate-limit-lines:2');
     expect(css).toContain('line-height:1.4');
     expect(css).toContain('text-indent:0');
     expect(css).toContain('margin-top:0.6em');
@@ -40,6 +46,13 @@ describe('buildSectionTypographyCss', () => {
     expect(css).toContain('widows:2');
     expect(css).toContain('orphans:2');
     expect(css).toContain('hanging-punctuation:allow-end last');
+  });
+
+  it('shields pre, code, and kbd from prose typography inheritance', () => {
+    const css = buildSectionTypographyCss('en');
+    expect(css).toContain(`pre,code,kbd{font-family:${CODE_FONT_STACK}`);
+    expect(css).toContain('line-height:normal');
+    expect(css).toContain('text-align:start');
   });
 
   it('left-aligns and indents CJK sections without hyphenation', () => {

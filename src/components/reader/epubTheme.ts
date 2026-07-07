@@ -1,10 +1,26 @@
 import type { Theme } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
+import { CODE_FONT_STACK } from '../../services/reader/epubTypography';
 import { paperBodyPalette } from '../../theme/paperTheme';
 
 // Line measure lives on the layout contract (single source of truth); re-export
 // here so body-typography consumers keep their existing import path.
 export { EPUB_MAX_INLINE_SIZE } from '../../services/reader/readingEngine';
+
+const PROSE_SELECTOR = 'p, li, blockquote, dd';
+
+export type EpubThemeApplyOptions = {
+  theme: Theme;
+  fontStack: string;
+  fontSize: number;
+  fontFaceCss?: string;
+  /**
+   * When true, force CReader body typography over publisher EPUB styles.
+   * Reserved for a future settings toggle; default false keeps heading and code
+   * formatting while still applying theme colors and the reading font to prose.
+   */
+  forceTypographyOverride?: boolean;
+};
 
 /**
  * Injects the reading-engine body theme into the rendered EPUB.
@@ -20,24 +36,43 @@ export { EPUB_MAX_INLINE_SIZE } from '../../services/reader/readingEngine';
  * hyphenation) is applied in `foliateEngine.ts` via `buildSectionTypographyCss`
  * because those values depend on each document's `<html lang>`.
  */
-export function applyEpubTheme(
-  rendition: ReaderRendition,
-  options: { theme: Theme; fontStack: string; fontSize: number; fontFaceCss?: string },
-) {
+export function buildEpubThemeStyles(
+  options: EpubThemeApplyOptions,
+): Record<string, Record<string, string>> {
   const palette = paperBodyPalette[options.theme];
-  rendition.themes.default({
+  const force = options.forceTypographyOverride ?? false;
+
+  const styles: Record<string, Record<string, string>> = {
     body: {
-      'font-family': options.fontStack,
-      'font-size': `${options.fontSize}px`,
       'color': `${palette.text} !important`,
       'background': `${palette.background} !important`,
-      'margin': '0 auto !important',
-    },
-    p: {
-      'margin-bottom': '1em',
+      'margin': '0 auto',
     },
     a: {
       'color': `${palette.link} !important`,
     },
-  }, { fontFaceCss: options.fontFaceCss });
+    'pre, code, kbd': {
+      'font-family': CODE_FONT_STACK,
+    },
+  };
+
+  if (force) {
+    styles.body['font-family'] = options.fontStack;
+    styles.body['font-size'] = `${options.fontSize}px`;
+    styles.p = { 'margin-bottom': '1em' };
+  } else {
+    styles[PROSE_SELECTOR] = {
+      'font-family': options.fontStack,
+      'font-size': `${options.fontSize}px`,
+    };
+  }
+
+  return styles;
+}
+
+export function applyEpubTheme(
+  rendition: ReaderRendition,
+  options: EpubThemeApplyOptions,
+) {
+  rendition.themes.default(buildEpubThemeStyles(options), { fontFaceCss: options.fontFaceCss });
 }

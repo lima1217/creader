@@ -1,5 +1,8 @@
 const CJK_LANG_PREFIXES = new Set(['zh', 'ja', 'ko', 'kr']);
 
+export const CODE_FONT_STACK =
+  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+
 /**
  * True when `lang` is Chinese, Japanese, or Korean (BCP 47 primary subtag).
  * `kr` is included for foliate's historical typo; `ko` is the canonical code.
@@ -28,8 +31,19 @@ export function shouldUseLeftAlign(lang: string): boolean {
  * justified hyphenated text, and a tighter 1.4 line-height. Both branches
  * keep hanging-punctuation and ideograph spacing for CJK punctuation edges.
  */
+function codeTypographyShield(): string {
+  return [
+    'pre,code,kbd{',
+    `font-family:${CODE_FONT_STACK};`,
+    'line-height:normal;',
+    'text-align:start;',
+    '}',
+  ].join('');
+}
+
 export function buildSectionTypographyCss(lang: string): string {
   const isCjk = isCjkLang(lang) || !lang.trim();
+  const shield = codeTypographyShield();
   if (isCjk) {
     return [
       'body,p,li,blockquote,dd{',
@@ -40,6 +54,7 @@ export function buildSectionTypographyCss(lang: string): string {
       'text-autospace:ideograph-alpha ideograph-numeric;',
       'widows:1;orphans:1;',
       '}',
+      shield,
     ].join('');
   }
   return [
@@ -49,8 +64,10 @@ export function buildSectionTypographyCss(lang: string): string {
     'p{text-indent:0;margin-top:0.6em;margin-bottom:0.6em;}',
     '-webkit-hyphens:auto;hyphens:auto;',
     '-webkit-hyphenate-limit-before:3;-webkit-hyphenate-limit-after:2;-webkit-hyphenate-limit-lines:2;',
+    'hyphenate-limit-before:3;hyphenate-limit-after:2;hyphenate-limit-lines:2;',
     'hanging-punctuation:allow-end last;',
     'widows:2;orphans:2;',
     '}',
+    shield,
   ].join('');
 }
