@@ -5,8 +5,11 @@
 ## 功能
 
 - EPUB 阅读、目录跳转、进度恢复、选区捕获和章节上下文 AI 对话
-- 书库导入、封面提取、书本文件夹整理（单一归属，拖拽移动）
-- 亮色 / 暗色主题和字号调节
+- 整本连续滚动阅读：`flow=scrolled` + 章节边界自动翻页 + 相邻章节预取，配合全书进度条拖动跳转（ADR-0021）
+- 章节边界 arm 指示：滚到章末/章首累积滚动意图，由 hairline 进度条提示即将翻章
+- 内置阅读字体：Roboto（拉丁）和 LXGW WenKai（中文），按 section 语言自动选择 Latin-first 或 CJK-first 字体栈
+- 书库导入（侧栏 / 窗口拖拽 EPUB）、封面提取、书本文件夹整理（单一归属，拖拽移动）
+- 亮色 / 暗色主题、字号调节、阅读进度恢复
 - OpenAI-compatible HTTP AI provider 配置和流式对话
 - 选区、进度、CFI、章节上下文和最近聊天记录驱动的 AI 对话
 - AI 审稿后选择性写入本地 Reading Memory Markdown 仓库
@@ -34,19 +37,33 @@ npm run check
 ## 项目结构
 
 ```text
-src/            React/Vite 前端
-src/components/ 阅读器、侧栏、工具栏、AI 面板、设置面板
-src/domain/     AI 请求、上下文裁剪、Reading Memory Markdown 纯逻辑
-src/services/   IndexedDB、本地存储、导入、封面、聊天持久化、阅读引擎
-src-tauri/      Tauri shell 和 Rust commands
-public/         Vite 静态资源
+src/                  React/Vite 前端
+src/components/       阅读器 chrome、侧栏、工具栏、AI 面板、设置面板
+src/components/reader/ EPUB 进度、选区、键盘、主题、字体、边界指示、进度条、生命周期 hooks
+src/components/ai/    AI 消息渲染、流缓冲、会话记忆、上下文窗口、快捷提示词
+src/domain/           AI 请求、阅读上下文快照、上下文裁剪、Reading Memory Markdown 纯逻辑
+src/services/         IndexedDB、本地存储、导入、封面、聊天持久化、阅读引擎
+src/services/reader/  foliate-js adapter、字体加载、section 排版、章节文本提取
+src/theme/            Paper Workspace 调色板（chrome 与书体单一来源）
+src-tauri/            Tauri shell、Rust commands、文件边界、AI provider 存储、Reading Memory 写入
+public/fonts/         内置 Roboto / LXGW WenKai woff2 字体资源
+docs/adr/             架构决策记录
+releases/             打包产物（打包 / 发布任务之外不可编辑）
 ```
 
 ## 阅读引擎
 
-CReader 通过 `src/services/reader/readingEngine.ts` 的 adapter contract 读取 EPUB。当前只支持 `foliate-js`：章节导航、上一页/下一页、阅读进度、文本选区和主题注入都经由这一条阅读引擎边界。无法由 foliate-js 打开的 EPUB 会明确失败，不会静默切换到另一个 renderer。
+CReader 通过 `src/services/reader/readingEngine.ts` 的 adapter contract 读取 EPUB。当前只支持 `foliate-js`：章节导航、上一页/下一页、阅读进度、文本选区、主题注入、布局切换都经由这一条阅读引擎边界。无法由 foliate-js 打开的 EPUB 会明确失败，不会静默切换到另一个 renderer。
 
-CReader 不提供全书搜索。在书中定位内容时，使用目录跳转、翻页，或将选区 / 当前章节发送给 AI 面板。
+阅读布局固定为 `flow=scrolled`（ADR-0021）。整本连续滚动的体验由三部分组成：foliate 原生 section 内滚动、滚到章节边界时由 adapter 触发翻页并预取相邻章节、应用自绘的**全书进度条**提供整本书的位置感（原生滚动条只反映当前章节）。进度条拖动通过 `seekToFraction` 跳转，章节刻度来自 `getSectionFractions`。CReader 不构建自定义连续 renderer，也不在用户设置里暴露 `flow` 选项。
+
+CReader 不提供全书搜索（ADR-0018）。在书中定位内容时，使用目录跳转、全书进度条、翻页，或将选区 / 当前章节发送给 AI 面板。Rust 端的章节文本提取是按需的 AI 工具能力，不是阅读器搜索界面。
+
+## 主题与字体
+
+只有 `light`（亮色）和 `dark`（暗色）两种主题；Sepia/护眼 已在 Astryx Phase 1 退役（ADR-0017）。一套暖色 Paper Workspace 调色板同时驱动 chrome token（`src/index.css` 的 `--bg-*` / `--text-*` / `--accent`）和 Astryx `--color-*` token（`src/theme/paperTheme.ts`）。书体三色（背景 / 文字 / 链接）在 `paperBodyPalette` 中作为单一来源，chrome 和 foliate section 文档共用同一份；engine bridge 注入字面色值而非 `var(--color-*)`，因为 foliate section 文档不继承宿主 `:root`。
+
+阅读字体为内置 Roboto（拉丁）+ LXGW WenKai（中文）混合栈，按每个 section 的语言选择 Latin-first 或 CJK-first 栈；CJK 段落带首行缩进和按语言调整的行高。字体选择 UI 和自定义字体导入已移除，全部走内置字体。
 
 ## 本地数据
 

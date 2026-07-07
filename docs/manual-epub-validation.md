@@ -31,3 +31,19 @@ Tauri file access.
 - Live theme switch: while a book is open, switch light/dark theme and adjust
   font settings. Expect both reader chrome and rendered book body to use coherent
   background, text, and link colors without waiting for a page turn.
+- Continuous scroll across chapters: open a multi-chapter book, scroll to the
+  end of a chapter, and keep scrolling. Expect the boundary arm hairline to
+  appear and fill, then the next chapter to load and preload its neighbor.
+  Repeat at the previous-edge (scroll up at a chapter start). Confirm there is
+  no `flow` setting anywhere in Settings.
+- Whole-book progress bar: open a multi-chapter book. Expect the progress bar
+  to show whole-book fraction with chapter tick marks (not just the current
+  chapter). Drag the progress bar to ~50% and release; expect the view to jump
+  to that whole-book position and the relocated CFI / percentage to match.
+- Per-section font stack: open a book mixing Latin and Chinese sections. Expect
+  Latin sections to render Latin-first (Roboto) and Chinese sections to render
+  CJK-first (LXGW WenKai) with first-line indent and CJK line height, and bold
+  Chinese text to stay legible. Confirm there is no font picker in the toolbar.
+- Drag-and-drop import: drag a valid EPUB onto the sidebar and onto the reader
+  window. Expect the book to import through the normal import path and appear
+  in the library. Drag a non-EPUB file; expect it to be rejected, not imported.
