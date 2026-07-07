@@ -103,13 +103,26 @@ export function useAIProviders(options: { isTauri: boolean; active: boolean }) {
   // Explicit AI Service connection test. Uses a saved provider and its local
   // key; never runs automatically. Resolves with a short success message from
   // the backend, or rejects with the underlying error string. Test results are
-  // session-only UI state and are not persisted by this hook.
+  // session-only UI state and not persisted by this hook.
   const testProvider = useCallback(
     async (id: string): Promise<string> => {
       if (!isTauri) {
         throw new Error('Connection test requires the Tauri runtime.');
       }
       return await invoke<string>('test_ai_provider', { id });
+    },
+    [isTauri],
+  );
+
+  // Connection test for an unsaved draft. Takes the in-memory provider config
+  // and a draft API key from the editor, so a key can be verified before it is
+  // committed. Reuses the same backend success/error contract as testProvider.
+  const testProviderDraft = useCallback(
+    async (config: AIProviderConfig, apiKey: string): Promise<string> => {
+      if (!isTauri) {
+        throw new Error('Connection test requires the Tauri runtime.');
+      }
+      return await invoke<string>('test_ai_provider_draft', { config, apiKey });
     },
     [isTauri],
   );
@@ -125,5 +138,6 @@ export function useAIProviders(options: { isTauri: boolean; active: boolean }) {
     setActive,
     setApiKey,
     testProvider,
+    testProviderDraft,
   };
 }

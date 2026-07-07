@@ -618,6 +618,24 @@ pub(crate) async fn test_ai_provider(app: tauri::AppHandle, id: String) -> Resul
     test_provider_with(config.as_ref(), api_key.as_deref()).await
 }
 
+/// Connection test for an unsaved draft. Takes the in-memory provider config
+/// and a draft API key directly from the editor, so users can verify a key
+/// before committing it. No store lookup, no key read — the draft is tested
+/// exactly as entered. Reuses `test_provider_with` so the failure branches and
+/// success message match the saved-provider path.
+#[tauri::command]
+pub(crate) async fn test_ai_provider_draft(
+    config: AIProviderConfig,
+    api_key: String,
+) -> Result<String, String> {
+    let key = if api_key.trim().is_empty() {
+        None
+    } else {
+        Some(api_key.as_str())
+    };
+    test_provider_with(Some(&config), key).await
+}
+
 #[tauri::command]
 pub(crate) fn cancel_ai_streaming(app: tauri::AppHandle) {
     let ai_state = app.state::<AppAiState>();

@@ -53,7 +53,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (cmd: string, args?: Record<string, unknown>) => {
     invokeCalls.push({ cmd, args });
     if (cmd === 'list_ai_providers') return getProviders();
-    if (cmd === 'test_ai_provider') {
+    if (cmd === 'test_ai_provider' || cmd === 'test_ai_provider_draft') {
       await new Promise((r) => setTimeout(r, 0));
       const result = getTestResult();
       clearTestResult();
@@ -290,6 +290,63 @@ describe('SettingsPanel — 三项一级菜单 (#62-#65)', () => {
     const reopened = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
     await settle();
     expect(reopened.querySelector('.settings-provider-test')).toBeNull();
+  });
+
+  it('tests a draft provider from the editor without saving first', async () => {
+    setTestResult({ kind: 'resolve', value: '连接成功：ok' });
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+
+    // Enter the editor via the "添加" button.
+    buttonByLabel(container, '添加')?.click();
+    await settle();
+    expect(container.querySelector('.settings-provider-editor')).not.toBeNull();
+
+    // The test button is disabled until a draft key is entered.
+    const testBtn = buttonByLabel(container, '测试连接');
+    expect(testBtn).toBeTruthy();
+    expect(testBtn?.disabled).toBe(true);
+
+    // Fill a draft key to enable the test button. Use the native value setter so
+    // React's controlled-input value tracker picks up the change.
+    const keyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null;
+    expect(keyInput).toBeTruthy();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    setter.call(keyInput, 'sk-draft');
+    keyInput!.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+
+    expect(buttonByLabel(container, '测试连接')?.disabled).toBe(false);
+    buttonByLabel(container, '测试连接')?.click();
+    await settleAsync();
+
+    // Draft test invoked the draft command with the in-memory config + key.
+    const draftCall = invokeCalls.find((c) => c.cmd === 'test_ai_provider_draft');
+    expect(draftCall).toBeTruthy();
+    const args = draftCall!.args as { config: { baseUrl: string; model: string }; apiKey: string };
+    expect(args.apiKey).toBe('sk-draft');
+    // Success result rendered inline in the editor.
+    expect(container.querySelector('.settings-provider-editor')?.textContent ?? '').toContain('连接成功');
+    // No save happened during a draft-only test.
+    expect(invokeCalls.find((c) => c.cmd === 'save_ai_provider')).toBeUndefined();
+  });
+
+  it('disables the auto-ingest switch when no Reading Memory repo is connected', async () => {
+    useSettingsStore.setState({
+      settings: {
+        ...useSettingsStore.getState().settings,
+        readingMemoryPath: undefined,
+        readingMemoryAutoIngest: true,
+      },
+    });
+    const container = mount(<SettingsPanel isOpen={true} onClose={() => {}} />);
+    await settle();
+    clickTab(container, '阅读记忆');
+    await settle();
+
+    const sw = container.querySelector('input[role="switch"]') as HTMLInputElement | null;
+    expect(sw).toBeTruthy();
+    expect(sw?.disabled).toBe(true);
   });
 
   it('shows open and replace actions when connected without a disconnect control (#64)', async () => {

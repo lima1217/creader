@@ -71,6 +71,7 @@ pub fn run() {
             ai::set_ai_api_key,
             ai::has_ai_api_key,
             ai::test_ai_provider,
+            ai::test_ai_provider_draft,
             ai::cancel_ai_streaming,
             book_files::import_book_to_library,
             book_files::preview_import_book_path,

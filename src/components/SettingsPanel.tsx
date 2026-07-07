@@ -106,6 +106,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     // Per-provider connection-test state. Session-only: closing/reopening
     // settings clears results. Never persisted, never feeds AI tab attention.
     const [providerTests, setProviderTests] = useState<Record<string, ProviderTestState>>({});
+    // In-editor draft connection-test state. Separate from providerTests because
+    // a draft may not be saved yet, so it has no stable id to key results under.
+    const [draftTest, setDraftTest] = useState<ProviderTestState | null>(null);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -115,6 +118,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         setProviderError('');
         // Connection test results do not survive a settings reopen.
         setProviderTests({});
+        setDraftTest(null);
         const loadedActions = loadQuickActionConfigs();
         setQuickActionConfigs(loadedActions);
         setEditingActionId(loadedActions[0]?.id || null);
@@ -131,12 +135,14 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     const startNewProvider = useCallback(() => {
         setProviderError('');
         setDraftKey('');
+        setDraftTest(null);
         setEditingProvider({ ...emptyDraft, id: newProviderId() });
     }, [emptyDraft]);
 
     const startEditProvider = useCallback((config: AIProviderConfig) => {
         setProviderError('');
         setDraftKey('');
+        setDraftTest(null);
         setEditingProvider({ ...config });
     }, []);
 
@@ -187,6 +193,21 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             }));
         }
     }, [aiProviders, isTauri]);
+
+    // In-editor draft connection test. Uses the current editingProvider config
+    // and the draftKey exactly as entered — no save required. Lets users verify
+    // a key before committing it. Result is session-only UI feedback.
+    const runProviderDraftTest = useCallback(async () => {
+        if (!isTauri || !editingProvider) return;
+        setDraftTest({ status: 'loading', message: '正在测试连接…' });
+        try {
+            const message = await aiProviders.testProviderDraft(editingProvider, draftKey);
+            setDraftTest({ status: 'success', message });
+        } catch (testError) {
+            const message = String(testError instanceof Error ? testError.message : testError);
+            setDraftTest({ status: 'error', message });
+        }
+    }, [aiProviders, isTauri, editingProvider, draftKey]);
 
     const chooseReadingMemory = async () => {
         if (!isTauri || isMemoryBusy) return;
@@ -390,12 +411,25 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                         {providerError && (
                                             <FieldStatus type="error" message={providerError} variant="detached" />
                                         )}
+                                        {draftTest && draftTest.status !== 'loading' && (
+                                            <FieldStatus
+                                                type={draftTest.status === 'success' ? 'success' : 'error'}
+                                                message={draftTest.message}
+                                                variant="detached"
+                                            />
+                                        )}
 
                                         <div className="settings-provider-edit-actions">
                                             <Button
                                                 variant="ghost"
                                                 label="取消"
-                                                onClick={() => { setEditingProvider(null); setProviderError(''); }}
+                                                onClick={() => { setEditingProvider(null); setProviderError(''); setDraftTest(null); }}
+                                            />
+                                            <Button
+                                                variant="ghost"
+                                                label={draftTest?.status === 'loading' ? '测试中…' : '测试连接'}
+                                                isDisabled={!isTauri || draftTest?.status === 'loading' || draftKey.trim() === ''}
+                                                onClick={runProviderDraftTest}
                                             />
                                             <Button
                                                 variant="secondary"
@@ -644,6 +678,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                 labelSpacing="spread"
                                 value={settings.readingMemoryAutoIngest}
                                 onChange={checked => setSettings({ ...settings, readingMemoryAutoIngest: checked })}
+                                isDisabled={!settings.readingMemoryPath}
                             />
                         </div>
                     )}
