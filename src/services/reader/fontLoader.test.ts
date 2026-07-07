@@ -36,10 +36,11 @@ describe('fontLoader', () => {
   });
 
   it('loads bundled faces for builtin fonts', async () => {
-    const css = await resolveFontFaceCss('builtin-bitter', customFonts);
+    const css = await resolveFontFaceCss('builtin-roboto', customFonts);
 
-    expect(readBundledFontBase64).toHaveBeenCalledTimes(2);
-    expect(css).toContain('CReader Bitter');
+    expect(readBundledFontBase64).toHaveBeenCalledTimes(3);
+    expect(css).toContain('CReader Roboto');
+    expect(css).toContain('CReader LXGW WenKai');
     expect(css).toContain('font-style: italic');
   });
 
@@ -51,9 +52,9 @@ describe('fontLoader', () => {
   });
 
   it('caches repeated loads for the same key', async () => {
-    await resolveFontFaceCss('builtin-bitter', customFonts);
-    await resolveFontFaceCss('builtin-bitter', customFonts);
+    await resolveFontFaceCss('builtin-roboto', customFonts);
+    await resolveFontFaceCss('builtin-roboto', customFonts);
 
-    expect(readBundledFontBase64).toHaveBeenCalledTimes(2);
+    expect(readBundledFontBase64).toHaveBeenCalledTimes(3);
   });
 });

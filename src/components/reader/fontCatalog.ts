@@ -7,7 +7,7 @@ export type WhitelistFontFamilyKey =
   | 'serif-latin'
   | 'sans-latin';
 
-export type BuiltinFontFamilyKey = 'builtin-bitter' | 'builtin-lxgw-wenkai';
+export type BuiltinFontFamilyKey = 'builtin-roboto' | 'builtin-lxgw-wenkai';
 
 export type FontFamilyKey = WhitelistFontFamilyKey | BuiltinFontFamilyKey | `custom:${string}`;
 
@@ -25,6 +25,7 @@ export interface BuiltinFontDefinition {
   faces: readonly {
     resourceFile: string;
     fontStyle: 'normal' | 'italic';
+    fontFamily?: string;
   }[];
 }
 
@@ -58,13 +59,19 @@ export const FONT_CATALOG: readonly FontCatalogEntry[] = [
 
 export const BUILTIN_FONT_DEFINITIONS: readonly BuiltinFontDefinition[] = [
   {
-    key: 'builtin-bitter',
-    label: 'Bitter（内置西文衬线）',
-    fontFamily: 'CReader Bitter',
-    fontStack: '"CReader Bitter", Georgia, "Times New Roman", serif',
+    key: 'builtin-roboto',
+    label: 'Roboto',
+    fontFamily: 'CReader Roboto',
+    fontStack:
+      '"CReader Roboto", "CReader LXGW WenKai", -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
     faces: [
-      { resourceFile: 'fonts/Bitter-Regular.woff2', fontStyle: 'normal' },
-      { resourceFile: 'fonts/Bitter-Italic.woff2', fontStyle: 'italic' },
+      { resourceFile: 'fonts/Roboto-Regular.woff2', fontStyle: 'normal' },
+      { resourceFile: 'fonts/Roboto-Italic.woff2', fontStyle: 'italic' },
+      {
+        resourceFile: 'fonts/LXGWWenKaiGBScreen-Subset.woff2',
+        fontStyle: 'normal',
+        fontFamily: 'CReader LXGW WenKai',
+      },
     ],
   },
   {
@@ -86,8 +93,9 @@ const BUILTIN_BY_KEY = new Map(
   BUILTIN_FONT_DEFINITIONS.map((entry) => [entry.key, entry]),
 );
 
-const LEGACY_FONT_FAMILY: Record<string, WhitelistFontFamilyKey> = {
+const LEGACY_FONT_FAMILY: Record<string, WhitelistFontFamilyKey | BuiltinFontFamilyKey> = {
   Georgia: 'serif-latin',
+  'builtin-bitter': 'builtin-roboto',
 };
 
 const DEFAULT_FONT_FAMILY_KEY: WhitelistFontFamilyKey = 'serif-latin';

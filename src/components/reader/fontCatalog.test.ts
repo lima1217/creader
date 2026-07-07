@@ -40,7 +40,7 @@ describe('fontCatalog', () => {
       'sans-cjk',
       'serif-latin',
       'sans-latin',
-      'builtin-bitter',
+      'builtin-roboto',
       'builtin-lxgw-wenkai',
       'custom:cf_1',
     ]);
@@ -52,11 +52,21 @@ describe('fontCatalog', () => {
     ['sans-cjk', '"PingFang SC", "Source Han Sans SC", "Helvetica Neue", sans-serif'],
     ['serif-latin', 'Georgia, "Times New Roman", serif'],
     ['sans-latin', '"Helvetica Neue", Arial, sans-serif'],
-    ['builtin-bitter', '"CReader Bitter", Georgia, "Times New Roman", serif'],
+    [
+      'builtin-roboto',
+      '"CReader Roboto", "CReader LXGW WenKai", -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
+    ],
     ['builtin-lxgw-wenkai', '"CReader LXGW WenKai", "Songti SC", "Source Han Serif SC", serif'],
     ['custom:cf_1', '"CReader Custom cf_1", Georgia, "Times New Roman", serif'],
   ] as const)('resolveFontStack(%s) returns the catalog stack', (key, stack) => {
     expect(resolveFontStack(key, customFonts)).toBe(stack);
+  });
+
+  it('migrates legacy builtin-bitter to builtin-roboto', () => {
+    expect(normalizeFontFamilyKey('builtin-bitter')).toBe('builtin-roboto');
+    expect(resolveFontStack('builtin-bitter')).toBe(
+      '"CReader Roboto", "CReader LXGW WenKai", -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
+    );
   });
 
   it('migrates legacy Georgia to serif-latin stack', () => {
@@ -75,10 +85,10 @@ describe('fontCatalog', () => {
 
   it('flags builtin and custom keys as injectable', () => {
     expect(fontFamilyNeedsInjection('serif-latin', customFonts)).toBe(false);
-    expect(fontFamilyNeedsInjection('builtin-bitter', customFonts)).toBe(true);
+    expect(fontFamilyNeedsInjection('builtin-roboto', customFonts)).toBe(true);
     expect(fontFamilyNeedsInjection('builtin-lxgw-wenkai', customFonts)).toBe(true);
     expect(fontFamilyNeedsInjection(customFontFamilyKey('cf_1'), customFonts)).toBe(true);
-    expect(BUILTIN_FONT_DEFINITIONS[0]?.faces).toHaveLength(2);
+    expect(BUILTIN_FONT_DEFINITIONS[0]?.faces).toHaveLength(3);
     expect(BUILTIN_FONT_DEFINITIONS[1]?.faces).toHaveLength(1);
   });
 });

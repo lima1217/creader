@@ -33,7 +33,7 @@ async function loadFontFaceRules(
       builtin.faces.map(async (face) => {
         const payload = await readBundledFontBase64(face.resourceFile);
         return {
-          fontFamily: builtin.fontFamily,
+          fontFamily: face.fontFamily ?? builtin.fontFamily,
           src: toFontDataUrl(payload.bytesBase64, payload.mimeType),
           fontWeight: '400',
           fontStyle: face.fontStyle,
