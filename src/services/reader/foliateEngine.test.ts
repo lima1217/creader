@@ -11,6 +11,9 @@ import {
   readPaginatorMetrics,
   SCROLLED_BOUNDARY_TOLERANCE_PX,
   SCROLLED_PREFETCH_DISTANCE_PX,
+  BOUNDARY_ARM_THRESHOLD_PX,
+  BOUNDARY_DELTA_CAP_PX,
+  BOUNDARY_ARM_MIN_VISIBLE_MS,
 } from './foliateEngine';
 
 vi.mock('foliate-js/view.js', () => ({}));
@@ -704,42 +707,78 @@ describe('foliateEngine scrolled boundary bridge', () => {
     expect(wheelListener).toBeTypeOf('function');
   });
 
-  it('calls next at the bottom boundary and prev at the top without crossing book edges', async () => {
+  it('arms at the boundary and turns only after the hint has stayed visible past the min-visible window', async () => {
+    // Min-visible gate uses Date.now(); freeze time so we can advance it deliberately.
+    vi.useFakeTimers();
+    const armEvents: Array<{ direction: string | null; progress: number; armed: boolean }> = [];
     const instance = await openTestInstance();
+    instance.rendition.on('boundaryarm', (state: unknown) => {
+      armEvents.push(state as { direction: string | null; progress: number; armed: boolean });
+    });
     instance.rendition.setLayout?.({ flow: 'scrolled' });
-
-    rendererState.start = 400;
-    rendererState.end = 900;
-    rendererState.viewSize = 1000;
-    scrollListener?.();
 
     rendererState.start = 998;
     rendererState.end = 1000;
-    scrollListener?.();
-    await Promise.resolve();
-    expect(mockView.next).toHaveBeenCalledTimes(1);
+    rendererState.viewSize = 1000;
 
-    rendererState.atEnd = true;
+    // A single wheel tick arms (hint appears) but does NOT turn yet: threshold
+    // not reached AND min-visible window not elapsed.
     const preventDefault = vi.fn();
     wheelListener?.({ deltaY: 120, preventDefault });
-    expect(mockView.next).toHaveBeenCalledTimes(1);
-    expect(preventDefault).not.toHaveBeenCalled();
+    expect(mockView.next).not.toHaveBeenCalled();
+    expect(preventDefault).toHaveBeenCalled();
+    expect(armEvents[armEvents.length - 1]).toMatchObject({ direction: 'next', armed: true });
+    expect((armEvents[armEvents.length - 1] as { progress: number }).progress).toBeGreaterThan(0);
+    expect((armEvents[armEvents.length - 1] as { progress: number }).progress).toBeLessThan(1);
 
-    rendererState.atEnd = false;
-    rendererState.start = 200;
-    rendererState.end = 700;
-    scrollListener?.();
+    // Cross the threshold but BEFORE the min-visible window elapses: still no turn.
+    // Each tick is capped at BOUNDARY_DELTA_CAP_PX; accumulate past the threshold.
+    const ticksToThreshold = Math.ceil(BOUNDARY_ARM_THRESHOLD_PX / BOUNDARY_DELTA_CAP_PX);
+    for (let i = 1; i < ticksToThreshold; i++) {
+      wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
+    }
+    expect(mockView.next).not.toHaveBeenCalled();
+    // progress must be saturated at 1 by now, but the turn is gated on visibility time.
+    expect((armEvents[armEvents.length - 1] as { progress: number }).progress).toBe(1);
+
+    // Advance fake time past the min-visible window, then one more tick turns.
+    vi.advanceTimersByTime(BOUNDARY_ARM_MIN_VISIBLE_MS + 10);
+    wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
     await Promise.resolve();
+    expect(mockView.next).toHaveBeenCalledTimes(1);
 
+    vi.useRealTimers();
+  });
+
+  it('does not turn at the book edge even with accumulated intent', async () => {
+    vi.useFakeTimers();
+    const instance = await openTestInstance();
+    instance.rendition.setLayout?.({ flow: 'scrolled' });
+
+    rendererState.start = 998;
+    rendererState.end = 1000;
+    rendererState.viewSize = 1000;
+    rendererState.atEnd = true;
+
+    const ticks = Math.ceil(BOUNDARY_ARM_THRESHOLD_PX / BOUNDARY_DELTA_CAP_PX) + 2;
+    for (let i = 0; i < ticks; i++) wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
+    vi.advanceTimersByTime(BOUNDARY_ARM_MIN_VISIBLE_MS + 10);
+    for (let i = 0; i < ticks; i++) wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
+    await Promise.resolve();
+    expect(mockView.next).not.toHaveBeenCalled();
+
+    // Top boundary symmetric.
+    rendererState.atEnd = false;
+    rendererState.atStart = true;
     rendererState.start = 0;
     rendererState.end = 400;
-    scrollListener?.();
+    for (let i = 0; i < ticks; i++) wheelListener?.({ deltaY: -120, preventDefault: vi.fn() });
+    vi.advanceTimersByTime(BOUNDARY_ARM_MIN_VISIBLE_MS + 10);
+    for (let i = 0; i < ticks; i++) wheelListener?.({ deltaY: -120, preventDefault: vi.fn() });
     await Promise.resolve();
-    expect(mockView.prev).toHaveBeenCalledTimes(1);
+    expect(mockView.prev).not.toHaveBeenCalled();
 
-    rendererState.atStart = true;
-    wheelListener?.({ deltaY: -80, preventDefault: vi.fn() });
-    expect(mockView.prev).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it('prefetches adjacent sections when approaching a boundary', async () => {
@@ -760,6 +799,7 @@ describe('foliateEngine scrolled boundary bridge', () => {
   });
 
   it('does not double-advance while a boundary navigation is in flight', async () => {
+    vi.useFakeTimers();
     let releaseNext: (() => void) | undefined;
     mockView.next.mockImplementation(() => new Promise<void>(resolve => {
       releaseNext = resolve;
@@ -768,38 +808,46 @@ describe('foliateEngine scrolled boundary bridge', () => {
     const instance = await openTestInstance();
     instance.rendition.setLayout?.({ flow: 'scrolled' });
 
-    rendererState.start = 900;
-    rendererState.end = 995;
-    rendererState.viewSize = 1000;
-    scrollListener?.();
-
     rendererState.start = 998;
     rendererState.end = 1000;
-    scrollListener?.();
-    wheelListener?.({ deltaY: 80, preventDefault: vi.fn() });
+    rendererState.viewSize = 1000;
+
+    // Accumulate past threshold, advance past min-visible, then turn.
+    const ticks = Math.ceil(BOUNDARY_ARM_THRESHOLD_PX / BOUNDARY_DELTA_CAP_PX);
+    for (let i = 0; i < ticks; i++) wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
+    vi.advanceTimersByTime(BOUNDARY_ARM_MIN_VISIBLE_MS + 10);
+    wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
+    expect(mockView.next).toHaveBeenCalledTimes(1);
+
+    // While the turn is in flight, further arming is ignored.
+    for (let i = 0; i < ticks; i++) wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
+    vi.advanceTimersByTime(BOUNDARY_ARM_MIN_VISIBLE_MS + 10);
+    wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
     expect(mockView.next).toHaveBeenCalledTimes(1);
 
     releaseNext?.();
     await Promise.resolve();
+    vi.useRealTimers();
   });
 
-  it('does not call next again when scroll stays at the bottom', async () => {
+  it('decays the arm and emits a disarmed event after scrolling stops', async () => {
+    vi.useFakeTimers();
+    const armEvents: Array<{ armed: boolean }> = [];
     const instance = await openTestInstance();
+    instance.rendition.on('boundaryarm', (state: unknown) => {
+      armEvents.push(state as { armed: boolean });
+    });
     instance.rendition.setLayout?.({ flow: 'scrolled' });
-
-    rendererState.start = 900;
-    rendererState.end = 995;
-    rendererState.viewSize = 1000;
-    scrollListener?.();
 
     rendererState.start = 998;
     rendererState.end = 1000;
-    scrollListener?.();
-    await Promise.resolve();
-    expect(mockView.next).toHaveBeenCalledTimes(1);
+    rendererState.viewSize = 1000;
+    wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
+    expect(armEvents[armEvents.length - 1]).toMatchObject({ armed: true });
 
-    scrollListener?.();
-    await Promise.resolve();
-    expect(mockView.next).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(700);
+    expect(armEvents[armEvents.length - 1]).toMatchObject({ armed: false });
+
+    vi.useRealTimers();
   });
 });

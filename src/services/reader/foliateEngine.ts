@@ -55,6 +55,38 @@ type FoliateRenderer = FoliatePaginatorScroll & {
 export const SCROLLED_BOUNDARY_TOLERANCE_PX = 2;
 export const SCROLLED_PREFETCH_DISTANCE_PX = 1200;
 
+/**
+ * Boundary-arming constants. When the reader reaches a chapter edge we no longer
+ * turn immediately; instead we accumulate scroll intent and surface a UI hint
+ * that must stay visible long enough for the user to see it.
+ *
+ * Why these values:
+ * - `BOUNDARY_ARM_THRESHOLD_PX`: total scroll intent needed to turn. Sourced
+ *   from real `|deltaY|` so one trackpad fling (which fires dozens of wheel
+ *   events) accumulates the same as a single decisive mouse-wheel flick.
+ * - `BOUNDARY_DELTA_CAP_PX`: per-event cap. Without it one large mouse-wheel
+ *   tick (deltaY can be 100+) would blow past the threshold in a single event
+ *   and the hint would never be visible. The cap forces at least a couple of
+ *   events — i.e. a deliberate continued scroll — to turn.
+ * - `BOUNDARY_ARM_MIN_VISIBLE_MS`: once armed, the hint must stay up at least
+ *   this long before a turn is allowed. macOS fires 10–30 wheel events per
+ *   gesture within ~50ms; without a min-visible gate the hint appears and is
+ *   dismissed in the same frame, indistinguishable from the old instant turn.
+ * - `BOUNDARY_ARM_DECAY_MS`: stop scrolling for this long and the arm resets.
+ */
+export const BOUNDARY_ARM_THRESHOLD_PX = 240;
+export const BOUNDARY_DELTA_CAP_PX = 40;
+export const BOUNDARY_ARM_MIN_VISIBLE_MS = 320;
+export const BOUNDARY_ARM_DECAY_MS = 700;
+
+export type BoundaryArmDirection = 'next' | 'prev';
+
+export type BoundaryArmState = {
+  direction: BoundaryArmDirection | null;
+  progress: number;
+  armed: boolean;
+};
+
 export function isScrolledAtBottom(
   metrics: { viewSize?: number; end?: number },
   tolerance = SCROLLED_BOUNDARY_TOLERANCE_PX,
@@ -256,6 +288,11 @@ class FoliateRendition implements ReadingEngineRendition {
   private boundaryHost: HTMLElement | null = null;
   private lastScrollStart = 0;
   private lastRelocatedSectionIndex: number | null = null;
+  // Boundary arming: accumulate scroll intent at a chapter edge before turning.
+  private armDirection: BoundaryArmDirection | null = null;
+  private armAccumulated = 0;
+  private armDecayTimer: ReturnType<typeof setTimeout> | null = null;
+  private armShownAt = 0;
   private readonly onRendererRelocate = (event: Event) => {
     const fraction = (event as CustomEvent<FoliateRendererRelocateDetail>).detail?.fraction;
     if (typeof fraction === 'number' && Number.isFinite(fraction)) {
@@ -274,6 +311,7 @@ class FoliateRendition implements ReadingEngineRendition {
         this.lastRelocatedSectionIndex = index;
         this.prefetchedSectionIndices.clear();
         this.resetScrollBoundaryTracking();
+        this.clearBoundaryArm();
       }
     });
 
@@ -414,10 +452,12 @@ class FoliateRendition implements ReadingEngineRendition {
       const scrollDown = metrics.start > this.lastScrollStart + 1;
       const scrollUp = metrics.start < this.lastScrollStart - 1;
       this.lastScrollStart = metrics.start;
+      // Native overflow scroll only reaches the exact edge on trackpad/drag; treat
+      // any further downward intent at the bottom as arm input (similar to wheel).
       if (isScrolledAtBottom(metrics) && scrollDown && !metrics.atEnd) {
-        void this.advanceAtBoundary('next', metrics);
+        this.armBoundary('next', BOUNDARY_DELTA_CAP_PX);
       } else if (isScrolledAtTop(metrics) && scrollUp && !metrics.atStart) {
-        void this.advanceAtBoundary('prev', metrics);
+        this.armBoundary('prev', BOUNDARY_DELTA_CAP_PX);
       }
     };
 
@@ -428,11 +468,13 @@ class FoliateRendition implements ReadingEngineRendition {
       const wheel = event as WheelEvent;
       this.maybePrefetchAdjacentSections(metrics);
       if (wheel.deltaY > 0 && isScrolledAtBottom(metrics) && !metrics.atEnd) {
+        // Swallow the wheel so the browser doesn't rubber-band while we arm.
         wheel.preventDefault();
-        void this.advanceAtBoundary('next', metrics);
+        // Real deltaY, capped, so one giant mouse-wheel tick can't skip the hint.
+        this.armBoundary('next', Math.min(Math.abs(wheel.deltaY), BOUNDARY_DELTA_CAP_PX));
       } else if (wheel.deltaY < 0 && isScrolledAtTop(metrics) && !metrics.atStart) {
         wheel.preventDefault();
-        void this.advanceAtBoundary('prev', metrics);
+        this.armBoundary('prev', Math.min(Math.abs(wheel.deltaY), BOUNDARY_DELTA_CAP_PX));
       }
     };
 
@@ -456,6 +498,67 @@ class FoliateRendition implements ReadingEngineRendition {
     for (const cleanup of this.boundaryCleanups.splice(0)) cleanup();
     this.scrolledBoundaryBridgeEnabled = false;
     this.lastScrollStart = 0;
+    this.clearBoundaryArm();
+  }
+
+  /**
+   * Accumulate scroll intent at a chapter edge. Each call adds `delta` (real
+   * |deltaY|, capped by the caller) and emits the current arm progress so the
+   * UI can show a hint. The chapter turns only once BOTH conditions hold:
+   *   1. accumulated intent reaches `BOUNDARY_ARM_THRESHOLD_PX`, AND
+   *   2. the hint has been visible for at least `BOUNDARY_ARM_MIN_VISIBLE_MS`.
+   * The min-visible gate is the fix for the "hint flashes and vanishes" bug:
+   * macOS fires 10–30 wheel events per gesture within ~50ms, so without it the
+   * threshold was crossed in the same frame the hint first painted.
+   *
+   * Stopping for `BOUNDARY_ARM_DECAY_MS` disarms and hides the hint.
+   */
+  private armBoundary(direction: BoundaryArmDirection, delta: number): void {
+    if (this.boundaryNavLock) return;
+    if (this.armDirection !== direction) {
+      this.armDirection = direction;
+      this.armAccumulated = 0;
+      this.armShownAt = 0;
+    }
+    this.armAccumulated += Math.max(0, delta);
+    if (this.armShownAt === 0) this.armShownAt = Date.now();
+
+    if (this.armDecayTimer) clearTimeout(this.armDecayTimer);
+    this.armDecayTimer = setTimeout(() => this.decayBoundaryArm(), BOUNDARY_ARM_DECAY_MS);
+
+    const progress = Math.min(1, this.armAccumulated / BOUNDARY_ARM_THRESHOLD_PX);
+    this.bridge.emit('boundaryarm', {
+      direction: this.armDirection,
+      progress,
+      armed: true,
+    } satisfies BoundaryArmState);
+
+    const reachedThreshold = this.armAccumulated >= BOUNDARY_ARM_THRESHOLD_PX;
+    const visibleLongEnough = Date.now() - this.armShownAt >= BOUNDARY_ARM_MIN_VISIBLE_MS;
+    if (reachedThreshold && visibleLongEnough) {
+      const turnDirection = this.armDirection;
+      this.clearBoundaryArm();
+      void this.advanceAtBoundary(turnDirection);
+    }
+  }
+
+  private decayBoundaryArm(): void {
+    this.armDecayTimer = null;
+    this.armDirection = null;
+    this.armAccumulated = 0;
+    this.armShownAt = 0;
+    this.bridge.emit('boundaryarm', { direction: null, progress: 0, armed: false } satisfies BoundaryArmState);
+  }
+
+  private clearBoundaryArm(): void {
+    if (this.armDecayTimer) {
+      clearTimeout(this.armDecayTimer);
+      this.armDecayTimer = null;
+    }
+    this.armDirection = null;
+    this.armAccumulated = 0;
+    this.armShownAt = 0;
+    this.bridge.emit('boundaryarm', { direction: null, progress: 0, armed: false } satisfies BoundaryArmState);
   }
 
   private async advanceAtBoundary(
