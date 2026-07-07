@@ -97,26 +97,6 @@
     cursor: grabbing;
 }
 
-.folder-nav-group .folder-actions {
-    display: flex;
-    align-items: center;
-    padding-right: 2px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--transition-fast);
-}
-
-.organizer-group-header-row:hover .folder-actions,
-.organizer-group-header-row:focus-within .folder-actions {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.folder-actions-placeholder {
-    opacity: 0 !important;
-    pointer-events: none !important;
-}
-
 .sidebar-content {
     flex: 1;
     min-height: 0;
@@ -183,10 +163,7 @@
 }
 
 .organizer-group-header-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 4px;
+    display: block;
 }
 
 .organizer-group-header {
@@ -426,38 +403,6 @@
     transition: scale var(--transition-fast);
 }
 
-.book-actions {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    position: absolute;
-    right: 9px;
-    bottom: 9px;
-    z-index: 2;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--transition-fast);
-}
-
-.book-item:hover .book-actions,
-.book-item:focus-within .book-actions {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.book-actions .astryx-button {
-    color: var(--text-secondary) !important;
-    background: color-mix(in srgb, var(--bg-elevated) 86%, transparent) !important;
-    border-color: transparent !important;
-    pointer-events: auto;
-}
-
-.book-actions .astryx-button:hover {
-    color: var(--accent) !important;
-    background: var(--bg-control-hover) !important;
-    border-color: transparent !important;
-}
-
 dialog.sidebar-dialog {
     --sidebar-dialog-surface: var(--color-background-popover, var(--bg-elevated));
     position: fixed !important;
@@ -615,59 +560,6 @@ dialog.sidebar-dialog::backdrop {
 .color-option.selected {
     border-color: var(--text-primary);
     box-shadow: 0 0 0 2px var(--bg-primary);
-}
-
-.folder-assign-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-1, 4px);
-    max-height: 224px;
-    overflow-y: auto;
-}
-
-.folder-assign-item {
-    min-height: 38px;
-    padding-inline: var(--spacing-3, 12px) !important;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    color: var(--text-primary);
-    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.folder-assign-item:hover {
-    background: var(--bg-control-hover);
-    border-color: transparent;
-}
-
-.folder-assign-item[aria-selected="true"],
-.folder-assign-item[data-selected="true"] {
-    background: var(--accent-soft);
-    border-color: transparent;
-    color: var(--accent);
-}
-
-.folder-assign-current {
-    flex-shrink: 0;
-    padding: 2px var(--spacing-2, 8px);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-    color: var(--accent);
-    font-size: 11px;
-    font-weight: 600;
-}
-
-dialog.folder-assign-dialog.sidebar-dialog {
-    width: min(360px, calc(100vw - 32px)) !important;
-    max-height: min(420px, calc(100vh - 32px)) !important;
-}
-
-.folder-assign-dialog .sidebar-dialog-content {
-    padding: var(--spacing-2, 8px) var(--spacing-5, 20px) var(--spacing-4, 16px) !important;
-}
-
-.folder-assign-dialog .modal-actions {
-    margin-top: var(--spacing-2, 8px);
-    padding-top: var(--spacing-2, 8px) !important;
 }
 
 .sidebar-footer {

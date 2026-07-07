@@ -19,8 +19,7 @@ import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Icon } from '@astryxdesign/core/Icon';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { List, ListItem } from '@astryxdesign/core/List';
-import { DropdownMenu } from '@astryxdesign/core/DropdownMenu';
-import type { DropdownMenuOption } from '@astryxdesign/core/DropdownMenu';
+import { ContextMenu } from '@astryxdesign/core/ContextMenu';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import {
     CloseIcon,
@@ -94,16 +93,6 @@ function AstryxChevronIcon(props: SVGProps<SVGSVGElement>) {
     );
 }
 
-function AstryxMoreHorizontalIcon(props: SVGProps<SVGSVGElement>) {
-    return (
-        <svg {...props} viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="5" cy="12" r="1.7" />
-            <circle cx="12" cy="12" r="1.7" />
-            <circle cx="19" cy="12" r="1.7" />
-        </svg>
-    );
-}
-
 interface SidebarProps {
     onImportBook: () => void;
     onOpenSettings: () => void;
@@ -156,28 +145,6 @@ function mountFolderDragGhost(sourceRow: HTMLElement): HTMLElement {
     const mountTarget = sourceRow.closest('.sidebar') ?? document.body;
     mountTarget.appendChild(wrapper);
     return wrapper;
-}
-
-function FolderMoreMenu({
-    label,
-    items,
-}: {
-    label: string;
-    items: DropdownMenuOption[];
-}) {
-    return (
-        <DropdownMenu
-            button={{
-                label,
-                icon: <Icon icon={AstryxMoreHorizontalIcon} size="sm" />,
-                variant: 'ghost',
-                size: 'sm',
-                isIconOnly: true,
-            }}
-            items={items}
-            hasChevron={false}
-        />
-    );
 }
 
 // Lazy loaded book cover component
@@ -257,7 +224,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const [editingFolder, setEditingFolder] = useState<BookFolder | null>(null);
     const [newFolderName, setNewFolderName] = useState('');
     const [folderNameError, setFolderNameError] = useState('');
-    const [bookForFolder, setBookForFolder] = useState<string | null>(null);
     const [draggingBookId, setDraggingBookId] = useState<string | null>(null);
     const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
     const [bookDropTargetId, setBookDropTargetId] = useState<BookDropTarget | null>(null);
@@ -401,17 +367,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         setEditingFolder(null);
         setNewFolderName('');
         setFolderNameError('');
-    };
-
-    const handleSetBookFolder = (bookId: string) => {
-        setBookForFolder(bookId);
-    };
-
-    const confirmBookFolder = (folderId: string | undefined) => {
-        if (bookForFolder) {
-            setBookFolder(bookForFolder, folderId);
-            setBookForFolder(null);
-        }
     };
 
     const clearAutoExpandTimer = () => {
@@ -559,63 +514,45 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const renderBookItem = (book: Book) => {
         const percentage = bookProgressById[book.id]?.percentage ?? book.progress.percentage;
         return (
-            <ListItem
+            <ContextMenu
                 key={book.id}
-                className={`book-item ${currentBook?.id === book.id ? 'active' : ''} ${draggingBookId === book.id ? 'is-dragging' : ''}`}
-                onMouseEnter={() => void onPreloadReader()}
-                onClick={() => handleBookClick(book)}
-                draggable
-                onDragStart={(event) => handleBookDragStart(event, book)}
-                onDragEnd={handleDragEnd}
-                isSelected={currentBook?.id === book.id}
-                startContent={<LazyBookCover book={book} />}
-                label={
-                    <span className="book-title-row">
-                        <span className="book-title">{book.title}</span>
-                    </span>
-                }
-                description={
-                    <span className="book-info">
-                        <span className="book-author">{book.author || 'Unknown'}</span>
-                        {percentage > 0 && (
-                            <div className="book-progress">
-                                <div
-                                    className="book-progress-bar"
-                                    style={{ '--book-progress-scale': percentage / 100 } as React.CSSProperties}
-                                />
-                            </div>
-                        )}
-                    </span>
-                }
-                endContent={
-                    <span
-                        className="book-actions"
-                        onMouseDown={(event) => event.stopPropagation()}
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <DropdownMenu
-                            button={{
-                                label: `${book.title} 操作`,
-                                icon: <Icon icon={AstryxMoreHorizontalIcon} size="sm" />,
-                                variant: 'ghost',
-                                size: 'sm',
-                                isIconOnly: true,
-                            }}
-                            items={[
-                                { label: '移动到文件夹', icon: AstryxFolderIcon, onClick: () => handleSetBookFolder(book.id) },
-                                { label: '编辑书籍信息', icon: AstryxEditIcon, onClick: () => handleEditBookAction(book) },
-                                { label: '移除书籍', icon: AstryxTrashIcon, onClick: () => void handleDeleteBookAction(book.id) },
-                            ]}
-                            hasChevron={false}
-                        />
-                    </span>
-                }
-            />
+                hasAutoFocus={false}
+                items={[
+                    { label: '重命名', icon: AstryxEditIcon, onClick: () => handleEditBookAction(book) },
+                    { label: '移除书籍', icon: AstryxTrashIcon, onClick: () => void handleDeleteBookAction(book.id) },
+                ]}
+            >
+                <ListItem
+                    className={`book-item ${currentBook?.id === book.id ? 'active' : ''} ${draggingBookId === book.id ? 'is-dragging' : ''}`}
+                    onMouseEnter={() => void onPreloadReader()}
+                    onClick={() => handleBookClick(book)}
+                    draggable
+                    onDragStart={(event) => handleBookDragStart(event, book)}
+                    onDragEnd={handleDragEnd}
+                    isSelected={currentBook?.id === book.id}
+                    startContent={<LazyBookCover book={book} />}
+                    label={
+                        <span className="book-title-row">
+                            <span className="book-title">{book.title}</span>
+                        </span>
+                    }
+                    description={
+                        <span className="book-info">
+                            <span className="book-author">{book.author || 'Unknown'}</span>
+                            {percentage > 0 && (
+                                <div className="book-progress">
+                                    <div
+                                        className="book-progress-bar"
+                                        style={{ '--book-progress-scale': percentage / 100 } as React.CSSProperties}
+                                    />
+                                </div>
+                            )}
+                        </span>
+                    }
+                />
+            </ContextMenu>
         );
     };
-
-    const bookForFolderRecord = bookForFolder ? library.books.find(book => book.id === bookForFolder) : null;
-    const assignedFolderId = bookForFolderRecord?.folderId;
 
     if (!isSidebarOpen) return null;
 
@@ -728,60 +665,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                 </Dialog>
             )}
 
-            {/* Assign Folder Modal */}
-            {bookForFolder && (
-                <Dialog
-                    isOpen={bookForFolder !== null}
-                    onOpenChange={(open) => { if (!open) setBookForFolder(null); }}
-                    width={340}
-                    purpose="info"
-                    className="folder-assign-dialog sidebar-dialog"
-                >
-                    <Layout height="auto" className="sidebar-dialog-layout modal-assign-folder">
-                        <DialogHeader
-                            className="sidebar-dialog-header"
-                            title="设置文件夹"
-                            hasDivider={false}
-                            endContent={(
-                                <Button
-                                    variant="ghost"
-                                    label="关闭"
-                                    isIconOnly
-                                    icon={<CloseIcon />}
-                                    onClick={() => setBookForFolder(null)}
-                                />
-                            )}
-                        />
-                        <LayoutContent className="sidebar-dialog-content">
-                            <List density="compact" className="folder-assign-list" aria-label="设置书籍文件夹">
-                                <ListItem
-                                    className="folder-assign-item"
-                                    label="未归档书籍"
-                                    onClick={() => confirmBookFolder(undefined)}
-                                    isSelected={!assignedFolderId}
-                                    startContent={<Icon icon={AstryxOpenBookIcon} size="sm" />}
-                                    endContent={!assignedFolderId ? <span className="folder-assign-current">当前</span> : undefined}
-                                />
-                                {folders.map(folder => (
-                                    <ListItem
-                                        key={folder.id}
-                                        className="folder-assign-item"
-                                        label={folder.name}
-                                        onClick={() => confirmBookFolder(folder.id)}
-                                        isSelected={assignedFolderId === folder.id}
-                                        startContent={<Icon icon={AstryxFolderIcon} size="sm" />}
-                                        endContent={assignedFolderId === folder.id ? <span className="folder-assign-current">当前</span> : undefined}
-                                    />
-                                ))}
-                            </List>
-                            <div className="modal-actions">
-                                <Button variant="secondary" label="取消" onClick={() => setBookForFolder(null)} />
-                            </div>
-                        </LayoutContent>
-                    </Layout>
-                </Dialog>
-            )}
-
             <div className="sidebar-header" onMouseDown={handleWindowDragMouseDown} />
 
             <div className="sidebar-actions">
@@ -831,19 +714,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     <span className="organizer-count">{folders.length}</span>
                                     <Icon icon={AstryxChevronIcon} size="sm" />
                                 </button>
-                                <div className="folder-actions folder-actions-placeholder" aria-hidden="true">
-                                    <DropdownMenu
-                                        button={{
-                                            label: '全部文件夹占位',
-                                            icon: <Icon icon={AstryxMoreHorizontalIcon} size="sm" />,
-                                            variant: 'ghost',
-                                            size: 'sm',
-                                            isIconOnly: true,
-                                        }}
-                                        items={[]}
-                                        hasChevron={false}
-                                    />
-                                </div>
                             </div>
                             {isAllFoldersExpanded && folders.length > 0 && (
                                 <div className="organizer-folders-nested">
@@ -869,34 +739,32 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                                 {showReorderGap && (
                                                     <div className="organizer-reorder-gap" aria-hidden="true" />
                                                 )}
-                                                <div
+                                                <ContextMenu
+                                                    hasAutoFocus={false}
+                                                    items={[
+                                                        { label: '重命名', icon: AstryxEditIcon, onClick: () => openEditFolder(folder) },
+                                                        { label: '删除文件夹', icon: AstryxTrashIcon, onClick: () => void handleDeleteFolderAction(folder.id) },
+                                                    ]}
+                                                >
+                                                    <div
                                                         className={`organizer-group-header-row folder-drag-handle ${draggingFolderId === folder.id ? 'is-folder-dragging' : ''}`}
                                                         draggable
                                                         onDragStart={(event) => {
-                                                            if ((event.target as HTMLElement).closest('.folder-actions')) return;
                                                             handleFolderDragStart(event, folder);
                                                         }}
                                                         onDragEnd={handleDragEnd}
                                                     >
-                                                    <button
-                                                        className={`organizer-group-header ${isExpanded ? 'expanded' : ''} ${bookDropTargetId === folder.id ? 'drop-target' : ''}`}
-                                                        onClick={() => toggleFolder(folder.id)}
-                                                    >
-                                                        <Icon icon={AstryxFolderIcon} size="sm" />
-                                                        <span className="organizer-group-title">{folder.name}</span>
-                                                        <span className="organizer-count">{books.length}</span>
-                                                        <Icon icon={AstryxChevronIcon} size="sm" />
-                                                    </button>
-                                                    <div className="folder-actions">
-                                                        <FolderMoreMenu
-                                                            label={`${folder.name} 操作`}
-                                                            items={[
-                                                                { label: '编辑文件夹', icon: AstryxEditIcon, onClick: () => openEditFolder(folder) },
-                                                                { label: '删除文件夹', icon: AstryxTrashIcon, onClick: () => void handleDeleteFolderAction(folder.id) },
-                                                            ]}
-                                                        />
+                                                        <button
+                                                            className={`organizer-group-header ${isExpanded ? 'expanded' : ''} ${bookDropTargetId === folder.id ? 'drop-target' : ''}`}
+                                                            onClick={() => toggleFolder(folder.id)}
+                                                        >
+                                                            <Icon icon={AstryxFolderIcon} size="sm" />
+                                                            <span className="organizer-group-title">{folder.name}</span>
+                                                            <span className="organizer-count">{books.length}</span>
+                                                            <Icon icon={AstryxChevronIcon} size="sm" />
+                                                        </button>
                                                     </div>
-                                                </div>
+                                                </ContextMenu>
                                                 {isExpanded && books.length > 0 && (
                                                     <List density="compact" className="book-list">
                                                         {books.map(renderBookItem)}
@@ -925,19 +793,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
                                     <span className="organizer-count">{groupedBooks.unfiled.length}</span>
                                     <Icon icon={AstryxChevronIcon} size="sm" />
                                 </button>
-                                <div className="folder-actions folder-actions-placeholder" aria-hidden="true">
-                                    <DropdownMenu
-                                        button={{
-                                            label: '未归档书籍占位',
-                                            icon: <Icon icon={AstryxMoreHorizontalIcon} size="sm" />,
-                                            variant: 'ghost',
-                                            size: 'sm',
-                                            isIconOnly: true,
-                                        }}
-                                        items={[]}
-                                        hasChevron={false}
-                                    />
-                                </div>
                             </div>
                             {isUnfiledExpanded && groupedBooks.unfiled.length > 0 && (
                                 <List density="compact" className="book-list">

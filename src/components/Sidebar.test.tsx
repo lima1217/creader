@@ -214,7 +214,7 @@ async function clickBookAction(container: HTMLElement, bookTitle: string, action
   const bookItem = Array.from(container.querySelectorAll('.book-item')).find(
     (item) => item.textContent?.includes(bookTitle),
   ) as HTMLElement;
-  click(bookItem.querySelector('.book-actions button')!);
+  bookItem.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
   await settle();
   const item = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
     (menuItem) => menuItem.textContent?.trim() === actionLabel,
@@ -312,19 +312,16 @@ describe('Sidebar contract — book interactions', () => {
     expect(useLibraryStore.getState().currentBook?.id).toBe('b1');
   });
 
-  it('opens the per-book more menu without rendering a tooltip layer', async () => {
+  it('opens the per-book context menu without rendering a tooltip layer', async () => {
     seedLibrary({ books: [makeBook({ id: 'b1', title: 'Quiet Book' })], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
-    const button = container.querySelector('.book-actions button') as HTMLButtonElement | null;
-    expect(button).not.toBeNull();
-    expect(button!.getAttribute('aria-describedby')).toBeNull();
+    const bookItem = container.querySelector('.book-item') as HTMLElement;
 
-    click(button!);
+    bookItem.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
     await settle();
 
     expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).map(item => item.textContent?.trim())).toEqual([
-      '移动到文件夹',
-      '编辑书籍信息',
+      '重命名',
       '移除书籍',
     ]);
     expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
@@ -335,7 +332,7 @@ describe('Sidebar contract — book interactions', () => {
     seedLibrary({ books: [makeBook({ id: 'b1', title: 'Draft', author: 'Anon' })], folders: [], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    await clickBookAction(container, 'Draft', '编辑书籍信息');
+    await clickBookAction(container, 'Draft', '重命名');
 
     const modal = container.querySelector('.modal-edit') as HTMLElement;
     const [titleInput, authorInput] = Array.from(modal.querySelectorAll('input')) as HTMLInputElement[];
@@ -535,25 +532,6 @@ describe('Sidebar contract — folder nav', () => {
     expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
   });
 
-  it('moves a book from the more menu folder picker', async () => {
-    const folder = makeFolder({ id: 'folder1', name: 'Reading' });
-    const book = makeBook({ id: 'b1', title: 'Unfiled' });
-    seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
-    const { container } = mountSidebar();
-
-    await clickBookAction(container, 'Unfiled', '移动到文件夹');
-
-    const modal = container.querySelector('.modal-assign-folder') as HTMLElement;
-    const folderOption = Array.from(modal.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === 'Reading',
-    )!;
-    click(folderOption);
-    await settle();
-
-    expect(useLibraryStore.getState().library.books[0].folderId).toBe('folder1');
-    expect(container.querySelector('.modal-assign-folder')).toBeNull();
-  });
-
   it('leaves a book unchanged when dropped onto its current folder', async () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     const book = makeBook({ id: 'b1', title: 'Filed', folderId: 'folder1' });
@@ -660,11 +638,11 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     seedLibrary({ books: [], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    await findOrganizerButton(container, 'Old Name');
-    click(container.querySelector('[aria-label="Old Name 操作"]')!);
+    const folderHeader = await findOrganizerButton(container, 'Old Name');
+    folderHeader.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
     await settle();
     const editBtn = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.trim() === '编辑文件夹',
+      (item) => item.textContent?.trim() === '重命名',
     )!;
     click(editBtn);
     await settle();
@@ -687,14 +665,19 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     expect(container.querySelector('.modal-folder')).toBeNull();
   });
 
-  it('keeps the folder action button accessible without rendering a tooltip trigger', () => {
+  it('opens a folder context menu without rendering a tooltip layer', async () => {
     const folder = makeFolder({ id: 'folder1', name: 'Reading' });
     seedLibrary({ books: [], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    const actionButton = container.querySelector('[aria-label="Reading 操作"]') as HTMLButtonElement | null;
-    expect(actionButton).not.toBeNull();
-    expect(actionButton!.getAttribute('aria-describedby')).toBeNull();
+    const folderHeader = await findOrganizerButton(container, 'Reading');
+    folderHeader.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    await settle();
+
+    expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).map(item => item.textContent?.trim())).toEqual([
+      '重命名',
+      '删除文件夹',
+    ]);
     expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
   });
 
@@ -718,7 +701,8 @@ describe('Sidebar contract — folder modal (add + edit)', () => {
     seedLibrary({ books: [book], folders: [folder], lastUpdated: 1 });
     const { container } = mountSidebar();
 
-    click(container.querySelector('[aria-label="Reading 操作"]')!);
+    const folderHeader = await findOrganizerButton(container, 'Reading');
+    folderHeader.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
     await settle();
     const deleteBtn = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
       (item) => item.textContent?.trim() === '删除文件夹',
