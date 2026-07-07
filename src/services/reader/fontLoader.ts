@@ -34,7 +34,7 @@ async function loadFontFaceRules(
         return {
           fontFamily: face.fontFamily ?? builtin.fontFamily,
           src: toFontDataUrl(payload.bytesBase64, payload.mimeType),
-          fontWeight: '400',
+          fontWeight: face.fontWeight ?? '400',
           fontStyle: face.fontStyle,
         } satisfies FontFaceRule;
       }),
@@ -73,7 +73,10 @@ export async function ensureDocumentReadingFonts(
   await Promise.all(
     rules.map(async (rule) => {
       const loaded = [...doc.fonts].some(
-        (face) => face.family === rule.fontFamily && face.style === (rule.fontStyle ?? 'normal'),
+        (face) =>
+          face.family === rule.fontFamily &&
+          face.style === (rule.fontStyle ?? 'normal') &&
+          String(face.weight) === String(rule.fontWeight ?? '400'),
       );
       if (loaded) return;
 

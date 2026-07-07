@@ -20,10 +20,11 @@ describe('fontLoader', () => {
   it('loads bundled faces for builtin fonts', async () => {
     const css = await resolveFontFaceCss('builtin-roboto');
 
-    expect(readBundledFontBase64).toHaveBeenCalledTimes(3);
+    expect(readBundledFontBase64).toHaveBeenCalledTimes(4);
     expect(css).toContain('CReader Roboto');
     expect(css).toContain('CReader LXGW WenKai');
     expect(css).toContain('font-style: italic');
+    expect(css).toContain('font-weight: 700');
     expect(css).toContain('font-display: swap');
   });
 
@@ -31,6 +32,6 @@ describe('fontLoader', () => {
     await resolveFontFaceCss('builtin-roboto');
     await resolveFontFaceCss('builtin-roboto');
 
-    expect(readBundledFontBase64).toHaveBeenCalledTimes(3);
+    expect(readBundledFontBase64).toHaveBeenCalledTimes(4);
   });
 });
