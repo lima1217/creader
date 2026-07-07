@@ -449,11 +449,13 @@ class FoliateRendition implements ReadingEngineRendition {
       const metrics = this.readScrollMetrics();
       if (!metrics?.scrolled) return;
       this.maybePrefetchAdjacentSections(metrics);
-      const scrollDown = metrics.start > this.lastScrollStart + 1;
-      const scrollUp = metrics.start < this.lastScrollStart - 1;
+      // At a chapter edge the container is pinned: `start` stops changing, so a
+      // strict "did start increase" check never passes and the next-direction arm
+      // never fires (this was the "向下翻不显示" bug). Use a non-strict comparison
+      // (>= / <=) so that being pinned at the edge still counts as intent.
+      const scrollDown = metrics.start >= this.lastScrollStart - 1;
+      const scrollUp = metrics.start <= this.lastScrollStart + 1;
       this.lastScrollStart = metrics.start;
-      // Native overflow scroll only reaches the exact edge on trackpad/drag; treat
-      // any further downward intent at the bottom as arm input (similar to wheel).
       if (isScrolledAtBottom(metrics) && scrollDown && !metrics.atEnd) {
         this.armBoundary('next', BOUNDARY_DELTA_CAP_PX);
       } else if (isScrolledAtTop(metrics) && scrollUp && !metrics.atStart) {

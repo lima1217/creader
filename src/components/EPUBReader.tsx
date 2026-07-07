@@ -8,6 +8,7 @@ import { tryCopyBookToLibrary } from '../services/BookImportService';
 import { createLogger } from '../utils/logger';
 import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import { SelectionToolbar } from './reader/SelectionToolbar';
+import { BoundaryArmIndicator } from './reader/BoundaryArmIndicator';
 import { useEpubBookLifecycle } from './reader/useEpubBookLifecycle';
 import { useEpubSettingsSync } from './reader/useEpubSettingsSync';
 import { useReadingChromeSession } from './reader/useReadingChromeSession';
@@ -214,6 +215,12 @@ export function EPUBReader() {
                 onAsk={chrome.selectionToolbar.onAsk}
                 onClose={chrome.selectionToolbar.onClose}
                 showHint={chrome.selectionToolbar.showHint}
+            />
+
+            <BoundaryArmIndicator
+                visible={chrome.boundaryArm.armed}
+                direction={chrome.boundaryArm.direction}
+                progress={chrome.boundaryArm.progress}
             />
 
             {/* Accumulated Texts Indicator */}

@@ -1,0 +1,42 @@
+/* ============================================
+   Boundary arm indicator — very thin faint hairline
+   ============================================
+   A faint progress hairline at the reading-area edge while the reader is armed.
+   position: absolute relative to `.reader`. The bottom edge must use
+   `var(--space-4)`, NOT 0: `.reader`'s bottom is the app window bottom, while
+   the visible reading surface (foliate content) sits ~16px above it (same offset
+   the `.reader-accumulated-indicator` uses). z-index matches SelectionToolbar
+   (100) so it floats above `.reader-content` / foliate iframe. Token-only. */
+
+.reader-boundary-arm {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 160px;
+    height: 2px;
+    background: transparent;
+    opacity: 0;
+    transition: opacity var(--transition-base) ease-out;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.reader-boundary-arm.at-bottom {
+    bottom: var(--space-4);
+}
+
+.reader-boundary-arm.at-top {
+    top: var(--space-4);
+}
+
+.reader-boundary-arm.is-visible {
+    opacity: 1;
+}
+
+.reader-boundary-arm-fill {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    opacity: 0.45;
+    transition: width var(--transition-fast) ease-out;
+}

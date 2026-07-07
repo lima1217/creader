@@ -237,7 +237,11 @@
     color: var(--accent) !important;
 }
 
-@media (max-width: 920px) {
+/* Toolbar breakpoints key off the reader container (.app-main has
+   container-type: inline-size), not the viewport. Sidebar + AI panel
+   claim window width before the reader column, so its inline size is
+   the space the toolbar actually has. */
+@container (max-width: 400px) {
     .toolbar {
         grid-template-columns: auto max-content;
         gap: 6px;
@@ -254,7 +258,7 @@
 
 }
 
-@media (max-width: 560px) {
+@container (max-width: 560px) {
     .toolbar {
         gap: 4px;
         padding: 0 6px;

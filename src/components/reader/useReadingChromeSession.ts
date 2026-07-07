@@ -7,6 +7,7 @@ import { useUIStore } from '../../stores/uiStore';
 import type { Book, NavItem } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import type { ReadingEngineRendition } from '../../services/reader/readingEngine';
+import type { BoundaryArmDirection, BoundaryArmState } from '../../services/reader/foliateEngine';
 import { createLogger } from '../../utils/logger';
 import { isTocItemActive } from './readerNavigation';
 import { useEpubProgressTracking } from './useEpubProgressTracking';
@@ -39,6 +40,7 @@ export function useReadingChromeSession(params: {
   const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
   const [showSelectionHint, setShowSelectionHint] = useState(false);
   const [accumulatedPreviewOpen, setAccumulatedPreviewOpen] = useState(false);
+  const [boundaryArm, setBoundaryArm] = useState<BoundaryArmState>({ direction: null, progress: 0, armed: false });
 
   const closeSelectionToolbar = useCallback(() => {
     setShowSelectionToolbar(false);
@@ -161,6 +163,24 @@ export function useReadingChromeSession(params: {
     };
   }, [rendition]);
 
+  // Boundary arming: the engine emits arm progress as the reader accumulates
+  // scroll intent at a chapter edge; mirror it into state for the hint hairline.
+  useEffect(() => {
+    if (!rendition) return;
+    const onArm = (state: unknown) => {
+      const s = state as BoundaryArmState;
+      setBoundaryArm({
+        direction: (s.direction ?? null) as BoundaryArmDirection | null,
+        progress: typeof s.progress === 'number' ? s.progress : 0,
+        armed: Boolean(s.armed),
+      });
+    };
+    rendition.on('boundaryarm', onArm);
+    return () => {
+      rendition.off('boundaryarm', onArm);
+    };
+  }, [rendition]);
+
   return {
     toc,
     setToc,
@@ -185,5 +205,6 @@ export function useReadingChromeSession(params: {
     accumulatedTexts,
     accumulatedPreviewOpen,
     onAccumulatedTextsClick: handleAccumulatedTextsClick,
+    boundaryArm,
   };
 }
