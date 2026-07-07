@@ -14,7 +14,15 @@ describe('fontCatalog', () => {
     expect(BUILTIN_FONT_DEFINITION.fontStack).toBe(
       '"CReader Roboto", "CReader LXGW WenKai", -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
     );
-    expect(BUILTIN_FONT_DEFINITION.faces).toHaveLength(3);
+    expect(BUILTIN_FONT_DEFINITION.faces).toHaveLength(4);
+  });
+
+  it('registers a synthetic bold LXGW WenKai face so weighted text stays in family', () => {
+    const lxgw = BUILTIN_FONT_DEFINITION.faces.filter(
+      (face) => face.fontFamily === 'CReader LXGW WenKai',
+    );
+    expect(lxgw).toHaveLength(2);
+    expect(lxgw.map((face) => face.fontWeight ?? '400').sort()).toEqual(['400', '700']);
   });
 
   it('defaults resolveFontStack to the builtin definition', () => {

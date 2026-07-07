@@ -11,6 +11,7 @@ export interface BuiltinFontDefinition {
     resourceFile: string;
     fontStyle: 'normal' | 'italic';
     fontFamily?: string;
+    fontWeight?: string;
   }[];
 }
 
@@ -40,6 +41,16 @@ export const BUILTIN_FONT_DEFINITION: BuiltinFontDefinition = {
       resourceFile: 'fonts/LXGWWenKaiGBScreen-Subset.woff2',
       fontStyle: 'normal',
       fontFamily: 'CReader LXGW WenKai',
+    },
+    // LXGW WenKai ships only a regular face. Re-register the same file at
+    // weight 700 so `<b>`/`<strong>` and publisher `font-weight: 700` resolve
+    // inside the LXGW family (synthetic bold) instead of falling back to the
+    // next entry in the stack and losing the WenKai glyphs.
+    {
+      resourceFile: 'fonts/LXGWWenKaiGBScreen-Subset.woff2',
+      fontStyle: 'normal',
+      fontFamily: 'CReader LXGW WenKai',
+      fontWeight: '700',
     },
   ],
 };
