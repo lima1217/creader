@@ -4,7 +4,10 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
 use tauri::Manager;
 
+// Tauri command return values are serialized verbatim; the frontend
+// (`fontFileService.ts`) reads camelCase keys, so rename explicitly.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FontFilePayload {
     pub bytes_base64: String,
     pub mime_type: String,
@@ -83,6 +86,21 @@ mod tests {
             Some("font/woff2")
         );
         assert_eq!(mime_type_for_font_extension(Path::new("x.pdf")), None);
+    }
+
+    /// Regression: the frontend reads `bytesBase64` / `mimeType`; without
+    /// `rename_all = "camelCase"` the payload serialized as snake_case and the
+    /// built-in reading fonts silently never loaded (books fell back to the
+    /// system font).
+    #[test]
+    fn font_payload_serializes_camel_case_for_frontend() {
+        let payload = FontFilePayload {
+            bytes_base64: "AA==".to_string(),
+            mime_type: "font/woff2".to_string(),
+        };
+        let json = serde_json::to_value(&payload).expect("serialize payload");
+        assert!(json.get("bytesBase64").is_some(), "expected camelCase bytesBase64: {json}");
+        assert!(json.get("mimeType").is_some(), "expected camelCase mimeType: {json}");
     }
 
     #[test]
