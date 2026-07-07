@@ -23,7 +23,6 @@ vi.mock('./fontCatalog', () => ({
 const baseSettings: Settings = {
   theme: 'light',
   fontSize: 16,
-  lineHeight: 1.6,
   readingMemoryAutoIngest: false,
   aiTextSize: 14,
   aiContextWindow: 20,

@@ -14,4 +14,14 @@ describe('resolveSettings', () => {
     expect(resolved).not.toHaveProperty('fontFamily');
     expect(resolved).not.toHaveProperty('customFonts');
   });
+
+  it('silently ignores retired lineHeight from legacy persisted JSON', () => {
+    const resolved = resolveSettings({
+      lineHeight: 1.8,
+      fontSize: 18,
+    } as Partial<Settings> & { lineHeight: number }, DEFAULT_SETTINGS);
+
+    expect(resolved.fontSize).toBe(18);
+    expect(resolved).not.toHaveProperty('lineHeight');
+  });
 });

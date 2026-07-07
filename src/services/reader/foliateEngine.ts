@@ -1,7 +1,15 @@
 import type { NavItem } from '../../types';
 import type { RenditionContent } from './epubAdapter';
 import type { ReadingEngineAdapter, ReadingEngineInstance, ReadingEngineOptions, ReadingEngineRendition, ReadingLayoutOptions } from './readingEngine';
-import { buildSectionTypographyCss } from './epubTypography';
+import { buildSectionReadingCss } from './epubTypography';
+import { ensureDocumentReadingFonts } from './fontLoader';
+import { resolveSectionLanguage } from './sectionLanguage';
+import {
+  ensureSectionFontFaces,
+  forceReadingTypography,
+  stripPublisherTypographyOverrides,
+} from './sectionTypographyOverrides';
+import { resolveFontStackForLanguage } from '../../components/reader/fontCatalog';
 
 type FoliateLocation = {
   cfi?: string;
@@ -38,7 +46,7 @@ type FoliatePaginatorScroll = {
 
 type FoliateRenderer = FoliatePaginatorScroll & {
   getContents?: () => FoliateContent[];
-  setStyles?: (styles: string) => void;
+  setStyles?: (styles: string | [string, string]) => void;
   setAttribute: (name: string, value: string) => void;
   removeAttribute: (name: string) => void;
   goTo?: (target: { index: number; anchor: () => number }) => Promise<void>;
@@ -114,7 +122,7 @@ export function readPaginatorMetrics(renderer: FoliatePaginatorScroll | undefine
 }
 
 type FoliateViewElement = HTMLElement & {
-  book?: {
+  book?: FoliateBook & {
     sections?: FoliateSection[];
     toc?: FoliateTocItem[];
   };
@@ -127,6 +135,17 @@ type FoliateViewElement = HTMLElement & {
   next(distance?: number): Promise<void>;
   close(): void;
   getCFI?(index: number, range?: Range): string;
+};
+
+type FoliateBook = {
+  metadata?: {
+    language?: string[];
+  };
+};
+
+type FoliateThemeOptions = {
+  fontFaceCss?: string;
+  fontSize?: number;
 };
 
 type FoliateTocItem = {
@@ -142,15 +161,18 @@ export function toFoliateThemeCss(styles: Record<string, Record<string, string>>
     .join('\n');
 }
 
+export type FoliateManagedCss = string | [string, string];
+
 export function composeFoliateThemeCss(
   styles: Record<string, Record<string, string>>,
   fontFaceCss = '',
-): string {
+): FoliateManagedCss {
   const rules = toFoliateThemeCss(styles);
-  return fontFaceCss ? `${fontFaceCss}\n${rules}` : rules;
+  if (!fontFaceCss) return rules;
+  return [fontFaceCss, rules];
 }
 
-export function applyFoliateManagedStyles(renderer: FoliateRenderer | undefined, css: string): boolean {
+export function applyFoliateManagedStyles(renderer: FoliateRenderer | undefined, css: FoliateManagedCss): boolean {
   if (!renderer?.setStyles) return false;
   renderer.setStyles(css);
   return true;
@@ -196,19 +218,21 @@ class FoliateRendition implements ReadingEngineRendition {
   readonly themes = {
     default: (
       styles: Record<string, Record<string, string>>,
-      options?: { fontFaceCss?: string },
+      options?: FoliateThemeOptions,
     ) => {
       this.themeStyles = styles;
       this.fontFaceCss = options?.fontFaceCss ?? '';
+      if (options?.fontSize != null) this.readingFontSize = options.fontSize;
       this.applyTheme();
     },
     register: (
       _name: string,
       styles: Record<string, Record<string, string>>,
-      options?: { fontFaceCss?: string },
+      options?: FoliateThemeOptions,
     ) => {
       this.themeStyles = styles;
       this.fontFaceCss = options?.fontFaceCss ?? '';
+      if (options?.fontSize != null) this.readingFontSize = options.fontSize;
       this.applyTheme();
     },
     select: () => {
@@ -222,6 +246,9 @@ class FoliateRendition implements ReadingEngineRendition {
   private readonly prefetchedSectionIndices = new Set<number>();
   private themeStyles: Record<string, Record<string, string>> = {};
   private fontFaceCss = '';
+  private readingFontSize = 16;
+  private bookLanguageHint = '';
+  private sectionTypographyToken = 0;
   private initialized = false;
   private sectionFraction: number | null = null;
   private boundaryNavLock = false;
@@ -355,6 +382,10 @@ class FoliateRendition implements ReadingEngineRendition {
       this.disableScrolledBoundaryBridge();
       this.enableScrolledBoundaryBridge();
     }
+  }
+
+  setBookLanguageHint(language: string): void {
+    this.bookLanguageHint = language.trim();
   }
 
   private getScrollRenderer(): FoliatePaginatorScroll | undefined {
@@ -566,7 +597,10 @@ class FoliateRendition implements ReadingEngineRendition {
     for (const content of this.getContents()) this.applyThemeToDocument(content.document, css);
   }
 
-  private applyThemeToDocument(doc?: Document, css = composeFoliateThemeCss(this.themeStyles, this.fontFaceCss)): void {
+  private applyThemeToDocument(
+    doc?: Document,
+    css: FoliateManagedCss = composeFoliateThemeCss(this.themeStyles, this.fontFaceCss),
+  ): void {
     if (!doc) return;
     if (!this.view.renderer?.setStyles) {
       const id = 'creader-foliate-theme';
@@ -576,18 +610,27 @@ class FoliateRendition implements ReadingEngineRendition {
         style.id = id;
         doc.head.append(style);
       }
-      style.textContent = css;
+      style.textContent = Array.isArray(css) ? `${css[0]}\n${css[1]}` : css;
     }
 
-    // foliate snapshots the section body background at load and repaints it from
-    // its own shadow-DOM `#background` layer (`paginator.js` →
-    // `#replaceBackground`). The public `renderer.setStyles()` path above
-    // schedules that replacement on the next animation frame, so the old
-    // background does not linger until a page turn. `--theme-bg-color` is
-    // foliate's hook for substituting the live theme into that replacement.
     const bodyBackground = this.themeStyles.body?.background;
     const bgColor = bodyBackground?.replace(/\s*!important\s*$/, '');
     if (bgColor) doc.documentElement.style.setProperty('--theme-bg-color', bgColor);
+
+    const token = ++this.sectionTypographyToken;
+    void this.finishSectionReadingTypography(doc, token);
+  }
+
+  private async finishSectionReadingTypography(doc: Document, token: number): Promise<void> {
+    ensureSectionFontFaces(doc, this.fontFaceCss);
+    try {
+      await ensureDocumentReadingFonts(doc);
+    } catch {
+      // CSS @font-face fallback remains in ensureSectionFontFaces.
+    }
+    if (token !== this.sectionTypographyToken) return;
+
+    stripPublisherTypographyOverrides(doc);
 
     const typographyId = 'creader-foliate-typography';
     let typographyStyle = doc.getElementById(typographyId) as HTMLStyleElement | null;
@@ -596,7 +639,11 @@ class FoliateRendition implements ReadingEngineRendition {
       typographyStyle.id = typographyId;
       doc.head.append(typographyStyle);
     }
-    typographyStyle.textContent = buildSectionTypographyCss(doc.documentElement.lang);
+    const lang = resolveSectionLanguage(doc, this.bookLanguageHint);
+    const fontStack = resolveFontStackForLanguage(lang);
+    typographyStyle.textContent = buildSectionReadingCss(lang, fontStack, this.readingFontSize);
+    forceReadingTypography(doc, fontStack, this.readingFontSize, { lang });
+    await doc.fonts?.ready?.catch(() => undefined);
   }
 }
 
@@ -632,6 +679,8 @@ export const foliateEngineAdapter: ReadingEngineAdapter = {
 
     const rendition = new FoliateRendition(view);
     rendition.bindBoundaryHost(container);
+    const bookLanguage = view.book?.metadata?.language?.[0] ?? '';
+    rendition.setBookLanguageHint(bookLanguage);
 
     return {
       name: 'foliate',

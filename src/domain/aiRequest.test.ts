@@ -18,7 +18,6 @@ const book: Book = {
 const settings: Settings = {
   theme: 'light',
   fontSize: 16,
-  lineHeight: 1.6,
   readingMemoryAutoIngest: true,
   aiTextSize: 14,
   aiContextWindow: 5,

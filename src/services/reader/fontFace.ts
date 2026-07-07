@@ -14,6 +14,7 @@ export function buildFontFaceCss(rules: readonly FontFaceRule[]): string {
       ];
       if (rule.fontWeight) parts.push(`font-weight: ${rule.fontWeight}`);
       if (rule.fontStyle) parts.push(`font-style: ${rule.fontStyle}`);
+      parts.push('font-display: swap');
       return `@font-face { ${parts.join('; ')}; }`;
     })
     .join('\n');

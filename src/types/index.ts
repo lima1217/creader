@@ -62,7 +62,6 @@ export type Theme = 'light' | 'dark';
 export interface Settings {
   theme: Theme;
   fontSize: number; // 12-24
-  lineHeight: number; // 1.4-2.0
   readingMemoryPath?: string;
   readingMemoryAutoIngest: boolean;
   aiTextSize: number; // 13-20

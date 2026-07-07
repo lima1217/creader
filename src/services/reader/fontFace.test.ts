@@ -16,6 +16,7 @@ describe('fontFace', () => {
     expect(css).toContain('font-family: "CReader Literata"');
     expect(css).toContain('format("woff2")');
     expect(css).toContain('font-style: normal');
+    expect(css).toContain('font-display: swap');
   });
 
   it('joins multiple face rules', () => {

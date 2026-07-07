@@ -30,19 +30,20 @@ describe('foliateEngine theme bridge', () => {
     expect(css).toBe('body{color:#111 !important;background:#fff !important;}\na{color:#33526E !important;}');
   });
 
-  it('prepends @font-face rules before selector blocks', () => {
+  it('prepends @font-face rules before selector blocks via foliate setStyles tuple', () => {
     const css = composeFoliateThemeCss(
       { body: { color: '#111' } },
       '@font-face { font-family: "CReader Literata"; src: url("data:font/woff2;base64,AA") format("woff2"); }',
     );
 
-    expect(css.startsWith('@font-face')).toBe(true);
-    expect(css).toContain('body{color:#111;}');
+    expect(Array.isArray(css)).toBe(true);
+    expect(css[0]).toContain('@font-face');
+    expect(css[1]).toContain('body{color:#111;}');
   });
 
   it('uses foliate renderer.setStyles so theme switches refresh the paginator background layer', () => {
     const setStyles = vi.fn();
-    const css = 'body{background:#FBF9F4 !important;}';
+    const css: [string, string] = ['@font-face { }', 'body{background:#FBF9F4 !important;}'];
 
     const applied = applyFoliateManagedStyles({ setStyles, setAttribute: vi.fn(), removeAttribute: vi.fn() }, css);
 
@@ -457,16 +458,41 @@ describe('foliateEngine section typography', () => {
     });
   }
 
-  it('injects per-section typography CSS from document lang on load', async () => {
-    const { buildSectionTypographyCss } = await import('./epubTypography');
+  it('injects per-section reading CSS from resolved language on load', async () => {
+    const { buildSectionReadingCss } = await import('./epubTypography');
+    const { WESTERN_READING_FONT_STACK } = await import('../../components/reader/fontCatalog');
     await openTestInstance();
     const doc = document.implementation.createHTMLDocument('section');
     doc.documentElement.lang = 'en';
+    doc.body.innerHTML =
+      '<p>Hello world, this is an English paragraph with enough Latin letters for detection.</p>';
 
     loadHandler?.(new CustomEvent('load', { detail: { doc, index: 0 } }));
+    await Promise.resolve();
+    await Promise.resolve();
 
     const style = doc.getElementById('creader-foliate-typography') as HTMLStyleElement | null;
-    expect(style?.textContent).toBe(buildSectionTypographyCss('en'));
+    expect(style?.textContent).toBe(buildSectionReadingCss('en', WESTERN_READING_FONT_STACK, 16));
+  });
+
+  it('infers Chinese reading CSS when lang metadata is missing', async () => {
+    const { buildSectionReadingCss } = await import('./epubTypography');
+    const { CJK_READING_FONT_STACK } = await import('../../components/reader/fontCatalog');
+    await openTestInstance();
+    const doc = document.implementation.createHTMLDocument('section');
+    doc.body.innerHTML =
+      '<p>无论是对热那亚商人对神圣罗马帝国皇帝选举的操控，或是美国南方种植园主对奴隶制的维护，商贸秩序的建立并非来源于。</p>';
+
+    loadHandler?.(new CustomEvent('load', { detail: { doc, index: 0 } }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const style = doc.getElementById('creader-foliate-typography') as HTMLStyleElement | null;
+    expect(style?.textContent).toBe(buildSectionReadingCss('zh', CJK_READING_FONT_STACK, 16));
+    const p = doc.querySelector('p') as HTMLElement;
+    expect(p.style.getPropertyPriority('font-family')).toBe('important');
+    expect(p.style.getPropertyValue('font-family')).toContain('CReader LXGW WenKai');
+    expect(p.style.getPropertyValue('font-size')).toBe('16px');
   });
 });
 

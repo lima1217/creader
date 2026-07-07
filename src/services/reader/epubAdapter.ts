@@ -7,12 +7,12 @@ export type ReaderRendition = {
   themes: {
     default: (
       styles: Record<string, Record<string, string>>,
-      options?: { fontFaceCss?: string },
+      options?: { fontFaceCss?: string; fontSize?: number },
     ) => void;
     register?: (
       name: string,
       styles: Record<string, Record<string, string>>,
-      options?: { fontFaceCss?: string },
+      options?: { fontFaceCss?: string; fontSize?: number },
     ) => void;
     select?: (name?: string) => void;
   };

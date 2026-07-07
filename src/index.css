@@ -3,7 +3,7 @@
    ============================================ */
 
 :root {
-  /* Typography */
+  /* Typography — --font-sans is overridden at runtime by ReadingFontHost */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
   --font-serif: ui-serif, 'New York', 'Georgia', 'Times New Roman', serif;
   --font-mono: 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', ui-monospace, monospace;

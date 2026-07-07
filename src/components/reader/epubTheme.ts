@@ -1,13 +1,10 @@
 import type { Theme } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
-import { CODE_FONT_STACK } from '../../services/reader/epubTypography';
 import { paperBodyPalette } from '../../theme/paperTheme';
 
 // Line measure lives on the layout contract (single source of truth); re-export
 // here so body-typography consumers keep their existing import path.
 export { EPUB_MAX_INLINE_SIZE } from '../../services/reader/readingEngine';
-
-const PROSE_SELECTOR = 'p, li, blockquote, dd';
 
 export type EpubThemeApplyOptions = {
   theme: Theme;
@@ -16,8 +13,8 @@ export type EpubThemeApplyOptions = {
   fontFaceCss?: string;
   /**
    * When true, force CReader body typography over publisher EPUB styles.
-   * Reserved for a future settings toggle; default false keeps heading and code
-   * formatting while still applying theme colors and the reading font to prose.
+   * Reserved for a future settings toggle; default false still unifies the
+   * reading font on body while leaving heading sizes to the publisher.
    */
   forceTypographyOverride?: boolean;
 };
@@ -33,8 +30,8 @@ export type EpubThemeApplyOptions = {
  * body from one place. See ADR-0011.
  *
  * Section-level typography (alignment, line-height, indent, paragraph margin,
- * hyphenation) is applied in `foliateEngine.ts` via `buildSectionTypographyCss`
- * because those values depend on each document's `<html lang>`.
+ * hyphenation) and reading fonts are applied per section in `foliateEngine.ts`
+ * because those values depend on each document's resolved language.
  */
 export function buildEpubThemeStyles(
   options: EpubThemeApplyOptions,
@@ -51,20 +48,10 @@ export function buildEpubThemeStyles(
     a: {
       'color': `${palette.link} !important`,
     },
-    'pre, code, kbd': {
-      'font-family': CODE_FONT_STACK,
-    },
   };
 
   if (force) {
-    styles.body['font-family'] = options.fontStack;
-    styles.body['font-size'] = `${options.fontSize}px`;
     styles.p = { 'margin-bottom': '1em' };
-  } else {
-    styles[PROSE_SELECTOR] = {
-      'font-family': options.fontStack,
-      'font-size': `${options.fontSize}px`,
-    };
   }
 
   return styles;
@@ -74,5 +61,8 @@ export function applyEpubTheme(
   rendition: ReaderRendition,
   options: EpubThemeApplyOptions,
 ) {
-  rendition.themes.default(buildEpubThemeStyles(options), { fontFaceCss: options.fontFaceCss });
+  rendition.themes.default(buildEpubThemeStyles(options), {
+    fontFaceCss: options.fontFaceCss,
+    fontSize: options.fontSize,
+  });
 }

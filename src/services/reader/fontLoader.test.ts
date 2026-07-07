@@ -24,6 +24,7 @@ describe('fontLoader', () => {
     expect(css).toContain('CReader Roboto');
     expect(css).toContain('CReader LXGW WenKai');
     expect(css).toContain('font-style: italic');
+    expect(css).toContain('font-display: swap');
   });
 
   it('caches repeated loads for the same key', async () => {

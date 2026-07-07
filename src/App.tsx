@@ -12,6 +12,7 @@ import { useUIStore } from './stores/uiStore';
 import { useAppLifecycleBootstrap, useAppLifecycleImport } from './appLifecycle';
 import { useEpubFileDropImport } from './hooks/useEpubFileDropImport';
 import { SidebarPanelIcon } from './components/icons/icons';
+import { ReadingFontHost } from './components/reader/ReadingFontHost';
 import './index.css';
 import './App.css';
 import './components/ErrorBoundary.css';
@@ -136,6 +137,7 @@ function AppContent() {
 function App() {
   return (
     <AstryxThemeBoundary>
+      <ReadingFontHost />
       <AppBootstrap />
       <AppDialogProvider>
         <AppContent />

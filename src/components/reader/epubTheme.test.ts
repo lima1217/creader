@@ -6,13 +6,13 @@ import { paperBodyPalette } from '../../theme/paperTheme';
 function captureThemeDefault() {
   const captured: {
     styles: Record<string, Record<string, string>>;
-    options?: { fontFaceCss?: string };
+    options?: { fontFaceCss?: string; fontSize?: number };
   } = { styles: {} };
   const rendition = {
     themes: {
       default: (
         styles: Record<string, Record<string, string>>,
-        options?: { fontFaceCss?: string },
+        options?: { fontFaceCss?: string; fontSize?: number },
       ) => {
         Object.assign(captured.styles, styles);
         captured.options = options;
@@ -42,34 +42,11 @@ describe('applyEpubTheme', () => {
     expect(captured.styles.body.color).toBe(`${paperBodyPalette.light.text} !important`);
     expect(captured.styles.body.background).toBe(`${paperBodyPalette.light.background} !important`);
     expect(captured.styles.a.color).toBe(`${paperBodyPalette.light.link} !important`);
-    expect(captured.styles.p).toBeUndefined();
-    expect(captured.styles['span, div']).toBeUndefined();
-    expect(captured.styles['h1, h2, h3, h4, h5, h6']).toBeUndefined();
-  });
-
-  it('applies the reading font to prose nodes by default without body !important', () => {
-    const { rendition, captured } = captureThemeDefault();
-
-    applyEpubTheme(rendition, { ...baseOptions, theme: 'light' });
-
     expect(captured.styles.body['font-family']).toBeUndefined();
     expect(captured.styles.body['font-size']).toBeUndefined();
-    expect(captured.styles['p, li, blockquote, dd']).toEqual({
-      'font-family': baseOptions.fontStack,
-      'font-size': '16px',
-    });
   });
 
-  it('excludes pre, code, and kbd from the reading font stack', () => {
-    const { rendition, captured } = captureThemeDefault();
-
-    applyEpubTheme(rendition, { ...baseOptions, theme: 'light' });
-
-    expect(captured.styles['pre, code, kbd']['font-family']).toContain('monospace');
-    expect(captured.styles['pre, code, kbd']['font-family']).not.toContain('Georgia');
-  });
-
-  it('forces full body typography when override is enabled', () => {
+  it('forces paragraph spacing when override is enabled', () => {
     const { rendition, captured } = captureThemeDefault();
 
     applyEpubTheme(rendition, {
@@ -78,10 +55,7 @@ describe('applyEpubTheme', () => {
       forceTypographyOverride: true,
     });
 
-    expect(captured.styles.body['font-family']).toBe(baseOptions.fontStack);
-    expect(captured.styles.body['font-size']).toBe('16px');
     expect(captured.styles.p).toEqual({ 'margin-bottom': '1em' });
-    expect(captured.styles['p, li, blockquote, dd']).toBeUndefined();
   });
 
   it('injects the dark palette so book text/links match chrome in dark mode', () => {
@@ -103,23 +77,7 @@ describe('applyEpubTheme', () => {
     expect(captured.styles.body.background).toBe(`${paperBodyPalette.dark.background} !important`);
   });
 
-  it('uses font stack and size on prose nodes without padding or line-height', () => {
-    const { rendition, captured } = captureThemeDefault();
-
-    applyEpubTheme(rendition, {
-      fontStack: 'Merriweather, Georgia, serif',
-      fontSize: 20,
-      theme: 'dark',
-    });
-
-    expect(captured.styles['p, li, blockquote, dd']['font-family']).toBe('Merriweather, Georgia, serif');
-    expect(captured.styles['p, li, blockquote, dd']['font-size']).toBe('20px');
-    expect(captured.styles.body['line-height']).toBeUndefined();
-    expect(captured.styles.body.padding).toBeUndefined();
-    expect(captured.styles.body.margin).toBe('0 auto');
-  });
-
-  it('forwards font-face css through themes.default', () => {
+  it('forwards font-face css and font size through themes.default', () => {
     const defaultTheme = vi.fn();
     const rendition = {
       themes: { default: defaultTheme },
@@ -129,15 +87,19 @@ describe('applyEpubTheme', () => {
       ...baseOptions,
       theme: 'light',
       fontFaceCss: '@font-face { font-family: "CReader Literata"; }',
+      fontSize: 20,
     });
 
     expect(defaultTheme).toHaveBeenCalledWith(
       expect.objectContaining({
-        'p, li, blockquote, dd': expect.objectContaining({
-          'font-family': 'Georgia, "Times New Roman", serif',
+        body: expect.objectContaining({
+          color: `${paperBodyPalette.light.text} !important`,
         }),
       }),
-      { fontFaceCss: '@font-face { font-family: "CReader Literata"; }' },
+      {
+        fontFaceCss: '@font-face { font-family: "CReader Literata"; }',
+        fontSize: 20,
+      },
     );
   });
 });

@@ -11,7 +11,6 @@ vi.mock('../../utils/perf', () => ({ perfMark: () => {}, perfMeasure: () => {} }
 const baseSettings: Settings = {
   theme: 'light',
   fontSize: 16,
-  lineHeight: 1.6,
   aiTextSize: 14,
   aiContextWindow: 20,
   aiToolRounds: 8,

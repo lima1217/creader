@@ -12,7 +12,6 @@ export type BookProgressById = Record<string, ReadingProgress & { lastReadAt: nu
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'light',
   fontSize: 16,
-  lineHeight: 1.6,
   readingMemoryPath: undefined,
   readingMemoryAutoIngest: true,
   aiTextSize: 14,
@@ -68,10 +67,12 @@ export function resolveSettings(stored: Partial<Settings>, defaultSettings: Sett
   const {
     fontFamily: _legacyFontFamily,
     customFonts: _legacyCustomFonts,
+    lineHeight: _legacyLineHeight,
     ...persisted
   } = stored as Partial<Settings> & {
     fontFamily?: string;
     customFonts?: unknown;
+    lineHeight?: number;
   };
 
   return {
