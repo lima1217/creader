@@ -54,6 +54,7 @@ function HeaderBookIcon(props: SVGProps<SVGSVGElement>) {
 
 export function AIPanel() {
     const isAIPanelOpen = useUIStore((s) => s.isAIPanelOpen);
+    const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
     const chatMessages = useAIStore((s) => s.chatMessages);
     const conversationMemory = useAIStore((s) => s.conversationMemory);
     const addChatMessage = useAIStore((s) => s.addChatMessage);
@@ -411,6 +412,13 @@ export function AIPanel() {
                         disabled={isLoading}
                     >
                         <TrashIcon />
+                    </button>
+                    <button
+                        className="btn btn-ghost btn-icon"
+                        onClick={() => setAIPanelOpen(false)}
+                        aria-label="关闭 AI 面板"
+                    >
+                        <CloseIcon />
                     </button>
                 </div>
             </div>

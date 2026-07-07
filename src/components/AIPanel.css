@@ -35,7 +35,7 @@
 /* Header */
 .ai-panel-header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 34px;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     height: var(--reading-toolbar-height);
     gap: var(--space-3);
@@ -47,7 +47,8 @@
 .ai-panel-actions {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-end;
+    gap: var(--space-1);
     min-width: 0;
 }
 
