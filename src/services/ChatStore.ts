@@ -25,9 +25,18 @@ function isConversationMemory(value: unknown): value is ConversationMemory {
 }
 
 export async function loadChatMessages(limit = MAX_CHAT_MESSAGES_STORED): Promise<ChatMessage[]> {
-  const values = await db.chatMessages.toArray();
-  const messages = values.filter(isChatMessage);
-  return messages.length <= limit ? messages : messages.slice(-limit);
+  // Cursor-based paging: walk the primary key (messageKey = timestamp:id,
+  // chronologically ordered) in reverse and stop after `limit` rows, instead
+  // of loading the whole table into memory and slicing. This keeps load cost
+  // bounded by `limit`, not by total message count.
+  const recent = await db.chatMessages
+    .toCollection()
+    .reverse()
+    .limit(limit)
+    .toArray();
+  // Reverse() returned newest-first; restore chronological order for the UI.
+  const filtered = recent.filter(isChatMessage);
+  return filtered.reverse();
 }
 
 export async function appendChatMessages(

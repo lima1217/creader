@@ -49,6 +49,22 @@ describe('ChatStore Dexie persistence', () => {
     await expect(loadChatMessages()).resolves.toEqual([]);
   });
 
+  it('returns only the most recent limit messages via cursor paging (not a full-table load)', async () => {
+    // Seed 30 messages; loadChatMessages(5) must return the last 5 in
+    // chronological order without materializing the full table.
+    const many = Array.from({ length: 30 }, (_, i) => msg(`m${i}`, 1000 + i));
+    await appendChatMessages(many, 30);
+
+    const recent = await loadChatMessages(5);
+    expect(recent).toEqual([
+      msg('m25', 1025),
+      msg('m26', 1026),
+      msg('m27', 1027),
+      msg('m28', 1028),
+      msg('m29', 1029),
+    ]);
+  });
+
   it('persists and clears conversation memory without mixing it into chat messages', async () => {
     const memory: ConversationMemory = {
       id: 'memory-1',
