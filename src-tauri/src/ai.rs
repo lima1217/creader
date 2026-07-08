@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use tauri::ipc::Channel;
 use tauri::Manager;
 use tokio_util::sync::CancellationToken;
@@ -288,25 +289,83 @@ fn providers_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("ai_providers.json"))
 }
 
-fn load_provider_store(app: &tauri::AppHandle) -> Result<AIProviderStore, String> {
-    let path = providers_file(app)?;
+/// Process-wide cache for the parsed `ai_providers.json`. Re-reading and
+/// re-parsing the file on every AI request (active_provider / list_ai_providers)
+/// is pure overhead; we keep the last parsed store keyed by its path plus
+/// (mtime, size) so any write — internal or external — invalidates it automatically.
+fn provider_store_cache(
+) -> &'static Mutex<Option<(PathBuf, std::time::SystemTime, u64, AIProviderStore)>> {
+    static CACHE: OnceLock<Mutex<Option<(PathBuf, std::time::SystemTime, u64, AIProviderStore)>>> =
+        OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn load_provider_store_at(path: &Path) -> Result<AIProviderStore, String> {
+    // Cache fast path: if the file's path+mtime+size still match the cached entry,
+    // return the parsed store without touching disk again.
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        let len = meta.len();
+        if let Ok(guard) = provider_store_cache().lock() {
+            if let Some((cached_path, cached_mtime, cached_len, store)) = guard.as_ref() {
+                if cached_path == path && *cached_mtime == mtime && *cached_len == len {
+                    return Ok(store.clone());
+                }
+            }
+        }
+    }
+
     if !path.exists() {
         return Ok(AIProviderStore::default());
     }
-    let data = std::fs::read_to_string(&path)
+    let data = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read ai_providers.json: {}", e))?;
     if data.trim().is_empty() {
         return Ok(AIProviderStore::default());
     }
-    serde_json::from_str::<AIProviderStore>(&data)
-        .map_err(|e| format!("Failed to parse ai_providers.json: {}", e))
+    let store = serde_json::from_str::<AIProviderStore>(&data)
+        .map_err(|e| format!("Failed to parse ai_providers.json: {}", e))?;
+
+    // Populate the cache with the metadata we just observed.
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        let len = meta.len();
+        if let Ok(mut guard) = provider_store_cache().lock() {
+            *guard = Some((path.to_path_buf(), mtime, len, store.clone()));
+        }
+    }
+
+    Ok(store)
+}
+
+fn save_provider_store_at(path: &Path, store: &AIProviderStore) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create app config directory: {}", e))?;
+    }
+    let json = serde_json::to_string_pretty(store)
+        .map_err(|e| format!("Failed to serialize providers: {}", e))?;
+    std::fs::write(path, json).map_err(|e| format!("Failed to write ai_providers.json: {}", e))?;
+
+    // After a successful write, refresh the cache so the next read is a hit.
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        let len = meta.len();
+        if let Ok(mut guard) = provider_store_cache().lock() {
+            *guard = Some((path.to_path_buf(), mtime, len, store.clone()));
+        }
+    }
+    Ok(())
+}
+
+fn load_provider_store(app: &tauri::AppHandle) -> Result<AIProviderStore, String> {
+    let path = providers_file(app)?;
+    load_provider_store_at(&path)
 }
 
 fn save_provider_store(app: &tauri::AppHandle, store: &AIProviderStore) -> Result<(), String> {
     let path = providers_file(app)?;
-    let json = serde_json::to_string_pretty(store)
-        .map_err(|e| format!("Failed to serialize providers: {}", e))?;
-    std::fs::write(&path, json).map_err(|e| format!("Failed to write ai_providers.json: {}", e))
+    save_provider_store_at(&path, store)
 }
 
 fn api_keys_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -1199,6 +1258,74 @@ mod tests {
         assert!(message.contains("连接成功"));
         assert!(message.contains("ok"));
         server.join().unwrap();
+    }
+
+    fn clear_provider_store_cache() {
+        if let Ok(mut guard) = provider_store_cache().lock() {
+            *guard = None;
+        }
+    }
+
+    fn temp_providers_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "creader-ai-providers-{}-{}.json",
+            name,
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn provider_store_cache_returns_consistent_store_on_repeated_loads() {
+        clear_provider_store_cache();
+        let path = temp_providers_path("cache-repeat");
+        let _ = std::fs::remove_file(&path);
+
+        let store = AIProviderStore {
+            providers: vec![AIProviderConfig {
+                id: "p1".to_string(),
+                name: "Provider".to_string(),
+                base_url: "https://example.invalid/v1".to_string(),
+                model: "m".to_string(),
+            }],
+            active_id: Some("p1".to_string()),
+        };
+        save_provider_store_at(&path, &store).expect("seed store");
+
+        let first = load_provider_store_at(&path).expect("first load");
+        let second = load_provider_store_at(&path).expect("second load");
+        assert_eq!(first.active_id, second.active_id);
+        assert_eq!(first.providers.len(), second.providers.len());
+
+        let _ = std::fs::remove_file(&path);
+        clear_provider_store_cache();
+    }
+
+    #[test]
+    fn provider_store_cache_invalidates_when_file_changes_externally() {
+        clear_provider_store_cache();
+        let path = temp_providers_path("cache-invalidate");
+        let _ = std::fs::remove_file(&path);
+
+        let store_v1 = AIProviderStore {
+            providers: vec![],
+            active_id: Some("first".to_string()),
+        };
+        save_provider_store_at(&path, &store_v1).expect("seed v1");
+        let loaded_v1 = load_provider_store_at(&path).expect("load v1");
+        assert_eq!(loaded_v1.active_id.as_deref(), Some("first"));
+
+        let store_v2 = AIProviderStore {
+            providers: vec![],
+            active_id: Some("second".to_string()),
+        };
+        let json = serde_json::to_string_pretty(&store_v2).expect("serialize v2");
+        std::fs::write(&path, json).expect("external write");
+
+        let loaded_v2 = load_provider_store_at(&path).expect("load v2");
+        assert_eq!(loaded_v2.active_id.as_deref(), Some("second"));
+
+        let _ = std::fs::remove_file(&path);
+        clear_provider_store_cache();
     }
 }
 
