@@ -12,6 +12,10 @@ use std::time::{Duration, Instant};
 use zip::read::ZipArchive;
 
 const DEFAULT_CHAPTER_CACHE_CAPACITY: usize = 32;
+/// Sparse char→byte index stride. `byte_offsets[i]` is the UTF-8 byte offset of
+/// char `i * CHAR_BYTE_INDEX_STRIDE`, letting deep pagination locate a window
+/// in O(CHAR_BYTE_INDEX_STRIDE + limit) instead of O(offset + limit).
+const CHAR_BYTE_INDEX_STRIDE: usize = 256;
 /// Per-chapter hard ceiling on cached text. A single chapter above this is
 /// left un-cached to bound memory on pathological EPUBs (e.g. a manual that
 /// ships one giant section). Normal EPUB chapters are well under 200k chars,
@@ -73,6 +77,14 @@ struct EpubPackage {
     ncx_href: Option<String>,
 }
 
+/// Sparse char→byte lookup table built once when a chapter enters the cache.
+#[derive(Clone, Debug)]
+struct ChapterCharIndex {
+    char_count: usize,
+    /// Byte offset of char 0, char `CHAR_BYTE_INDEX_STRIDE`, char 2×stride, …
+    byte_offsets: Vec<usize>,
+}
+
 /// A cached chapter entry plus the file metadata it was built from. The
 /// metadata lets a later `get` detect that the book file was replaced or
 /// re-imported at the same path and treat the cached text as stale.
@@ -81,6 +93,7 @@ struct CachedChapter {
     modified: std::time::SystemTime,
     len: u64,
     text: String,
+    char_index: ChapterCharIndex,
 }
 
 pub struct BookTextCache {
@@ -99,10 +112,10 @@ impl BookTextCache {
         Self::new(DEFAULT_CHAPTER_CACHE_CAPACITY)
     }
 
-    /// Returns the cached text only if it exists for `(book_key, index)` AND
+    /// Returns the cached chapter only if it exists for `(book_key, index)` AND
     /// the book file's current mtime/size still match the cached metadata.
     /// A replaced or re-imported file at the same path invalidates the entry.
-    fn get(&self, book_key: &str, index: usize, book_path: &Path) -> Option<String> {
+    fn get(&self, book_key: &str, index: usize, book_path: &Path) -> Option<CachedChapter> {
         let cached = self
             .inner
             .lock()
@@ -112,7 +125,7 @@ impl BookTextCache {
             Ok(meta) => {
                 let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
                 if modified == cached.modified && meta.len() == cached.len {
-                    Some(cached.text)
+                    Some(cached)
                 } else {
                     // Stale: file changed since cache. Drop the entry so the
                     // next put stores fresh metadata alongside the new text.
@@ -126,8 +139,8 @@ impl BookTextCache {
         }
     }
 
-    fn put(&self, book_key: &str, index: usize, text: String, book_path: &Path) {
-        if text.chars().count() > MAX_CACHEABLE_CHAPTER_CHARS {
+    fn put(&self, book_key: &str, index: usize, text: String, char_index: ChapterCharIndex, book_path: &Path) {
+        if char_index.char_count > MAX_CACHEABLE_CHAPTER_CHARS {
             return;
         }
         // Snapshot the current file metadata so a future get can invalidate.
@@ -138,7 +151,12 @@ impl BookTextCache {
         if let Ok(mut cache) = self.inner.lock() {
             cache.put(
                 (book_key.to_string(), index),
-                CachedChapter { modified, len, text },
+                CachedChapter {
+                    modified,
+                    len,
+                    text,
+                    char_index,
+                },
             );
         }
     }
@@ -283,17 +301,17 @@ fn blocking_get_chapter_text(
     let book_key = canonical_book_key(book_path)?;
 
     // Cache-then-slice: on a miss, extract the full normalized chapter once
-    // and cache it, then slice the requested window. This keeps deep
-    // pagination (offset in the hundreds of thousands) from re-opening the
-    // ZIP and re-parsing the XHTML on every page. `slice_chapter_text` is
-    // O(limit), and the cache is shared with `search_book` so a scan followed
-    // by a `get_chapter_text` on the same chapter is free.
-    let full_text = match cache.get(&book_key, index, book_path) {
-        Some(text) => text,
+    // and cache it (with a char→byte index), then slice the requested window.
+    // This keeps deep pagination from re-opening the ZIP and re-parsing the
+    // XHTML on every page. With the cached index, slicing is
+    // O(CHAR_BYTE_INDEX_STRIDE + limit) rather than O(offset + limit). The
+    // cache is shared with `search_book`.
+    let (full_text, char_index) = match cache.get(&book_key, index, book_path) {
+        Some(entry) => (entry.text, Some(entry.char_index)),
         None => {
             let mut archive = open_epub_archive(book_path)?;
             let package = load_epub_package(&mut archive)?;
-            let text = load_chapter_text_from_open_archive(
+            let entry = load_chapter_from_open_archive(
                 &mut archive,
                 &package,
                 &book_key,
@@ -301,11 +319,17 @@ fn blocking_get_chapter_text(
                 index,
                 cache,
             )?;
-            text
+            (entry.text, Some(entry.char_index))
         }
     };
 
-    Ok(slice_chapter_text(&full_text, index, offset, limit))
+    Ok(slice_chapter_text(
+        &full_text,
+        char_index.as_ref(),
+        index,
+        offset,
+        limit,
+    ))
 }
 
 fn blocking_search_book(
@@ -319,7 +343,6 @@ fn blocking_search_book(
         return Err("query must not be empty".to_string());
     }
 
-    let query_lower = query.to_lowercase();
     let max_hits = limit
         .unwrap_or(MAX_SEARCH_HITS)
         .clamp(1, MAX_SEARCH_HITS);
@@ -338,7 +361,7 @@ fn blocking_search_book(
             break;
         }
 
-        let full_text = load_chapter_text_from_open_archive(
+        let entry = load_chapter_from_open_archive(
             &mut archive,
             &package,
             &book_key,
@@ -347,12 +370,13 @@ fn blocking_search_book(
             cache,
         )?;
 
-        let full_text_lower = full_text.to_lowercase();
-        if full_text_lower.contains(&query_lower) {
+        if let Some((char_start, match_len)) =
+            find_case_insensitive_char_range(&entry.text, query)
+        {
             hits.push(BookSearchHit {
                 index: chapter.index,
                 title: chapter.title.clone(),
-                excerpt: build_search_excerpt(&full_text, query),
+                excerpt: build_search_excerpt_from_match(&entry.text, char_start, match_len),
             });
             if hits.len() >= max_hits {
                 truncated = true;
@@ -364,20 +388,20 @@ fn blocking_search_book(
     Ok(BookSearchResult { hits, truncated })
 }
 
-/// Reads a chapter's full plain text from an already-open archive, checking
-/// the shared cache first and filling it on miss. Unlike the per-chapter
-/// `open_epub_archive` + `load_epub_package` path, callers that scan many
-/// chapters reuse a single archive and parsed package.
-fn load_chapter_text_from_open_archive(
+/// Reads a chapter from an already-open archive, checking the shared cache
+/// first and filling it on miss. Unlike the per-chapter `open_epub_archive` +
+/// `load_epub_package` path, callers that scan many chapters reuse a single
+/// archive and parsed package.
+fn load_chapter_from_open_archive(
     archive: &mut ZipArchive<File>,
     package: &EpubPackage,
     book_key: &str,
     book_path: &Path,
     index: usize,
     cache: &BookTextCache,
-) -> Result<String, String> {
-    if let Some(full_text) = cache.get(book_key, index, book_path) {
-        return Ok(full_text);
+) -> Result<CachedChapter, String> {
+    if let Some(entry) = cache.get(book_key, index, book_path) {
+        return Ok(entry);
     }
 
     let idref = package
@@ -400,38 +424,114 @@ fn load_chapter_text_from_open_archive(
 
     let mut buffered = std::io::BufReader::new(&mut entry);
     let extracted = extract_xhtml_text(&mut buffered)?;
+    let char_index = build_char_byte_index(&extracted);
 
-    cache.put(book_key, index, extracted.clone(), book_path);
+    cache.put(book_key, index, extracted.clone(), char_index.clone(), book_path);
 
-    Ok(extracted)
+    if let Some(entry) = cache.get(book_key, index, book_path) {
+        return Ok(entry);
+    }
+
+    // Chapter exceeds the cache char ceiling; still return text + index for slicing.
+    let (modified, len) = match std::fs::metadata(book_path) {
+        Ok(meta) => (meta.modified().unwrap_or(std::time::UNIX_EPOCH), meta.len()),
+        Err(e) => return Err(format!("Failed to read book metadata: {}", e)),
+    };
+    Ok(CachedChapter {
+        modified,
+        len,
+        text: extracted,
+        char_index,
+    })
+}
+
+fn build_char_byte_index(text: &str) -> ChapterCharIndex {
+    let mut byte_offsets = vec![0];
+    let mut char_count = 0usize;
+    for (byte_idx, _) in text.char_indices() {
+        if char_count > 0 && char_count % CHAR_BYTE_INDEX_STRIDE == 0 {
+            byte_offsets.push(byte_idx);
+        }
+        char_count += 1;
+    }
+    ChapterCharIndex {
+        char_count,
+        byte_offsets,
+    }
+}
+
+fn char_offset_to_byte(text: &str, index: &ChapterCharIndex, char_offset: usize) -> usize {
+    if char_offset == 0 {
+        return 0;
+    }
+    if char_offset >= index.char_count {
+        return text.len();
+    }
+    let slot = char_offset / CHAR_BYTE_INDEX_STRIDE;
+    let base_char = slot * CHAR_BYTE_INDEX_STRIDE;
+    let base_byte = index
+        .byte_offsets
+        .get(slot)
+        .copied()
+        .unwrap_or(0);
+    let skip = char_offset - base_char;
+    text[base_byte..]
+        .char_indices()
+        .nth(skip)
+        .map(|(byte_idx, _)| base_byte + byte_idx)
+        .unwrap_or(text.len())
+}
+
+/// Pre-folded query scalar for streaming case-insensitive matching.
+type FoldedQueryChar = Vec<char>;
+
+fn fold_query_char(ch: char) -> FoldedQueryChar {
+    ch.to_lowercase().collect()
+}
+
+fn folded_char_matches(hay: char, needle_folded: &[char]) -> bool {
+    let mut hay_fold = hay.to_lowercase();
+    let mut needle = needle_folded.iter().copied();
+    loop {
+        match (hay_fold.next(), needle.next()) {
+            (Some(a), Some(b)) if a == b => {}
+            (None, None) => return true,
+            _ => return false,
+        }
+    }
+}
+
+fn matches_case_insensitive_at(text: &str, byte_start: usize, needle: &[FoldedQueryChar]) -> bool {
+    let mut hay = text[byte_start..].chars();
+    for folded in needle {
+        let Some(ch) = hay.next() else {
+            return false;
+        };
+        if !folded_char_matches(ch, folded) {
+            return false;
+        }
+    }
+    true
 }
 
 fn find_case_insensitive_char_range(text: &str, query: &str) -> Option<(usize, usize)> {
-    let needle: Vec<char> = query.chars().collect();
+    let needle: Vec<FoldedQueryChar> = query.chars().map(fold_query_char).collect();
     if needle.is_empty() {
         return Some((0, 0));
     }
-    let needle_lower: Vec<String> = needle.iter().map(|c| c.to_lowercase().collect()).collect();
-    let haystack: Vec<char> = text.chars().collect();
-    let len = needle.len();
+    let match_len = needle.len();
 
-    'windows: for start in 0..=haystack.len().saturating_sub(len) {
-        for (j, folded) in needle_lower.iter().enumerate() {
-            let hay_folded: String = haystack[start + j].to_lowercase().collect();
-            if hay_folded != *folded {
-                continue 'windows;
-            }
+    let mut char_start = 0usize;
+    for (byte_start, _) in text.char_indices() {
+        if matches_case_insensitive_at(text, byte_start, &needle) {
+            return Some((char_start, match_len));
         }
-        return Some((start, len));
+        char_start += 1;
     }
     None
 }
 
-fn build_search_excerpt(text: &str, query: &str) -> String {
-    let Some((char_start, match_char_len)) = find_case_insensitive_char_range(text, query) else {
-        return String::new();
-    };
-
+fn build_search_excerpt_from_match(text: &str, char_start: usize, match_char_len: usize) -> String {
     let excerpt_start = char_start.saturating_sub(SEARCH_EXCERPT_CONTEXT_CHARS);
     let total_chars = text.chars().count();
     let excerpt_end = (char_start + match_char_len + SEARCH_EXCERPT_CONTEXT_CHARS).min(total_chars);
@@ -453,8 +553,16 @@ fn build_search_excerpt(text: &str, query: &str) -> String {
     result
 }
 
-fn slice_chapter_text(full_text: &str, index: usize, offset: usize, limit: usize) -> ChapterTextSlice {
-    let total_chars = full_text.chars().count();
+fn slice_chapter_text(
+    full_text: &str,
+    char_index: Option<&ChapterCharIndex>,
+    index: usize,
+    offset: usize,
+    limit: usize,
+) -> ChapterTextSlice {
+    let total_chars = char_index
+        .map(|idx| idx.char_count)
+        .unwrap_or_else(|| full_text.chars().count());
     if offset >= total_chars {
         return ChapterTextSlice {
             text: String::new(),
@@ -464,7 +572,15 @@ fn slice_chapter_text(full_text: &str, index: usize, offset: usize, limit: usize
         };
     }
 
-    let text: String = full_text.chars().skip(offset).take(limit).collect();
+    let end_char = (offset + limit).min(total_chars);
+    let text = if let Some(idx) = char_index {
+        let start_byte = char_offset_to_byte(full_text, idx, offset);
+        let end_byte = char_offset_to_byte(full_text, idx, end_char);
+        full_text[start_byte..end_byte].to_string()
+    } else {
+        full_text.chars().skip(offset).take(limit).collect()
+    };
+
     let consumed = offset + text.chars().count();
     let next_offset = if consumed < total_chars {
         Some(consumed)
@@ -1091,6 +1207,7 @@ mod tests {
     use std::io::{Cursor, Write};
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
+    use std::time::Instant;
     use serial_test::serial;
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
@@ -1406,11 +1523,13 @@ mod tests {
         // size so the staleness check trips even if mtime granularity misses).
         write_test_epub(&path, &[("Chapter", "<p>replaced NEW body that is longer</p>")], false);
 
+        reset_test_counters();
+        let before_replace_read = chapter_extractions();
         let after_replace =
             get_chapter_text(&path, 0, None, None, &cache).expect("read after replace");
         assert_eq!(after_replace.text, "replaced NEW body that is longer");
-        // A new extraction happened because the cached entry was stale.
-        assert_eq!(chapter_extractions() - before, 2);
+        // Stale cache entry forces exactly one fresh extraction.
+        assert_eq!(chapter_extractions() - before_replace_read, 1);
 
         let _ = std::fs::remove_file(path);
     }
@@ -1928,6 +2047,63 @@ mod tests {
         }
 
         zip.finish().expect("finish epub");
+    }
+
+    #[test]
+    fn find_case_insensitive_char_range_finds_match() {
+        let text = "The Needle in the haystack.";
+        let (start, len) = find_case_insensitive_char_range(text, "needle")
+            .expect("match");
+        assert_eq!(start, 4);
+        assert_eq!(len, 6);
+    }
+
+    #[test]
+    fn build_char_byte_index_maps_large_offsets() {
+        let text: String = "a".repeat(1000);
+        let index = build_char_byte_index(&text);
+        assert_eq!(index.char_count, 1000);
+        assert_eq!(char_offset_to_byte(&text, &index, 0), 0);
+        assert_eq!(char_offset_to_byte(&text, &index, 512), 512);
+        assert_eq!(char_offset_to_byte(&text, &index, 999), 999);
+        assert_eq!(char_offset_to_byte(&text, &index, 1000), 1000);
+    }
+
+    #[test]
+    fn slice_chapter_text_uses_index_for_deep_offset() {
+        let text: String = "x".repeat(50_000);
+        let index = build_char_byte_index(&text);
+        let slice = slice_chapter_text(&text, Some(&index), 0, 40_000, 500);
+        assert_eq!(slice.offset, 40_000);
+        assert_eq!(slice.text.len(), 500);
+        assert_eq!(slice.text.chars().count(), 500);
+        assert_eq!(slice.next_offset, Some(40_500));
+    }
+
+    #[test]
+    fn slice_chapter_text_deep_offset_timing_is_sublinear() {
+        // Regression for #123: slicing at a large offset must not re-walk from
+        // char 0, so late-page cost stays in the same ballpark as early pages.
+        let text: String = "甲乙丙丁".repeat(25_000); // 100_000 chars
+        let index = build_char_byte_index(&text);
+
+        let early_start = Instant::now();
+        let early = slice_chapter_text(&text, Some(&index), 0, 0, 1000);
+        let early_elapsed = early_start.elapsed();
+
+        let late_start = Instant::now();
+        let late = slice_chapter_text(&text, Some(&index), 0, 90_000, 1000);
+        let late_elapsed = late_start.elapsed();
+
+        assert_eq!(early.text.chars().count(), 1000);
+        assert_eq!(late.text.chars().count(), 1000);
+        assert_eq!(late.offset, 90_000);
+        assert!(
+            late_elapsed <= early_elapsed * 8,
+            "deep slice ({:?}) should not be much slower than early slice ({:?})",
+            late_elapsed,
+            early_elapsed
+        );
     }
 
     #[test]
