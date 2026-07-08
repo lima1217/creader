@@ -10,6 +10,27 @@ export type ImportBookResult =
   | { status: 'skipped'; reason: 'duplicate' }
   | { status: 'imported'; book: Book };
 
+/**
+ * Collision-resistant id for imported books. Uses the WebView's native
+ * crypto.randomUUID when available; falls back to a timestamp + random suffix
+ * for older runtimes. Replaces Date.now().toString(), which collided when two
+ * books imported in the same millisecond produced identical ids.
+ */
+export function generateBookId(): string {
+  const cryptoObj = globalThis.crypto as Crypto | undefined;
+  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
+    return cryptoObj.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Best-effort file name extraction from a path (Tauri passes OS-style paths). */
+async function resolveFileName(filePath: string): Promise<string> {
+  const normalized = filePath.replace(/\\/g, '/');
+  const leaf = normalized.split('/').pop();
+  return leaf && leaf.length > 0 ? leaf : 'book.epub';
+}
+
 async function buildImportedBook(params: {
   bookId: string;
   finalPath: string;
@@ -51,19 +72,14 @@ async function buildImportedBook(params: {
 export async function tryCopyBookToLibrary(params: {
   sourcePath: string;
   bookId: string;
-}): Promise<{ finalPath: string; copied: boolean }> {
+}): Promise<{ finalPath: string }> {
   const { sourcePath, bookId } = params;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const result = await invoke<{ new_path: string; book_id: string }>('import_book_to_library', {
-      sourcePath,
-      bookId,
-    });
-    return { finalPath: result.new_path, copied: true };
-  } catch (error) {
-    logger.warn('Failed to copy book to library, using original path:', error);
-    return { finalPath: sourcePath, copied: false };
-  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  const result = await invoke<{ new_path: string; book_id: string }>('import_book_to_library', {
+    sourcePath,
+    bookId,
+  });
+  return { finalPath: result.new_path };
 }
 
 export async function importBookFromPath(params: {
@@ -72,18 +88,28 @@ export async function importBookFromPath(params: {
   bookId?: string;
 }): Promise<ImportBookResult> {
   const { filePath, existingFilePaths } = params;
-  const bookId = params.bookId ?? Date.now().toString();
-
-  if (existingFilePaths?.has(filePath)) {
-    return { status: 'skipped', reason: 'duplicate' };
-  }
+  const bookId = params.bookId ?? generateBookId();
 
   if (!filePath.toLowerCase().endsWith('.epub')) {
     throw new Error('Only EPUB files are supported.');
   }
-  const { finalPath } = await tryCopyBookToLibrary({ sourcePath: filePath, bookId });
 
-  const book = await buildImportedBook({ bookId, finalPath });
+  // Dedup by the final library destination path (same scheme as
+  // importBookFromFile) so re-importing the same book from a different source
+  // location is still detected as a duplicate.
+  const { invoke } = await import('@tauri-apps/api/core');
+  const fileName = await resolveFileName(filePath);
+  const { path: finalPath } = await invoke<{ path: string }>('preview_import_book_path', {
+    bookId,
+    fileName,
+  });
+  if (existingFilePaths?.has(finalPath)) {
+    return { status: 'skipped', reason: 'duplicate' };
+  }
+
+  const { finalPath: copiedPath } = await tryCopyBookToLibrary({ sourcePath: filePath, bookId });
+
+  const book = await buildImportedBook({ bookId, finalPath: copiedPath });
 
   return { status: 'imported', book };
 }
@@ -94,7 +120,7 @@ export async function importBookFromFile(params: {
   bookId?: string;
 }): Promise<ImportBookResult> {
   const { file, existingFilePaths } = params;
-  const bookId = params.bookId ?? Date.now().toString();
+  const bookId = params.bookId ?? generateBookId();
 
   if (!file.name.toLowerCase().endsWith('.epub')) {
     throw new Error('Only EPUB files are supported.');
