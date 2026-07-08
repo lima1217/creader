@@ -356,7 +356,7 @@ fn load_chapter_text_from_open_archive(
         .map_err(|e| format!("Failed to read chapter entry '{}': {}", entry_path, e))?;
 
     let mut buffered = std::io::BufReader::new(&mut entry);
-    let (extracted, _) = extract_xhtml_text(&mut buffered, 0, None)?;
+    let extracted = extract_xhtml_text(&mut buffered)?;
 
     if extracted.chars().count() <= MAX_CACHEABLE_CHAPTER_CHARS {
         cache.put(book_key, index, extracted.clone());
@@ -774,65 +774,33 @@ fn parse_ncx_titles(xml: &str) -> Result<Vec<String>, String> {
     Ok(titles)
 }
 
-fn extract_xhtml_text(
-    reader: &mut impl BufRead,
-    skip: usize,
-    take: Option<usize>,
-) -> Result<(String, bool), String> {
+fn extract_xhtml_text(reader: &mut impl BufRead) -> Result<String, String> {
     test_record_chapter_extraction();
 
     let mut xml = Reader::from_reader(reader);
 
     // Incremental normalization buffer. Streaming the whitespace rules as we
-    // consume Text events keeps deep pagination (`offset` in the hundreds of
-    // thousands) linear in chapter size, instead of re-normalizing the whole
-    // accumulated `raw` on every event.
+    // consume Text events keeps chapter extraction linear in chapter size,
+    // instead of re-normalizing the whole accumulated `raw` on every event.
     let mut output = String::new();
     let mut normalizer = NormalizationSink::new();
     let mut skip_depth = 0u32;
     let mut head_depth = 0u32;
     let mut buf = Vec::new();
-    let target_end = take.map(|limit| skip.saturating_add(limit));
-    let mut reached_target = false;
 
     loop {
         match xml.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) => {
-                let name = e.name().as_ref().to_ascii_lowercase();
-                if name == b"head" {
-                    head_depth += 1;
-                } else if head_depth == 0 {
-                    if name == b"script" || name == b"style" {
-                        skip_depth += 1;
-                    } else if skip_depth == 0 && is_block_tag(&name) {
-                        normalizer.append("\n", &mut output);
-                    }
-                }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                handle_opening_tag(&e, &mut head_depth, &mut skip_depth, &mut normalizer, &mut output);
             }
             Ok(Event::End(e)) => {
-                let name = e.name().as_ref().to_ascii_lowercase();
-                if name == b"head" {
-                    head_depth = head_depth.saturating_sub(1);
-                } else if head_depth == 0 {
-                    if name == b"script" || name == b"style" {
-                        skip_depth = skip_depth.saturating_sub(1);
-                    } else if skip_depth == 0 && is_block_tag(&name) {
-                        normalizer.append("\n", &mut output);
-                    }
-                }
+                handle_closing_tag(&e, &mut head_depth, &mut skip_depth, &mut normalizer, &mut output);
             }
             Ok(Event::Text(e)) if head_depth == 0 && skip_depth == 0 => {
                 let text = e
                     .unescape()
                     .map_err(|err| format!("Failed to decode XHTML text: {}", err))?;
                 normalizer.append(text.as_ref(), &mut output);
-
-                if let Some(end) = target_end {
-                    if normalizer.char_count() >= end {
-                        reached_target = true;
-                        break;
-                    }
-                }
             }
             Ok(Event::Eof) => break,
             Ok(_) => {}
@@ -842,23 +810,59 @@ fn extract_xhtml_text(
     }
 
     // `output` is already normalized inline; only a final trim remains.
-    let normalized = output.trim().to_string();
-    let reached_eof = !reached_target;
-    let text: String = normalized.chars().skip(skip).take(take.unwrap_or(usize::MAX)).collect();
+    Ok(output.trim().to_string())
+}
 
-    Ok((text, reached_eof))
+/// Shared opening-tag handling for both `Event::Start` and `Event::Empty`
+/// (self-closing tags like `<br/>` arrive as `Empty`). Self-closing block tags
+/// still contribute a newline so `<br/>`, `<hr/>`, and empty `<td/>` keep their
+/// structural separation; `<img/>`, `<a/>` etc. are ignored.
+fn handle_opening_tag(
+    e: &quick_xml::events::BytesStart<'_>,
+    head_depth: &mut u32,
+    skip_depth: &mut u32,
+    normalizer: &mut NormalizationSink,
+    output: &mut String,
+) {
+    let name = e.name().as_ref().to_ascii_lowercase();
+    if name == b"head" {
+        *head_depth += 1;
+    } else if *head_depth == 0 {
+        if name == b"script" || name == b"style" {
+            *skip_depth += 1;
+        } else if *skip_depth == 0 && is_block_tag(&name) {
+            normalizer.append("\n", output);
+        } else if *skip_depth == 0 && is_cell_separator_tag(&name) {
+            normalizer.append(" ", output);
+        }
+    }
+}
+
+fn handle_closing_tag(
+    e: &quick_xml::events::BytesEnd<'_>,
+    head_depth: &mut u32,
+    skip_depth: &mut u32,
+    normalizer: &mut NormalizationSink,
+    output: &mut String,
+) {
+    let name = e.name().as_ref().to_ascii_lowercase();
+    if name == b"head" {
+        *head_depth = head_depth.saturating_sub(1);
+    } else if *head_depth == 0 {
+        if name == b"script" || name == b"style" {
+            *skip_depth = skip_depth.saturating_sub(1);
+        } else if *skip_depth == 0 && is_block_tag(&name) {
+            normalizer.append("\n", output);
+        }
+    }
 }
 
 /// Incrementally normalizes extracted text. Folds runs of spaces/tabs into a
-/// single space, collapses 3+ newlines to 2, and tracks the normalized char
-/// count so callers can stop reading once they have enough.
+/// single space and collapses 3+ newlines to 2.
 ///
-/// Leading whitespace is dropped during append (callers typically `.trim()` once
-/// at the end), so `char_count` matches the trimmed output the caller will
-/// slice from — otherwise deep-pagination offsets would drift by the number
-/// of leading whitespace bytes.
+/// Leading whitespace is dropped during append (callers typically `.trim()`
+/// once at the end).
 struct NormalizationSink {
-    char_count: usize,
     leading: bool,
     prev_was_space: bool,
     consecutive_newlines: u32,
@@ -867,7 +871,6 @@ struct NormalizationSink {
 impl NormalizationSink {
     fn new() -> Self {
         Self {
-            char_count: 0,
             leading: true,
             prev_was_space: false,
             consecutive_newlines: 0,
@@ -885,7 +888,6 @@ impl NormalizationSink {
             if is_space {
                 if !self.prev_was_space {
                     out.push(' ');
-                    self.char_count += 1;
                     self.prev_was_space = true;
                     self.leading = false;
                 }
@@ -899,19 +901,13 @@ impl NormalizationSink {
                 self.consecutive_newlines += 1;
                 if self.consecutive_newlines <= 2 {
                     out.push('\n');
-                    self.char_count += 1;
                 }
                 continue;
             }
 
             self.consecutive_newlines = 0;
             out.push(ch);
-            self.char_count += 1;
         }
-    }
-
-    fn char_count(&self) -> usize {
-        self.char_count
     }
 }
 
@@ -919,8 +915,15 @@ fn is_block_tag(name: &[u8]) -> bool {
     matches!(
         name,
         b"p" | b"div" | b"section" | b"article" | b"blockquote" | b"li" | b"h1" | b"h2"
-            | b"h3" | b"h4" | b"h5" | b"h6" | b"tr" | b"br"
+            | b"h3" | b"h4" | b"h5" | b"h6" | b"tr" | b"br" | b"hr"
     )
+}
+
+/// Table cells (`td`/`th`) on the same row would otherwise concatenate into
+/// one token stream ("AB" with no separator). Treat them as inline separators:
+/// emit a single space so column boundaries survive without forcing newlines.
+fn is_cell_separator_tag(name: &[u8]) -> bool {
+    matches!(name, b"td" | b"th")
 }
 
 fn is_xhtml_like(media_type: &str, href: &str) -> bool {
@@ -1349,9 +1352,38 @@ mod tests {
     fn extract_xhtml_text_streams_from_reader() {
         let html = br#"<html><body><p>Stream <em>text</em></p><script>no</script></body></html>"#;
         let mut reader = Cursor::new(html.as_slice());
-        let (text, reached_eof) = extract_xhtml_text(&mut reader, 0, None).expect("extract");
+        let text = extract_xhtml_text(&mut reader).expect("extract");
         assert_eq!(text, "Stream text");
-        assert!(reached_eof);
+    }
+
+    #[test]
+    fn extract_xhtml_text_preserves_br_newlines() {
+        // Self-closing <br/> arrives as Event::Empty; before the fix it was
+        // dropped, collapsing "line1<br/>line2" into "line1line2".
+        let html = b"<p>line1<br/>line2</p>";
+        let mut reader = Cursor::new(html.as_slice());
+        let text = extract_xhtml_text(&mut reader).expect("extract");
+        assert_eq!(text, "line1\nline2");
+    }
+
+    #[test]
+    fn extract_xhtml_text_separates_table_cells() {
+        // Same-row cells used to concatenate into "AB"; now separated by a space.
+        let html = b"<table><tr><td>A</td><td>B</td></tr></table>";
+        let mut reader = Cursor::new(html.as_slice());
+        let text = extract_xhtml_text(&mut reader).expect("extract");
+        assert_eq!(text, "A B");
+    }
+
+    #[test]
+    fn extract_xhtml_text_treats_hr_as_block_break() {
+        // <hr/> is a block tag, so it contributes a newline boundary. Combined
+        // with the surrounding <p> tags' newlines this yields a blank-line
+        // separator (collapsed from 3+ to 2 by the normalizer).
+        let html = b"<p>before</p><hr/><p>after</p>";
+        let mut reader = Cursor::new(html.as_slice());
+        let text = extract_xhtml_text(&mut reader).expect("extract");
+        assert_eq!(text, "before\n\nafter");
     }
 
     #[test]
