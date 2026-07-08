@@ -231,7 +231,14 @@ pub async fn search_book_async(
 fn blocking_list_chapters(book_path: &Path) -> Result<Vec<ChapterInfo>, String> {
     let mut archive = open_epub_archive(book_path)?;
     let package = load_epub_package(&mut archive)?;
-    let titles = resolve_chapter_titles(&mut archive, &package)?;
+    build_chapter_list(&mut archive, &package)
+}
+
+fn build_chapter_list(
+    archive: &mut ZipArchive<File>,
+    package: &EpubPackage,
+) -> Result<Vec<ChapterInfo>, String> {
+    let titles = resolve_chapter_titles(archive, package)?;
 
     let mut chapters = Vec::with_capacity(package.spine.len());
     for (index, idref) in package.spine.iter().enumerate() {
@@ -318,17 +325,12 @@ fn blocking_search_book(
         .clamp(1, MAX_SEARCH_HITS);
     let deadline = Instant::now() + Duration::from_secs(SEARCH_TOOL_TIMEOUT_SECS);
 
-    let chapters = blocking_list_chapters(book_path)?;
-    let mut truncated = chapters.len() > MAX_SEARCH_CHAPTERS;
-    let mut hits = Vec::new();
-
-    // Open the archive and parse the OPF package once for the whole scan.
-    // Without this hoist, a miss on every chapter would re-open the ZIP and
-    // re-parse container.xml + OPF once per chapter (up to 200x), burning the
-    // 15s deadline on constant metadata I/O instead of text scanning.
     let book_key = canonical_book_key(book_path)?;
     let mut archive = open_epub_archive(book_path)?;
     let package = load_epub_package(&mut archive)?;
+    let chapters = build_chapter_list(&mut archive, &package)?;
+    let mut truncated = chapters.len() > MAX_SEARCH_CHAPTERS;
+    let mut hits = Vec::new();
 
     for chapter in chapters.iter().take(MAX_SEARCH_CHAPTERS) {
         if Instant::now() >= deadline {
@@ -399,9 +401,7 @@ fn load_chapter_text_from_open_archive(
     let mut buffered = std::io::BufReader::new(&mut entry);
     let extracted = extract_xhtml_text(&mut buffered)?;
 
-    if extracted.chars().count() <= MAX_CACHEABLE_CHAPTER_CHARS {
-        cache.put(book_key, index, extracted.clone(), book_path);
-    }
+    cache.put(book_key, index, extracted.clone(), book_path);
 
     Ok(extracted)
 }
@@ -490,6 +490,11 @@ fn open_epub_archive(book_path: &Path) -> Result<ZipArchive<File>, String> {
 }
 
 fn canonical_book_key(book_path: &Path) -> Result<String, String> {
+    // Paths from `validated_book_path` are already canonicalized; skip a second
+    // filesystem round-trip when the caller handed us an absolute path.
+    if book_path.is_absolute() {
+        return Ok(book_path.to_string_lossy().into_owned());
+    }
     std::fs::canonicalize(book_path)
         .map(|p| p.to_string_lossy().into_owned())
         .map_err(|e| format!("Failed to resolve book path: {}", e))
@@ -670,9 +675,9 @@ fn resolve_chapter_titles(
 ) -> Result<Vec<String>, String> {
     if let Some(nav_href) = &package.nav_href {
         if let Ok(nav_xml) = read_zip_text(archive, nav_href) {
-            if let Ok(titles) = parse_epub3_nav_titles(&nav_xml) {
-                if !titles.is_empty() {
-                    return Ok(pad_titles(package.spine.len(), titles));
+            if let Ok(entries) = parse_epub3_nav_entries(&nav_xml) {
+                if !entries.is_empty() {
+                    return Ok(map_toc_entries_to_spine_titles(package, &entries));
                 }
             }
         }
@@ -680,9 +685,9 @@ fn resolve_chapter_titles(
 
     if let Some(ncx_href) = &package.ncx_href {
         if let Ok(ncx_xml) = read_zip_text(archive, ncx_href) {
-            if let Ok(titles) = parse_ncx_titles(&ncx_xml) {
-                if !titles.is_empty() {
-                    return Ok(pad_titles(package.spine.len(), titles));
+            if let Ok(entries) = parse_ncx_entries(&ncx_xml) {
+                if !entries.is_empty() {
+                    return Ok(map_toc_entries_to_spine_titles(package, &entries));
                 }
             }
         }
@@ -693,26 +698,66 @@ fn resolve_chapter_titles(
         .collect())
 }
 
-fn pad_titles(spine_len: usize, mut titles: Vec<String>) -> Vec<String> {
-    if titles.len() < spine_len {
-        for index in titles.len()..spine_len {
-            titles.push(fallback_chapter_title(index));
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TocEntry {
+    href: String,
+    title: String,
+}
+
+fn map_toc_entries_to_spine_titles(
+    package: &EpubPackage,
+    entries: &[TocEntry],
+) -> Vec<String> {
+    let mut titles: Vec<String> = (0..package.spine.len())
+        .map(fallback_chapter_title)
+        .collect();
+    let mut assigned = vec![false; package.spine.len()];
+
+    for entry in entries {
+        let href_path = entry
+            .href
+            .split(['#', '?'])
+            .next()
+            .unwrap_or(entry.href.as_str());
+        if href_path.is_empty() {
+            continue;
         }
-    } else if titles.len() > spine_len {
-        titles.truncate(spine_len);
+
+        let resolved_href = join_epub_path(&package.opf_base, href_path);
+        let Some(manifest_id) = manifest_id_for_resolved_href(package, &resolved_href) else {
+            continue;
+        };
+        let Some(spine_index) = package.spine.iter().position(|idref| idref == &manifest_id)
+        else {
+            continue;
+        };
+        if !assigned[spine_index] {
+            titles[spine_index] = entry.title.clone();
+            assigned[spine_index] = true;
+        }
     }
+
     titles
 }
 
-fn parse_epub3_nav_titles(xml: &str) -> Result<Vec<String>, String> {
+fn manifest_id_for_resolved_href(package: &EpubPackage, resolved_href: &str) -> Option<String> {
+    package
+        .manifest
+        .iter()
+        .find(|(_, item)| join_epub_path(&package.opf_base, &item.href) == resolved_href)
+        .map(|(id, _)| id.clone())
+}
+
+fn parse_epub3_nav_entries(xml: &str) -> Result<Vec<TocEntry>, String> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
     let mut buf = Vec::new();
 
-    let mut titles = Vec::new();
+    let mut entries = Vec::new();
     let mut in_toc_nav = false;
     let mut nav_depth: u32 = 0;
     let mut in_anchor = false;
+    let mut current_href = String::new();
     let mut current = String::new();
 
     loop {
@@ -731,6 +776,7 @@ fn parse_epub3_nav_titles(xml: &str) -> Result<Vec<String>, String> {
                     }
                 } else if in_toc_nav && name == b"a" {
                     in_anchor = true;
+                    current_href = attr_value(&e, b"href").unwrap_or_default();
                     current.clear();
                 } else if in_toc_nav {
                     nav_depth += 1;
@@ -740,10 +786,14 @@ fn parse_epub3_nav_titles(xml: &str) -> Result<Vec<String>, String> {
                 let name = e.name().as_ref().to_ascii_lowercase();
                 if name == b"a" && in_anchor {
                     let title = current.trim();
-                    if !title.is_empty() {
-                        titles.push(title.to_string());
+                    if !title.is_empty() && !current_href.is_empty() {
+                        entries.push(TocEntry {
+                            href: current_href.clone(),
+                            title: title.to_string(),
+                        });
                     }
                     in_anchor = false;
+                    current_href.clear();
                     current.clear();
                 } else if name == b"nav" && nav_depth == 1 && in_toc_nav {
                     break;
@@ -766,43 +816,49 @@ fn parse_epub3_nav_titles(xml: &str) -> Result<Vec<String>, String> {
         buf.clear();
     }
 
-    Ok(titles)
+    Ok(entries)
 }
 
-fn parse_ncx_titles(xml: &str) -> Result<Vec<String>, String> {
+fn parse_ncx_entries(xml: &str) -> Result<Vec<TocEntry>, String> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
     let mut buf = Vec::new();
 
-    let mut titles = Vec::new();
+    let mut entries = Vec::new();
     let mut in_nav_label = false;
-    let mut current = String::new();
+    let mut current_label = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) => {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 if local_name_eq(e.name().as_ref(), b"navLabel")
                     || local_name_eq(e.name().as_ref(), b"navlabel")
                 {
                     in_nav_label = true;
-                    current.clear();
+                    current_label.clear();
+                } else if local_name_eq(e.name().as_ref(), b"content") {
+                    let href = attr_value(&e, b"src").unwrap_or_default();
+                    let title = current_label.trim();
+                    if !title.is_empty() && !href.is_empty() {
+                        entries.push(TocEntry {
+                            href,
+                            title: title.to_string(),
+                        });
+                    }
+                    current_label.clear();
+                    in_nav_label = false;
                 }
             }
             Ok(Event::End(e)) => {
                 if local_name_eq(e.name().as_ref(), b"navLabel")
                     || local_name_eq(e.name().as_ref(), b"navlabel")
                 {
-                    let title = current.trim();
-                    if !title.is_empty() {
-                        titles.push(title.to_string());
-                    }
                     in_nav_label = false;
-                    current.clear();
                 }
             }
             Ok(Event::Text(e)) if in_nav_label => {
                 if let Ok(text) = e.unescape() {
-                    current.push_str(text.as_ref());
+                    current_label.push_str(text.as_ref());
                 }
             }
             Ok(Event::Eof) => break,
@@ -812,7 +868,7 @@ fn parse_ncx_titles(xml: &str) -> Result<Vec<String>, String> {
         buf.clear();
     }
 
-    Ok(titles)
+    Ok(entries)
 }
 
 fn extract_xhtml_text(reader: &mut impl BufRead) -> Result<String, String> {
@@ -1710,10 +1766,9 @@ mod tests {
     #[serial]
     fn search_book_opens_archive_once_per_scan_not_per_chapter() {
         // Regression guard for the archive-open hoist: scanning a multi-chapter
-        // book with a cold cache must open the ZIP exactly twice -- once for
-        // blocking_list_chapters and once for the scan body -- regardless of
-        // chapter count. If a future refactor moves the open back inside the
-        // per-chapter loader, this assertion fires (would report N+1).
+        // book with a cold cache must open the ZIP exactly once for list + scan,
+        // regardless of chapter count. If a future refactor moves the open back
+        // inside the per-chapter loader, this assertion fires (would report N+1).
         let path = temp_epub("search-open-count");
         write_test_epub(
             &path,
@@ -1735,8 +1790,8 @@ mod tests {
 
         let opens = archive_opens() - before;
         assert_eq!(
-            opens, 2,
-            "scan must open archive twice (list + scan), not once per chapter; opened {} times",
+            opens, 1,
+            "scan must open archive once (shared list + scan), not once per chapter; opened {} times",
             opens
         );
 
@@ -1784,6 +1839,278 @@ mod tests {
             .expect("async search");
         assert_eq!(result.hits.len(), 1);
         assert_eq!(result.hits[0].title, "Chapter 1");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Build an EPUB with explicit spine order, optional nav document, and
+    /// per-chapter bodies keyed by manifest id (`ch1`, `ch2`, …).
+    fn write_custom_spine_epub(
+        path: &Path,
+        spine_ids: &[&str],
+        chapter_bodies: &HashMap<&str, (&str, &str)>,
+        nav_xml: Option<&str>,
+    ) {
+        let file = File::create(path).expect("create epub");
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        zip.start_file("mimetype", options).expect("mimetype");
+        zip.write_all(b"application/epub+zip").expect("mimetype");
+        zip.start_file("META-INF/container.xml", options)
+            .expect("container");
+        zip.write_all(
+            br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+        )
+        .expect("container");
+
+        let mut manifest = String::from(
+            r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata>
+    <dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Custom Spine Book</dc:title>
+  </metadata>
+  <manifest>
+"#,
+        );
+
+        if nav_xml.is_some() {
+            manifest.push_str(
+                r#"    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+"#,
+            );
+        }
+
+        for id in spine_ids {
+            let href = format!("{id}.xhtml");
+            manifest.push_str(&format!(
+                r#"    <item id="{id}" href="{href}" media-type="application/xhtml+xml"/>
+"#
+            ));
+        }
+
+        manifest.push_str("  </manifest>\n  <spine>\n");
+        for id in spine_ids {
+            manifest.push_str(&format!(r#"    <itemref idref="{id}"/>
+"#));
+        }
+        manifest.push_str("  </spine>\n</package>\n");
+
+        zip.start_file("OEBPS/content.opf", options).expect("opf");
+        zip.write_all(manifest.as_bytes()).expect("opf");
+
+        if let Some(nav) = nav_xml {
+            zip.start_file("OEBPS/nav.xhtml", options).expect("nav");
+            zip.write_all(nav.as_bytes()).expect("nav");
+        }
+
+        for id in spine_ids {
+            let (title, body) = chapter_bodies
+                .get(id)
+                .copied()
+                .unwrap_or(("Untitled", "<p>Body.</p>"));
+            let chapter = format!(
+                r#"<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><title>{title}</title></head>
+  <body>{body}</body>
+</html>
+"#
+            );
+            zip.start_file(format!("OEBPS/{id}.xhtml"), options)
+                .expect("chapter");
+            zip.write_all(chapter.as_bytes()).expect("chapter");
+        }
+
+        zip.finish().expect("finish epub");
+    }
+
+    #[test]
+    fn map_toc_entries_assigns_titles_by_href_not_position() {
+        let package = EpubPackage {
+            opf_base: "OEBPS".to_string(),
+            spine: vec!["preface".to_string(), "ch1".to_string(), "ch2".to_string()],
+            manifest: HashMap::from([
+                (
+                    "preface".to_string(),
+                    SpineItem {
+                        href: "preface.xhtml".to_string(),
+                        media_type: "application/xhtml+xml".to_string(),
+                    },
+                ),
+                (
+                    "ch1".to_string(),
+                    SpineItem {
+                        href: "chapter1.xhtml".to_string(),
+                        media_type: "application/xhtml+xml".to_string(),
+                    },
+                ),
+                (
+                    "ch2".to_string(),
+                    SpineItem {
+                        href: "chapter2.xhtml".to_string(),
+                        media_type: "application/xhtml+xml".to_string(),
+                    },
+                ),
+            ]),
+            nav_href: None,
+            ncx_href: None,
+        };
+
+        let entries = vec![
+            TocEntry {
+                href: "chapter1.xhtml".to_string(),
+                title: "Real Chapter One".to_string(),
+            },
+            TocEntry {
+                href: "chapter2.xhtml".to_string(),
+                title: "Real Chapter Two".to_string(),
+            },
+        ];
+
+        let titles = map_toc_entries_to_spine_titles(&package, &entries);
+        assert_eq!(titles.len(), 3);
+        assert_eq!(titles[0], "Chapter 1");
+        assert_eq!(titles[1], "Real Chapter One");
+        assert_eq!(titles[2], "Real Chapter Two");
+    }
+
+    #[test]
+    fn map_toc_entries_strips_fragment_from_href() {
+        let package = EpubPackage {
+            opf_base: "OEBPS".to_string(),
+            spine: vec!["ch1".to_string()],
+            manifest: HashMap::from([(
+                "ch1".to_string(),
+                SpineItem {
+                    href: "chapter1.xhtml".to_string(),
+                    media_type: "application/xhtml+xml".to_string(),
+                },
+            )]),
+            nav_href: None,
+            ncx_href: None,
+        };
+
+        let entries = vec![TocEntry {
+            href: "chapter1.xhtml#section-2".to_string(),
+            title: "Anchored Chapter".to_string(),
+        }];
+
+        let titles = map_toc_entries_to_spine_titles(&package, &entries);
+        assert_eq!(titles[0], "Anchored Chapter");
+    }
+
+    #[test]
+    fn map_toc_entries_ignores_extra_toc_items_beyond_spine() {
+        let package = EpubPackage {
+            opf_base: "OEBPS".to_string(),
+            spine: vec!["ch1".to_string()],
+            manifest: HashMap::from([
+                (
+                    "ch1".to_string(),
+                    SpineItem {
+                        href: "chapter1.xhtml".to_string(),
+                        media_type: "application/xhtml+xml".to_string(),
+                    },
+                ),
+                (
+                    "extra".to_string(),
+                    SpineItem {
+                        href: "bonus.xhtml".to_string(),
+                        media_type: "application/xhtml+xml".to_string(),
+                    },
+                ),
+            ]),
+            nav_href: None,
+            ncx_href: None,
+        };
+
+        let entries = vec![
+            TocEntry {
+                href: "chapter1.xhtml".to_string(),
+                title: "Only Spine Chapter".to_string(),
+            },
+            TocEntry {
+                href: "bonus.xhtml".to_string(),
+                title: "Not In Spine".to_string(),
+            },
+        ];
+
+        let titles = map_toc_entries_to_spine_titles(&package, &entries);
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0], "Only Spine Chapter");
+    }
+
+    #[test]
+    fn list_chapters_maps_nested_nav_by_href() {
+        let path = temp_epub("nested-nav");
+        let nav = r#"<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc"><ol>
+      <li>
+        <a href="ch1.xhtml">Chapter Alpha</a>
+        <ol>
+          <li><a href="ch1.xhtml#part-a">Part A</a></li>
+          <li><a href="ch1.xhtml#part-b">Part B</a></li>
+        </ol>
+      </li>
+      <li><a href="ch2.xhtml">Chapter Beta</a></li>
+    </ol></nav>
+  </body>
+</html>
+"#;
+        let mut bodies = HashMap::new();
+        bodies.insert("ch1", ("Alpha", "<p>Alpha body marker.</p>"));
+        bodies.insert("ch2", ("Beta", "<p>Beta body marker.</p>"));
+        write_custom_spine_epub(&path, &["ch1", "ch2"], &bodies, Some(nav));
+
+        let chapters = list_chapters(&path).expect("list chapters");
+        assert_eq!(chapters.len(), 2);
+        assert_eq!(chapters[0].title, "Chapter Alpha");
+        assert_eq!(chapters[1].title, "Chapter Beta");
+
+        let alpha_text = get_chapter_text(&path, 0, None, None, &BookTextCache::default())
+            .expect("alpha text");
+        assert!(alpha_text.text.contains("Alpha body marker"));
+
+        let beta_text = get_chapter_text(&path, 1, None, None, &BookTextCache::default())
+            .expect("beta text");
+        assert!(beta_text.text.contains("Beta body marker"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn list_chapters_falls_back_for_spine_items_missing_from_toc() {
+        let path = temp_epub("preface-outside-toc");
+        let nav = r#"<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <body>
+    <nav epub:type="toc"><ol>
+      <li><a href="ch2.xhtml">Main Story</a></li>
+    </ol></nav>
+  </body>
+</html>
+"#;
+        let mut bodies = HashMap::new();
+        bodies.insert("preface", ("Preface", "<p>Preface-only body.</p>"));
+        bodies.insert("ch2", ("Main", "<p>Main story body.</p>"));
+        write_custom_spine_epub(&path, &["preface", "ch2"], &bodies, Some(nav));
+
+        let chapters = list_chapters(&path).expect("list chapters");
+        assert_eq!(chapters.len(), 2);
+        assert_eq!(chapters[0].title, "Chapter 1");
+        assert_eq!(chapters[1].title, "Main Story");
+
+        let preface_text = get_chapter_text(&path, 0, None, None, &BookTextCache::default())
+            .expect("preface text");
+        assert!(preface_text.text.contains("Preface-only body"));
 
         let _ = std::fs::remove_file(path);
     }
