@@ -242,18 +242,54 @@ pub struct FindBookResult {
     pub path: Option<String>,
 }
 
+fn library_books_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    Ok(app_data_dir.join("books"))
+}
+
+/// Canonicalize both `raw_path` and `books_dir`, returning the canonical path
+/// only if it falls inside the library directory. Shared by lookup and delete
+/// paths so they apply the same escape protection.
+fn resolve_inside_books_dir(raw_path: &Path, books_dir: &Path) -> Result<PathBuf, String> {
+    let books_dir_canon = std::fs::canonicalize(books_dir)
+        .map_err(|e| format!("Failed to resolve books directory: {}", e))?;
+    let path_canon = std::fs::canonicalize(raw_path)
+        .map_err(|e| format!("Failed to resolve file path: {}", e))?;
+    if !path_canon.starts_with(&books_dir_canon) {
+        return Err("Path is outside library directory".to_string());
+    }
+    Ok(path_canon)
+}
+
+/// Exact-match rule for the `original_filename` fallback: a library file is
+/// always laid out as `{book_id}_{sanitized_base}.{ext}`. We accept a candidate
+/// only when its stem ends with `_{sanitized_base}` AND has a non-empty id
+/// prefix — never a bare substring, so `Dune` no longer matches `Dune Messiah`.
+fn matches_sanitized_library_name(file_name: &str, sanitized: &str) -> bool {
+    if sanitized.is_empty() {
+        return false;
+    }
+    let stem = Path::new(file_name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    if stem.is_empty() {
+        return false;
+    }
+    let suffix = format!("_{}", sanitized);
+    stem.ends_with(&suffix) && stem.len() > suffix.len()
+}
+
 #[tauri::command]
 pub(crate) fn find_book_in_library(
     app: tauri::AppHandle,
     book_id: String,
     original_filename: Option<String>,
 ) -> Result<FindBookResult, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-
-    let books_dir = app_data_dir.join("books");
+    let books_dir = library_books_dir(&app)?;
 
     if !books_dir.exists() {
         return Ok(FindBookResult {
@@ -262,38 +298,36 @@ pub(crate) fn find_book_in_library(
         });
     }
 
+    // Prefer exact `{book_id}_` prefix, then an exact `original_filename` shape.
+    // Both branches canonicalize and verify the result stays inside books_dir,
+    // matching the safety strength of delete_book_file.
+    let id_prefix = format!("{}_", book_id);
+    let sanitized_orig = original_filename.as_deref().map(|orig_name| {
+        let orig_base = orig_name.rsplit_once('.').map(|(n, _)| n).unwrap_or(orig_name);
+        sanitize_filename(orig_base)
+    });
+
     if let Ok(entries) = std::fs::read_dir(&books_dir) {
         for entry in entries.flatten() {
             let file_name = entry.file_name().to_string_lossy().to_string();
-            if file_name.starts_with(&format!("{}_", book_id)) {
-                if let Some(path_str) = entry.path().to_str() {
-                    return Ok(FindBookResult {
-                        found: true,
-                        path: Some(path_str.to_string()),
-                    });
-                }
+            let matched = file_name.starts_with(&id_prefix)
+                || sanitized_orig
+                    .as_deref()
+                    .map(|s| matches_sanitized_library_name(&file_name, s))
+                    .unwrap_or(false);
+            if !matched {
+                continue;
             }
-        }
-    }
-
-    if let Some(orig_name) = original_filename {
-        let orig_base = orig_name
-            .rsplit_once('.')
-            .map(|(n, _)| n)
-            .unwrap_or(&orig_name);
-        let sanitized = sanitize_filename(orig_base);
-
-        if let Ok(entries) = std::fs::read_dir(&books_dir) {
-            for entry in entries.flatten() {
-                let file_name = entry.file_name().to_string_lossy().to_string();
-                if file_name.contains(&sanitized) {
-                    if let Some(path_str) = entry.path().to_str() {
+            match resolve_inside_books_dir(&entry.path(), &books_dir) {
+                Ok(canon) => {
+                    if let Some(path_str) = canon.to_str() {
                         return Ok(FindBookResult {
                             found: true,
                             path: Some(path_str.to_string()),
                         });
                     }
                 }
+                Err(_) => continue,
             }
         }
     }
@@ -312,24 +346,13 @@ pub(crate) fn delete_book_file(app: tauri::AppHandle, file_path: String) -> Resu
         return Ok(());
     }
 
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-
-    let books_dir = app_data_dir.join("books");
+    let books_dir = library_books_dir(&app)?;
     if !books_dir.exists() {
         return Ok(());
     }
 
-    let books_dir = std::fs::canonicalize(&books_dir)
-        .map_err(|e| format!("Failed to resolve books directory: {}", e))?;
-    let path =
-        std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve file path: {}", e))?;
-
-    if !path.starts_with(&books_dir) {
-        return Err("Refusing to delete file outside library directory".to_string());
-    }
+    let path = resolve_inside_books_dir(path, &books_dir)
+        .map_err(|_| "Refusing to delete file outside library directory".to_string())?;
 
     if path.is_file() {
         std::fs::remove_file(&path).map_err(|e| format!("Failed to delete file: {}", e))?;
@@ -474,4 +497,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root1);
         let _ = std::fs::remove_dir_all(&root2);
     }
+
+    #[test]
+    fn matches_sanitized_library_name_rejects_bare_substrings() {
+        // Exact id-prefixed stem is accepted.
+        assert!(matches_sanitized_library_name("42_Dune.epub", "Dune"));
+        // Sanitized base that is a proper suffix (with a non-empty id) is accepted.
+        assert!(matches_sanitized_library_name("99_Dune.epub", "Dune"));
+        // The substring trap: "Dune" must NOT match "Dune Messiah".
+        assert!(!matches_sanitized_library_name("7_Dune Messiah.epub", "Dune"));
+        // A file whose stem is exactly the sanitized base (no id prefix) is rejected.
+        assert!(!matches_sanitized_library_name("Dune.epub", "Dune"));
+        // Empty sanitized query never matches.
+        assert!(!matches_sanitized_library_name("42_Dune.epub", ""));
+    }
 }
+
