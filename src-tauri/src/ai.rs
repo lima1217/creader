@@ -223,7 +223,7 @@ pub(crate) fn build_summary_prompt(request: &SummarizeConversationRequest) -> St
         let role_label = if item.role == "user" {
             "用户"
         } else {
-            "lima"
+            "助手"
         };
         prompt_parts.push(format!("\n{}：{}", role_label, item.content));
     }
@@ -1028,7 +1028,7 @@ mod tests {
         assert!(prompt.contains("旧摘要"));
         assert!(prompt.contains("[当前书籍]\nBook"));
         assert!(prompt.contains("用户：我关心机会成本"));
-        assert!(prompt.contains("lima：机会成本是决策比较的核心。"));
+        assert!(prompt.contains("助手：机会成本是决策比较的核心。"));
     }
 
     #[test]
