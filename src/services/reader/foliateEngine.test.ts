@@ -687,7 +687,7 @@ describe('foliateEngine scrolled boundary bridge', () => {
     });
   }
 
-  it('attaches scroll and wheel listeners when flow=scrolled is applied', async () => {
+  it('attaches scroll and a single wheel listener when flow=scrolled is applied', async () => {
     const instance = await openTestInstance();
 
     instance.rendition.setLayout?.({ flow: 'scrolled' });
@@ -698,13 +698,33 @@ describe('foliateEngine scrolled boundary bridge', () => {
       expect.any(Function),
       { passive: false, capture: true },
     );
-    expect(mockView.addEventListener).toHaveBeenCalledWith(
+    expect(mockView.addEventListener).not.toHaveBeenCalledWith(
       'wheel',
       expect.any(Function),
-      { passive: false, capture: true },
+      expect.anything(),
     );
     expect(scrollListener).toBeTypeOf('function');
     expect(wheelListener).toBeTypeOf('function');
+  });
+
+  it('arms boundary only once per wheel dispatch (no triple capture listeners)', async () => {
+    vi.useFakeTimers();
+    const armEvents: Array<{ progress: number }> = [];
+    const instance = await openTestInstance();
+    instance.rendition.on('boundaryarm', (state: unknown) => {
+      armEvents.push(state as { progress: number });
+    });
+    instance.rendition.setLayout?.({ flow: 'scrolled' });
+
+    rendererState.start = 998;
+    rendererState.end = 1000;
+    rendererState.viewSize = 1000;
+
+    const before = armEvents.length;
+    wheelListener?.({ deltaY: 120, preventDefault: vi.fn() });
+    expect(armEvents.length - before).toBe(1);
+
+    vi.useRealTimers();
   });
 
   it('arms at the boundary and turns only after the hint has stayed visible past the min-visible window', async () => {

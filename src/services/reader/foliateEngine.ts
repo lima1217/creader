@@ -285,7 +285,6 @@ class FoliateRendition implements ReadingEngineRendition {
   private sectionFraction: number | null = null;
   private boundaryNavLock = false;
   private scrolledBoundaryBridgeEnabled = false;
-  private boundaryHost: HTMLElement | null = null;
   private lastScrollStart = 0;
   private lastRelocatedSectionIndex: number | null = null;
   // Boundary arming: accumulate scroll intent at a chapter edge before turning.
@@ -414,14 +413,6 @@ class FoliateRendition implements ReadingEngineRendition {
     this.view.remove();
   }
 
-  bindBoundaryHost(host: HTMLElement): void {
-    this.boundaryHost = host;
-    if (this.scrolledBoundaryBridgeEnabled) {
-      this.disableScrolledBoundaryBridge();
-      this.enableScrolledBoundaryBridge();
-    }
-  }
-
   setBookLanguageHint(language: string): void {
     this.bookLanguageHint = language.trim();
   }
@@ -480,16 +471,15 @@ class FoliateRendition implements ReadingEngineRendition {
       }
     };
 
+    // Wheel intent is read from the scroll renderer's metrics, so listen only
+    // on that node. Attaching the same handler on view/boundaryHost as well
+    // fired once per capture phase hop and triple-armed boundary state (#121).
     const wheelOpts: AddEventListenerOptions = { passive: false, capture: true };
     renderer.addEventListener('scroll', onScroll);
     renderer.addEventListener('wheel', onWheel, wheelOpts);
-    this.view.addEventListener('wheel', onWheel, wheelOpts);
-    this.boundaryHost?.addEventListener('wheel', onWheel, wheelOpts);
     this.boundaryCleanups.push(() => {
       renderer.removeEventListener?.('scroll', onScroll);
       renderer.removeEventListener?.('wheel', onWheel, wheelOpts);
-      this.view.removeEventListener('wheel', onWheel, wheelOpts);
-      this.boundaryHost?.removeEventListener('wheel', onWheel, wheelOpts);
     });
     this.scrolledBoundaryBridgeEnabled = true;
     this.resetScrollBoundaryTracking();
@@ -783,7 +773,6 @@ export const foliateEngineAdapter: ReadingEngineAdapter = {
     await view.open(file);
 
     const rendition = new FoliateRendition(view);
-    rendition.bindBoundaryHost(container);
     const bookLanguage = view.book?.metadata?.language?.[0] ?? '';
     rendition.setBookLanguageHint(bookLanguage);
 
