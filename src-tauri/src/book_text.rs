@@ -73,8 +73,18 @@ struct EpubPackage {
     ncx_href: Option<String>,
 }
 
+/// A cached chapter entry plus the file metadata it was built from. The
+/// metadata lets a later `get` detect that the book file was replaced or
+/// re-imported at the same path and treat the cached text as stale.
+#[derive(Clone)]
+struct CachedChapter {
+    modified: std::time::SystemTime,
+    len: u64,
+    text: String,
+}
+
 pub struct BookTextCache {
-    inner: Mutex<LruCache<(String, usize), String>>,
+    inner: Mutex<LruCache<(String, usize), CachedChapter>>,
 }
 
 impl BookTextCache {
@@ -89,19 +99,47 @@ impl BookTextCache {
         Self::new(DEFAULT_CHAPTER_CACHE_CAPACITY)
     }
 
-    fn get(&self, book_key: &str, index: usize) -> Option<String> {
-        self.inner
+    /// Returns the cached text only if it exists for `(book_key, index)` AND
+    /// the book file's current mtime/size still match the cached metadata.
+    /// A replaced or re-imported file at the same path invalidates the entry.
+    fn get(&self, book_key: &str, index: usize, book_path: &Path) -> Option<String> {
+        let cached = self
+            .inner
             .lock()
             .ok()
-            .and_then(|mut cache| cache.get(&(book_key.to_string(), index)).cloned())
+            .and_then(|mut cache| cache.get(&(book_key.to_string(), index)).cloned())?;
+        match std::fs::metadata(book_path) {
+            Ok(meta) => {
+                let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+                if modified == cached.modified && meta.len() == cached.len {
+                    Some(cached.text)
+                } else {
+                    // Stale: file changed since cache. Drop the entry so the
+                    // next put stores fresh metadata alongside the new text.
+                    if let Ok(mut cache) = self.inner.lock() {
+                        cache.pop(&(book_key.to_string(), index));
+                    }
+                    None
+                }
+            }
+            Err(_) => None,
+        }
     }
 
-    fn put(&self, book_key: &str, index: usize, text: String) {
+    fn put(&self, book_key: &str, index: usize, text: String, book_path: &Path) {
         if text.chars().count() > MAX_CACHEABLE_CHAPTER_CHARS {
             return;
         }
+        // Snapshot the current file metadata so a future get can invalidate.
+        let (modified, len) = match std::fs::metadata(book_path) {
+            Ok(meta) => (meta.modified().unwrap_or(std::time::UNIX_EPOCH), meta.len()),
+            Err(_) => return,
+        };
         if let Ok(mut cache) = self.inner.lock() {
-            cache.put((book_key.to_string(), index), text);
+            cache.put(
+                (book_key.to_string(), index),
+                CachedChapter { modified, len, text },
+            );
         }
     }
 }
@@ -243,7 +281,7 @@ fn blocking_get_chapter_text(
     // ZIP and re-parsing the XHTML on every page. `slice_chapter_text` is
     // O(limit), and the cache is shared with `search_book` so a scan followed
     // by a `get_chapter_text` on the same chapter is free.
-    let full_text = match cache.get(&book_key, index) {
+    let full_text = match cache.get(&book_key, index, book_path) {
         Some(text) => text,
         None => {
             let mut archive = open_epub_archive(book_path)?;
@@ -252,6 +290,7 @@ fn blocking_get_chapter_text(
                 &mut archive,
                 &package,
                 &book_key,
+                book_path,
                 index,
                 cache,
             )?;
@@ -301,6 +340,7 @@ fn blocking_search_book(
             &mut archive,
             &package,
             &book_key,
+            book_path,
             chapter.index,
             cache,
         )?;
@@ -330,10 +370,11 @@ fn load_chapter_text_from_open_archive(
     archive: &mut ZipArchive<File>,
     package: &EpubPackage,
     book_key: &str,
+    book_path: &Path,
     index: usize,
     cache: &BookTextCache,
 ) -> Result<String, String> {
-    if let Some(full_text) = cache.get(book_key, index) {
+    if let Some(full_text) = cache.get(book_key, index, book_path) {
         return Ok(full_text);
     }
 
@@ -359,7 +400,7 @@ fn load_chapter_text_from_open_archive(
     let extracted = extract_xhtml_text(&mut buffered)?;
 
     if extracted.chars().count() <= MAX_CACHEABLE_CHAPTER_CHARS {
-        cache.put(book_key, index, extracted.clone());
+        cache.put(book_key, index, extracted.clone(), book_path);
     }
 
     Ok(extracted)
@@ -1278,6 +1319,42 @@ mod tests {
         let second = get_chapter_text(&path, 0, None, None, &cache).expect("second read");
         assert_eq!(second.text, "Cache me.");
         assert_eq!(chapter_extractions() - before, 1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    #[serial]
+    fn get_chapter_text_invalidates_cache_when_book_file_is_replaced() {
+        // #127: the process-wide cache keyed only on (path, index) returned
+        // stale text when a book was replaced or re-imported at the same path.
+        // Now each entry carries the file's mtime+size, so a replaced file
+        // forces a re-extraction.
+        let path = temp_epub("cache-invalidate");
+        write_test_epub(&path, &[("Chapter", "<p>original body</p>")], false);
+
+        let cache = BookTextCache::with_default_capacity();
+        reset_test_counters();
+        let before = chapter_extractions();
+
+        let first = get_chapter_text(&path, 0, None, None, &cache).expect("first read");
+        assert_eq!(first.text, "original body");
+        assert_eq!(chapter_extractions() - before, 1);
+
+        // Second read is served from cache (no new extraction).
+        let cached = get_chapter_text(&path, 0, None, None, &cache).expect("cached read");
+        assert_eq!(cached.text, "original body");
+        assert_eq!(chapter_extractions() - before, 1);
+
+        // Replace the file at the same path with different content (different
+        // size so the staleness check trips even if mtime granularity misses).
+        write_test_epub(&path, &[("Chapter", "<p>replaced NEW body that is longer</p>")], false);
+
+        let after_replace =
+            get_chapter_text(&path, 0, None, None, &cache).expect("read after replace");
+        assert_eq!(after_replace.text, "replaced NEW body that is longer");
+        // A new extraction happened because the cached entry was stale.
+        assert_eq!(chapter_extractions() - before, 2);
 
         let _ = std::fs::remove_file(path);
     }
