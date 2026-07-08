@@ -5,9 +5,10 @@ use tauri::ipc::Channel;
 use tokio_util::sync::CancellationToken;
 
 use super::reading_tools::{
-    execute_local_tool, is_deduplicable_readonly_tool, plan_same_round_readonly_call,
+    duplicate_write_tool_result, execute_local_tool, is_deduplicable_readonly_tool,
+    is_deduplicable_write_tool, plan_same_round_readonly_call, plan_same_round_write_call,
     reading_ai_tools, resolve_book_text_cache, tool_activity_detail, AiToolContext,
-    SameRoundReadonlyPlan, ToolCallResultCache,
+    SameRoundReadonlyPlan, SameRoundWritePlan, ToolCallResultCache,
 };
 use super::{
     build_openai_chat_request, build_openai_chat_request_from_prompt, openai_api_base,
@@ -239,6 +240,7 @@ where
             ReadonlyPending,
             ReadonlyDuplicate,
             WritePending,
+            WriteDuplicate,
         }
 
         struct ResolvedToolCall {
@@ -250,6 +252,11 @@ where
 
         let mut calls: Vec<ResolvedToolCall> = Vec::with_capacity(resolved_calls.len());
         let mut pending_readonly_keys: HashMap<(String, String), usize> = HashMap::new();
+        // Track write-tool argument signatures seen this round so a second
+        // identical write (e.g. the model emitting `write_reading_memory` twice
+        // with the same args) is skipped instead of re-entering the write path.
+        let mut seen_writes: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
         for (id, name, arguments) in resolved_calls {
             let detail = tool_activity_detail(&name, "started", &arguments, Some(tool_ctx));
             on_tool_activity(&name, "started", detail);
@@ -267,6 +274,11 @@ where
                 ) {
                     SameRoundReadonlyPlan::ExecuteFirst => CallExecution::ReadonlyPending,
                     SameRoundReadonlyPlan::ReuseFirst => CallExecution::ReadonlyDuplicate,
+                }
+            } else if is_deduplicable_write_tool(&name) {
+                match plan_same_round_write_call(&mut seen_writes, &name, &arguments) {
+                    SameRoundWritePlan::Execute => CallExecution::WritePending,
+                    SameRoundWritePlan::SkipDuplicate => CallExecution::WriteDuplicate,
                 }
             } else {
                 CallExecution::WritePending
@@ -340,6 +352,21 @@ where
             calls[index].execution = CallExecution::Resolved {
                 tool_result,
                 status,
+            };
+        }
+
+        // Resolve same-round duplicate write calls without executing them: the
+        // first identical write already ran, so the second is reported back to
+        // the model as a skipped duplicate instead of re-entering the write
+        // path (which would re-append to the ingestion log).
+        for call in &mut calls {
+            if !matches!(call.execution, CallExecution::WriteDuplicate) {
+                continue;
+            }
+            let name = call.name.clone();
+            call.execution = CallExecution::Resolved {
+                tool_result: duplicate_write_tool_result(&name),
+                status: "completed",
             };
         }
 

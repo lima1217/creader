@@ -323,6 +323,15 @@ pub(crate) fn is_deduplicable_readonly_tool(name: &str) -> bool {
     )
 }
 
+/// Write tools that should be deduplicated within a single round when the model
+/// emits identical arguments. `write_reading_memory` is side-effecting, so it
+/// cannot join the readonly concurrent path, but emitting the same write twice
+/// in one round is never useful — the second write would either duplicate the
+/// note (before the storage-layer hash dedup) or just re-enter the write path.
+pub(crate) fn is_deduplicable_write_tool(name: &str) -> bool {
+    matches!(name, "write_reading_memory")
+}
+
 fn canonicalize_json_value(value: &serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Object(map) => {
@@ -375,6 +384,53 @@ pub(crate) fn plan_same_round_readonly_call(
     } else {
         pending_keys.insert(key, call_index);
         SameRoundReadonlyPlan::ExecuteFirst
+    }
+}
+
+pub(crate) enum SameRoundWritePlan {
+    Execute,
+    SkipDuplicate,
+}
+
+/// Same-round dedup for write tools. The first `write_reading_memory` with a
+/// given argument signature executes; a second identical call in the same round
+/// is skipped and reported as a duplicate so the model sees it was redundant,
+/// without re-entering the write path or re-appending to the ingestion log.
+pub(crate) fn plan_same_round_write_call(
+    seen_writes: &mut std::collections::HashSet<(String, String)>,
+    name: &str,
+    arguments: &str,
+) -> SameRoundWritePlan {
+    if !is_deduplicable_write_tool(name) {
+        return SameRoundWritePlan::Execute;
+    }
+    let Ok(canonical_args) = canonical_tool_arguments(arguments) else {
+        return SameRoundWritePlan::Execute;
+    };
+    let key = (name.to_string(), canonical_args);
+    if seen_writes.contains(&key) {
+        SameRoundWritePlan::SkipDuplicate
+    } else {
+        seen_writes.insert(key);
+        SameRoundWritePlan::Execute
+    }
+}
+
+/// Shape the result returned to the model when a duplicate write is skipped
+/// within a round, matching the `ReadingMemoryDirectIngestResult` shape so the
+/// frontend tool-activity rendering treats it as a completed (skipped) write.
+pub(crate) fn duplicate_write_tool_result(name: &str) -> String {
+    if name == "write_reading_memory" {
+        serde_json::to_string(&serde_json::json!({
+            "note_path": String::new(),
+            "log_path": String::new(),
+            "skipped": true,
+            "reason": "duplicate_call",
+            "duplicate_call": true,
+        }))
+        .unwrap_or_else(|_| r#"{"skipped":true,"reason":"duplicate_call","duplicate_call":true}"#.to_string())
+    } else {
+        serde_json::json!({ "duplicate_call": true }).to_string()
     }
 }
 
@@ -733,6 +789,10 @@ mod tests {
 
     #[test]
     fn tool_result_cache_does_not_deduplicate_write_reading_memory() {
+        // The cross-round result cache never dedups write tools: a write must
+        // re-execute each round even with identical args, since prior-round
+        // state may have changed. Same-round dedup is handled separately by
+        // plan_same_round_write_call (see test below).
         let mut cache = ToolCallResultCache::default();
         cache.store(
             "write_reading_memory",
@@ -745,6 +805,50 @@ mod tests {
                 r#"{"target_dir":"notes","title":"Note","body":"Body","confidence":0.9}"#,
             )
             .is_none());
+    }
+
+    #[test]
+    fn plan_same_round_write_call_skips_second_identical_write() {
+        let mut seen = std::collections::HashSet::new();
+        let args = r#"{"target_dir":"notes","title":"Note","body":"Body","confidence":0.9}"#;
+
+        // First identical write in the round executes.
+        assert!(matches!(
+            plan_same_round_write_call(&mut seen, "write_reading_memory", args),
+            SameRoundWritePlan::Execute,
+        ));
+        // Second identical write in the same round is skipped.
+        assert!(matches!(
+            plan_same_round_write_call(&mut seen, "write_reading_memory", args),
+            SameRoundWritePlan::SkipDuplicate,
+        ));
+        // An argument-shuffled variant is still treated as identical (canonical args).
+        let shuffled = r#"{"confidence":0.9,"body":"Body","title":"Note","target_dir":"notes"}"#;
+        assert!(matches!(
+            plan_same_round_write_call(&mut seen, "write_reading_memory", shuffled),
+            SameRoundWritePlan::SkipDuplicate,
+        ));
+        // Different body executes as a new write.
+        let different = r#"{"target_dir":"notes","title":"Note","body":"Other","confidence":0.9}"#;
+        assert!(matches!(
+            plan_same_round_write_call(&mut seen, "write_reading_memory", different),
+            SameRoundWritePlan::Execute,
+        ));
+        // Non-deduplicable write tools always execute.
+        assert!(matches!(
+            plan_same_round_write_call(&mut seen, "other_write_tool", args),
+            SameRoundWritePlan::Execute,
+        ));
+    }
+
+    #[test]
+    fn duplicate_write_tool_result_reports_skipped_for_model() {
+        let result = duplicate_write_tool_result("write_reading_memory");
+        let value: serde_json::Value =
+            serde_json::from_str(&result).expect("result is valid JSON");
+        assert_eq!(value["skipped"], serde_json::Value::Bool(true));
+        assert_eq!(value["duplicate_call"], serde_json::Value::Bool(true));
+        assert_eq!(value["reason"], serde_json::Value::String("duplicate_call".to_string()));
     }
 
     fn unique_temp_dir(name: &str) -> PathBuf {
