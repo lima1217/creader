@@ -2,6 +2,12 @@ import Dexie, { type Table } from 'dexie';
 import type { ChatMessage, ConversationMemory } from '../types';
 
 export const DB_NAME = 'creader';
+// Migration history (kept in sync with the version() calls below):
+// v5 — covers / locations (epubjs) / chatMessages / conversationMemory (raw IndexedDB schema)
+// v6 — drop legacy searchText / searchResults stores
+// v7 — drop epubjs `locations` store (foliate-js now owns reading position)
+// v8 — add `appPrefs` store; move settings / library / progress / quickActions /
+//       libraryOrganizerExpandedFolders from localStorage into Dexie (migrated on launch)
 export const DB_VERSION = 8;
 
 export const APP_PREF_KEYS = {
