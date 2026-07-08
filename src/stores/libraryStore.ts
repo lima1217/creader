@@ -30,6 +30,18 @@ export function getLatestCurrentBook(): Book | null {
   return latestCurrentBook;
 }
 
+/**
+ * Collision-resistant folder id. Replaces Date.now().toString(), which collided
+ * when two folders were created within the same millisecond.
+ */
+function generateFolderId(): string {
+  const cryptoObj = globalThis.crypto as Crypto | undefined;
+  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
+    return cryptoObj.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 type LibraryState = {
   library: Library;
   setLibrary: (library: Library) => void;
@@ -129,7 +141,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
       -1,
     ) + 1;
     const newFolder: BookFolder = {
-      id: Date.now().toString(),
+      id: generateFolderId(),
       name: trimmedName,
       sortOrder,
       createdAt: Date.now(),

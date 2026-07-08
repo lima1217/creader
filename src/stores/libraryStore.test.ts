@@ -131,7 +131,17 @@ describe('libraryStore pure state transitions', () => {
     hydrateLibrary({ books: [book], folders: [], lastUpdated: 1 });
 
     const folder = useLibraryStore.getState().addFolder('Reading');
-    expect(folder).toEqual({ id: `${now}`, name: 'Reading', sortOrder: 0, createdAt: now });
+    expect(folder).toEqual(
+      expect.objectContaining({
+        name: 'Reading',
+        sortOrder: 0,
+        createdAt: now,
+      }),
+    );
+    // Folder id is now a generated unique string (no longer Date.now().toString()).
+    expect(typeof folder?.id).toBe('string');
+    expect(folder!.id.length).toBeGreaterThan(0);
+    expect(folder!.id).not.toBe(`${now}`);
     expect(useLibraryStore.getState().library.categories).toBeUndefined();
 
     useLibraryStore.getState().setBookFolder(book.id, folder!.id);
