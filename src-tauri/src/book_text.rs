@@ -203,9 +203,15 @@ pub fn get_chapter_text(
 }
 
 pub async fn list_chapters_async(book_path: PathBuf) -> Result<Vec<ChapterInfo>, String> {
-    tokio::task::spawn_blocking(move || blocking_list_chapters(&book_path))
-        .await
-        .map_err(|e| format!("list_chapters task failed: {}", e))?
+    #[cfg(test)]
+    let (chapter_counters, archive_counters) = test_instrumentation::counter_arcs();
+    tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        test_instrumentation::install_on_current_thread(chapter_counters, archive_counters);
+        blocking_list_chapters(&book_path)
+    })
+    .await
+    .map_err(|e| format!("list_chapters task failed: {}", e))?
 }
 
 pub async fn get_chapter_text_async(
@@ -215,7 +221,11 @@ pub async fn get_chapter_text_async(
     limit: Option<usize>,
     cache: Arc<BookTextCache>,
 ) -> Result<ChapterTextSlice, String> {
+    #[cfg(test)]
+    let (chapter_counters, archive_counters) = test_instrumentation::counter_arcs();
     tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        test_instrumentation::install_on_current_thread(chapter_counters, archive_counters);
         blocking_get_chapter_text(&book_path, index, offset, limit, cache.as_ref())
     })
     .await
@@ -239,7 +249,11 @@ pub async fn search_book_async(
     limit: Option<usize>,
     cache: Arc<BookTextCache>,
 ) -> Result<BookSearchResult, String> {
+    #[cfg(test)]
+    let (chapter_counters, archive_counters) = test_instrumentation::counter_arcs();
     tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        test_instrumentation::install_on_current_thread(chapter_counters, archive_counters);
         blocking_search_book(&book_path, &query, limit, cache.as_ref())
     })
     .await
@@ -1183,29 +1197,91 @@ fn attr_value(event: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<S
         .and_then(|attr| String::from_utf8(attr.value.into_owned()).ok())
 }
 
+/// Per-test instrumentation counters. Each test thread owns its own pair of
+/// `Arc<AtomicUsize>` via thread-local storage so parallel `cargo test` runs
+/// do not cross-contaminate extraction / archive-open counts. Async paths
+/// clone the Arcs into `spawn_blocking` worker threads before recording.
 #[cfg(test)]
-pub(crate) static CHAPTER_EXTRACTIONS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+mod test_instrumentation {
+    use std::cell::RefCell;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    thread_local! {
+        static CHAPTER_EXTRACTIONS: RefCell<Arc<AtomicUsize>> =
+            RefCell::new(Arc::new(AtomicUsize::new(0)));
+        static ARCHIVE_OPENS: RefCell<Arc<AtomicUsize>> =
+            RefCell::new(Arc::new(AtomicUsize::new(0)));
+    }
+
+    pub fn reset() {
+        chapter_arc().store(0, Ordering::SeqCst);
+        archive_arc().store(0, Ordering::SeqCst);
+    }
+
+    pub fn chapter_count() -> usize {
+        chapter_arc().load(Ordering::SeqCst)
+    }
+
+    pub fn archive_count() -> usize {
+        archive_arc().load(Ordering::SeqCst)
+    }
+
+    pub fn record_chapter_extraction() {
+        chapter_arc().fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn record_archive_open() {
+        archive_arc().fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn counter_arcs() -> (Arc<AtomicUsize>, Arc<AtomicUsize>) {
+        (chapter_arc(), archive_arc())
+    }
+
+    pub fn install_on_current_thread(chapter: Arc<AtomicUsize>, archive: Arc<AtomicUsize>) {
+        CHAPTER_EXTRACTIONS.with(|c| *c.borrow_mut() = chapter);
+        ARCHIVE_OPENS.with(|c| *c.borrow_mut() = archive);
+    }
+
+    fn chapter_arc() -> Arc<AtomicUsize> {
+        CHAPTER_EXTRACTIONS.with(|c| c.borrow().clone())
+    }
+
+    fn archive_arc() -> Arc<AtomicUsize> {
+        ARCHIVE_OPENS.with(|c| c.borrow().clone())
+    }
+}
 
 #[cfg(test)]
-pub(crate) static ARCHIVE_OPENS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+pub(crate) fn test_reset_counters() {
+    test_instrumentation::reset();
+}
+
+#[cfg(test)]
+pub(crate) fn test_chapter_extractions() -> usize {
+    test_instrumentation::chapter_count()
+}
+
+#[cfg(test)]
+pub(crate) fn test_archive_opens() -> usize {
+    test_instrumentation::archive_count()
+}
 
 fn test_record_chapter_extraction() {
     #[cfg(test)]
-    CHAPTER_EXTRACTIONS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    test_instrumentation::record_chapter_extraction();
 }
 
 fn test_record_archive_open() {
     #[cfg(test)]
-    ARCHIVE_OPENS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    test_instrumentation::record_archive_open();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::{Cursor, Write};
-    use std::sync::atomic::Ordering;
     use std::sync::Arc;
     use std::time::Instant;
     use serial_test::serial;
@@ -1213,16 +1289,15 @@ mod tests {
     use zip::ZipWriter;
 
     fn reset_test_counters() {
-        super::CHAPTER_EXTRACTIONS.store(0, Ordering::SeqCst);
-        super::ARCHIVE_OPENS.store(0, Ordering::SeqCst);
+        test_instrumentation::reset();
     }
 
     fn chapter_extractions() -> usize {
-        super::CHAPTER_EXTRACTIONS.load(Ordering::SeqCst)
+        test_instrumentation::chapter_count()
     }
 
     fn archive_opens() -> usize {
-        super::ARCHIVE_OPENS.load(Ordering::SeqCst)
+        test_instrumentation::archive_count()
     }
 
     fn normalize_with_sink(text: &str) -> String {

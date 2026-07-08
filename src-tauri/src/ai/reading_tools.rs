@@ -940,9 +940,8 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn shared_book_text_cache_reuses_chapter_text_across_requests() {
-        use crate::book_text::CHAPTER_EXTRACTIONS;
+        use crate::book_text::{test_chapter_extractions, test_reset_counters};
         use std::io::Write;
-        use std::sync::atomic::Ordering;
         use zip::write::SimpleFileOptions;
         use zip::ZipWriter;
 
@@ -994,19 +993,19 @@ mod tests {
         write_minimal_epub(&path);
 
         let shared = Arc::new(BookTextCache::with_default_capacity());
-        CHAPTER_EXTRACTIONS.store(0, Ordering::SeqCst);
+        test_reset_counters();
 
         let first = get_chapter_text_async(path.clone(), 0, None, None, Arc::clone(&shared))
             .await
             .unwrap();
         assert_eq!(first.text, "Shared cache body.");
-        assert_eq!(CHAPTER_EXTRACTIONS.load(Ordering::SeqCst), 1);
+        assert_eq!(test_chapter_extractions(), 1);
 
         let second = get_chapter_text_async(path.clone(), 0, None, None, Arc::clone(&shared))
             .await
             .unwrap();
         assert_eq!(second.text, "Shared cache body.");
-        assert_eq!(CHAPTER_EXTRACTIONS.load(Ordering::SeqCst), 1);
+        assert_eq!(test_chapter_extractions(), 1);
 
         let _ = std::fs::remove_file(path);
     }
