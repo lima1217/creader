@@ -31,3 +31,6 @@ src-tauri/target
 *.njsproj
 *.sln
 *.sw?
+
+# Local release artifacts (published via GitHub Releases; see docs/release.md)
+releases/**/*.dmg

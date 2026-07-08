@@ -15,7 +15,7 @@
 - `src/domain/`: pure AI request, Reading Context Snapshot, context trimming, and Reading Memory Markdown logic.
 - `src/services/`: IndexedDB, local storage, import/cover services, Reading Memory bridge, and reading engines.
 - `src-tauri/`: Tauri shell, Rust commands, file boundaries, AI provider storage, and Reading Memory writes.
-- `releases/`: packaged artifacts. Do not edit unless the task is packaging or release publishing.
+- `releases/`: local staging for macOS `.dmg` bundles before GitHub Releases upload. Binaries are gitignored; see `docs/release.md`. Do not commit `.dmg` files.
 
 ## Verification
 
