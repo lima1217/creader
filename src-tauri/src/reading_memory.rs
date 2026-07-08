@@ -188,6 +188,21 @@ fn content_hash(input: &str) -> String {
     format!("{:x}", hasher.finish())
 }
 
+/// HTML comment marker appended to each ingested block so duplicate writes can
+/// be detected idempotently. It is invisible in rendered Markdown and safe for
+/// the unified/remark pipeline that owns rendering/rewrites.
+fn block_hash_marker(hash: &str) -> String {
+    format!("\n\n<!-- creader:block_hash={} -->\n", hash)
+}
+
+fn block_hash_already_present(note_path: &Path, hash: &str) -> bool {
+    let Ok(existing) = std::fs::read_to_string(note_path) else {
+        return false;
+    };
+    let needle = format!("creader:block_hash={}", hash);
+    existing.contains(&needle)
+}
+
 pub(crate) fn build_direct_reading_memory_markdown(
     request: &ReadingMemoryDirectIngestRequest,
     decision: &ReadingMemoryDirectDecision,
@@ -557,6 +572,25 @@ pub(crate) fn write_reading_memory_note_inner(
     let new_file = !note_path.exists();
     let block_hash = content_hash(&rendered_markdown);
 
+    // Idempotent ingest: if this exact block hash is already in the note,
+    // skip the write and log so repeat ingestion does not bloat the file.
+    if !new_file && block_hash_already_present(&note_path, &block_hash) {
+        let log_path = meta_dir.join("ingestion-log.jsonl");
+        return Ok(ReadingMemoryDirectIngestResult {
+            note_path: note_path
+                .to_str()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+            log_path: log_path.to_string_lossy().to_string(),
+            skipped: true,
+            reason: "duplicate block".to_string(),
+        });
+    }
+
+    // Append the invisible hash marker so future writes can detect the same
+    // block without re-reading or maintaining a separate index.
+    let rendered_with_marker = format!("{}{}", rendered_markdown, block_hash_marker(&block_hash));
+
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -566,7 +600,7 @@ pub(crate) fn write_reading_memory_note_inner(
         writeln!(file)
             .map_err(|e| format!("Failed to separate Reading Memory note append: {}", e))?;
     }
-    write!(file, "{}", rendered_markdown)
+    write!(file, "{}", rendered_with_marker)
         .map_err(|e| format!("Failed to append Reading Memory note: {}", e))?;
 
     let millis = timestamp_millis()?;
@@ -969,6 +1003,59 @@ mod tests {
         assert!(std::fs::read_to_string(result.log_path)
             .unwrap()
             .contains("\"block_hash\""));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reading_memory_write_is_idempotent_for_duplicate_block_hash() {
+        let root = unique_temp_dir("reading_memory_dedup");
+        let mk = || ReadingMemoryDirectIngestRequest {
+            root_path: root.to_string_lossy().to_string(),
+            book_title: "Book".to_string(),
+            book_author: Some("Author".to_string()),
+            source_chapter: Some("Chapter 1".to_string()),
+            source_cfi: Some("epubcfi(/6/8)".to_string()),
+            source_progress: Some(12.5),
+            user_question: "解释这个概念".to_string(),
+            selected_excerpt: Some("source excerpt".to_string()),
+            assistant_answer: "assistant answer".to_string(),
+        };
+        let decision = ReadingMemoryDirectDecision {
+            should_ingest: true,
+            target_dir: Some("concepts".to_string()),
+            title: Some("机会成本".to_string()),
+            note_type: Some("concept".to_string()),
+            summary: None,
+            body: Some("这是一个可复用概念。".to_string()),
+            links: Some(vec!["Related".to_string()]),
+            confidence: Some(0.82),
+            reason: Some("形成可复用概念".to_string()),
+        };
+        let rendered = "---\ntype: Concept\n---\n# 机会成本\n\n这是 AST 渲染内容。\n".to_string();
+
+        // First write creates the note with a single block.
+        let first =
+            write_reading_memory_note_inner(mk(), decision.clone(), rendered.clone()).unwrap();
+        assert!(!first.skipped);
+        let note_path = PathBuf::from(&first.note_path);
+        let bytes_after_first = std::fs::metadata(&note_path).unwrap().len();
+
+        // Second identical write must be skipped and leave the file untouched.
+        let second =
+            write_reading_memory_note_inner(mk(), decision.clone(), rendered.clone()).unwrap();
+        assert!(second.skipped);
+        assert_eq!(second.reason, "duplicate block");
+        let bytes_after_second = std::fs::metadata(&note_path).unwrap().len();
+        assert_eq!(bytes_after_first, bytes_after_second);
+
+        // A different body writes a new, second block.
+        let mut diff_decision = decision.clone();
+        diff_decision.body = Some("另一个不同视角的概念。".to_string());
+        let diff_rendered = "---\ntype: Concept\n---\n# 机会成本\n\n另一个不同视角的概念。\n".to_string();
+        let third = write_reading_memory_note_inner(mk(), diff_decision, diff_rendered).unwrap();
+        assert!(!third.skipped);
+        assert!(std::fs::metadata(&note_path).unwrap().len() > bytes_after_first);
 
         std::fs::remove_dir_all(root).unwrap();
     }
