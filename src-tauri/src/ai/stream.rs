@@ -15,7 +15,10 @@ use super::{
     AIProviderConfig, StreamEvent,
 };
 
+#[cfg(not(test))]
 const AI_TIMEOUT_SECS: u64 = 120;
+#[cfg(test)]
+const AI_TIMEOUT_SECS: u64 = 2;
 /// Default tool rounds when the client omits `max_tool_rounds`.
 pub(crate) const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
 const MIN_MAX_TOOL_ROUNDS: usize = 2;
@@ -126,7 +129,7 @@ where
     let mut tool_rounds_used = 0usize;
     let chapter_cache = resolve_book_text_cache(app);
     let mut tool_result_cache = ToolCallResultCache::default();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(AI_TIMEOUT_SECS);
+    let request_timeout = Duration::from_secs(AI_TIMEOUT_SECS);
     let chat = client.chat();
 
     let mut full_text = String::new();
@@ -146,7 +149,7 @@ where
         )?;
 
         let stream_future = chat.create_stream(request);
-        let mut stream = tokio::time::timeout_at(deadline, stream_future)
+        let mut stream = tokio::time::timeout(request_timeout, stream_future)
             .await
             .map_err(|_| format!("AI request timed out after {} seconds", AI_TIMEOUT_SECS))?
             .map_err(|e| format!("OpenAI client stream request failed: {}", e))?;
@@ -159,7 +162,7 @@ where
             if cancel.is_some_and(|token| token.is_cancelled()) {
                 break;
             }
-            let next = tokio::time::timeout_at(deadline, stream.next())
+            let next = tokio::time::timeout(request_timeout, stream.next())
                 .await
                 .map_err(|_| format!("AI stream timed out after {} seconds", AI_TIMEOUT_SECS))?;
             let Some(chunk_result) = next else {
@@ -418,9 +421,32 @@ where
                 },
             ));
         }
+
+        #[cfg(test)]
+        {
+            let delay = test_inter_tool_round_delay();
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
+        }
     }
 
     Ok(full_text)
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_INTER_TOOL_ROUND_DELAY_MS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn test_inter_tool_round_delay() -> Duration {
+    TEST_INTER_TOOL_ROUND_DELAY_MS.with(|delay| Duration::from_millis(delay.get()))
+}
+
+#[cfg(test)]
+pub(crate) fn set_test_inter_tool_round_delay(delay: Duration) {
+    TEST_INTER_TOOL_ROUND_DELAY_MS.with(|d| d.set(delay.as_millis() as u64));
 }
 
 /// Streaming chat completion over an OpenAI-compatible endpoint. Emits
@@ -910,6 +936,88 @@ mod tests {
         }));
         assert!(last_json.get("tools").is_none());
         server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn typed_stream_resets_timeout_between_tool_rounds() {
+        set_test_inter_tool_round_delay(Duration::from_secs(AI_TIMEOUT_SECS + 1));
+        let (base_url, request_rx, server) =
+            spawn_sequential_chat_server(vec![TOOL_CALL_ROUND, FINAL_TEXT_ROUND]);
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+        let tool_ctx = sample_tool_ctx();
+
+        let full_text = chat_completion_stream_typed(
+            sample_stream_messages(),
+            &config,
+            "secret-key",
+            Some(&tool_ctx),
+            None,
+            false,
+            DEFAULT_MAX_TOOL_ROUNDS,
+            None,
+            |_| {},
+            |_, _, _| {},
+        )
+        .await
+        .unwrap();
+        set_test_inter_tool_round_delay(Duration::ZERO);
+
+        assert_eq!(full_text, "Final answer");
+        assert_eq!(request_rx.recv().unwrap().len(), 2);
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn typed_stream_times_out_on_stalled_single_round() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let _server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = Vec::new();
+            let mut temp = [0_u8; 1024];
+            loop {
+                let read = stream.read(&mut temp).unwrap();
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&temp[..read]);
+                if buffer.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            // Keep the TCP connection open without sending a response body.
+            std::thread::sleep(Duration::from_secs(60));
+        });
+        let config = AIProviderConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            base_url: format!("{}/v1", base_url),
+            model: "reader-model".to_string(),
+        };
+
+        let task = tokio::spawn(async move {
+            chat_completion_stream_typed(
+                sample_stream_messages(),
+                &config,
+                "secret-key",
+                None,
+                None,
+                false,
+                DEFAULT_MAX_TOOL_ROUNDS,
+                None,
+                |_| {},
+                |_, _, _| {},
+            )
+            .await
+        });
+
+        let err = task.await.unwrap().unwrap_err();
+        assert!(err.contains(&format!("timed out after {} seconds", AI_TIMEOUT_SECS)));
     }
 
     #[test]

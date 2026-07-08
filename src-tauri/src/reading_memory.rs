@@ -132,6 +132,116 @@ CFI：{cfi}
         answer = answer
     )
 }
+
+/// Minimum assistant answer length (Unicode scalars) before heuristic pre-filter
+/// defers to the LLM reviewer.
+const READING_MEMORY_HEURISTIC_MIN_ANSWER_LEN: usize = 240;
+
+/// Returns a skip reason when this turn clearly does not need an LLM review.
+pub(crate) fn reading_memory_heuristic_skip(
+    request: &ReadingMemoryDirectIngestRequest,
+) -> Option<String> {
+    if reading_memory_explicit_save_signal(&request.user_question) {
+        return None;
+    }
+
+    if reading_memory_answer_len(&request.assistant_answer)
+        >= READING_MEMORY_HEURISTIC_MIN_ANSWER_LEN
+    {
+        return None;
+    }
+
+    if let Some(reason) = reading_memory_skip_pattern_reason(&request.user_question) {
+        return Some(reason);
+    }
+
+    let has_excerpt = request
+        .selected_excerpt
+        .as_ref()
+        .is_some_and(|excerpt| !excerpt.trim().is_empty());
+    if !has_excerpt
+        && reading_memory_question_len(&request.user_question) <= 24
+        && reading_memory_answer_len(&request.assistant_answer) < READING_MEMORY_HEURISTIC_MIN_ANSWER_LEN
+    {
+        return Some("启发式跳过：普通短追问，无选中文本".to_string());
+    }
+
+    None
+}
+
+fn reading_memory_explicit_save_signal(question: &str) -> bool {
+    let normalized = question.to_lowercase();
+    [
+        "保存",
+        "记住",
+        "沉淀",
+        "加入 reading memory",
+        "reading memory",
+        "加入记忆",
+        "写入记忆",
+        "写入 reading memory",
+        "记录下来",
+        "存下来",
+        "加入阅读记忆",
+    ]
+    .iter()
+    .any(|signal| normalized.contains(signal))
+}
+
+fn reading_memory_skip_pattern_reason(question: &str) -> Option<String> {
+    let normalized = question.to_lowercase();
+    let patterns: &[(&[&str], &str)] = &[
+        (
+            &["翻译", "译成", "translate", "翻成"],
+            "启发式跳过：翻译请求",
+        ),
+        (
+            &["总结", "概括", "摘要", "继续总结", "summarize", "summary"],
+            "启发式跳过：普通章节总结",
+        ),
+        (
+            &["苏格拉底", "考我", "出题", "quiz me", "socratic"],
+            "启发式跳过：苏格拉底式引导",
+        ),
+        (
+            &["润色", "改写", "paraphrase", "rewrite"],
+            "启发式跳过：润色或改写",
+        ),
+        (
+            &["继续", "然后呢", "还有呢", "接着说", "go on"],
+            "启发式跳过：短期追问",
+        ),
+        (
+            &["重复", "再说一遍", "再解释", "没听懂", "explain again"],
+            "启发式跳过：重复解释",
+        ),
+        (
+            &["闲聊", "你好", "在吗", "chat", "随便聊"],
+            "启发式跳过：闲聊",
+        ),
+        (
+            &["系统提示", "工具提示", "meta prompt", "提示词模板"],
+            "启发式跳过：元提示词",
+        ),
+    ];
+
+    patterns
+        .iter()
+        .find_map(|(needles, reason)| {
+            needles
+                .iter()
+                .any(|needle| normalized.contains(needle))
+                .then(|| (*reason).to_string())
+        })
+}
+
+fn reading_memory_question_len(question: &str) -> usize {
+    question.trim().chars().count()
+}
+
+fn reading_memory_answer_len(answer: &str) -> usize {
+    answer.trim().chars().count()
+}
 // ============================================================
 // Reading Memory ingestion (OKF Wiki)
 // ============================================================
@@ -456,6 +566,14 @@ async fn review_reading_memory_decision(
     app: tauri::AppHandle,
     request: &ReadingMemoryDirectIngestRequest,
 ) -> Result<ReadingMemoryDirectReviewResult, String> {
+    if let Some(reason) = reading_memory_heuristic_skip(request) {
+        return Ok(ReadingMemoryDirectReviewResult {
+            skipped: true,
+            reason,
+            decision: None,
+        });
+    }
+
     // Resolve the active provider early so a missing config/key short-circuits
     // with a clear message instead of writing a skipped log entry.
     let (config, api_key) = active_provider(&app)?;
@@ -850,6 +968,76 @@ mod tests {
             std::process::id(),
             nanos
         ))
+    }
+
+    #[test]
+    fn reading_memory_heuristic_skips_ordinary_short_turns_without_llm() {
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: "/tmp/memory".to_string(),
+            book_title: "Book".to_string(),
+            book_author: Some("Author".to_string()),
+            source_chapter: Some("Chapter 1".to_string()),
+            source_cfi: None,
+            source_progress: Some(12.5),
+            user_question: "这是什么？".to_string(),
+            selected_excerpt: None,
+            assistant_answer: "这是一个简短回答。".to_string(),
+        };
+
+        let reason = reading_memory_heuristic_skip(&request).expect("should skip");
+        assert!(reason.contains("普通短追问"));
+    }
+
+    #[test]
+    fn reading_memory_heuristic_skips_translation_without_llm() {
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: "/tmp/memory".to_string(),
+            book_title: "Book".to_string(),
+            book_author: None,
+            source_chapter: None,
+            source_cfi: None,
+            source_progress: None,
+            user_question: "翻译这段".to_string(),
+            selected_excerpt: Some("source excerpt".to_string()),
+            assistant_answer: "translated text".to_string(),
+        };
+
+        let reason = reading_memory_heuristic_skip(&request).expect("should skip");
+        assert!(reason.contains("翻译"));
+    }
+
+    #[test]
+    fn reading_memory_heuristic_defers_explicit_save_to_llm() {
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: "/tmp/memory".to_string(),
+            book_title: "Book".to_string(),
+            book_author: None,
+            source_chapter: None,
+            source_cfi: None,
+            source_progress: None,
+            user_question: "请保存这段解释".to_string(),
+            selected_excerpt: None,
+            assistant_answer: "短回答".to_string(),
+        };
+
+        assert!(reading_memory_heuristic_skip(&request).is_none());
+    }
+
+    #[test]
+    fn reading_memory_heuristic_defers_long_answers_to_llm() {
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: "/tmp/memory".to_string(),
+            book_title: "Book".to_string(),
+            book_author: None,
+            source_chapter: None,
+            source_cfi: None,
+            source_progress: None,
+            user_question: "解释这个概念".to_string(),
+            selected_excerpt: None,
+            assistant_answer: "长".repeat(READING_MEMORY_HEURISTIC_MIN_ANSWER_LEN),
+        };
+
+        assert!(reading_memory_heuristic_skip(&request).is_none());
     }
 
     #[test]
