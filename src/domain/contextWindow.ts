@@ -47,7 +47,11 @@ export function sliceChapterContent(
       const focusMid = focusStart + Math.floor(toScalars(focus).length / 2);
       let start = Math.max(0, focusMid - Math.floor(maxLen / 2));
       let end = Math.min(total, start + maxLen);
+      // Symmetric clamp: when the window hits a boundary, re-anchor so the
+      // slice stays exactly maxLen (unless total < maxLen). End is re-clamped
+      // after start moves so both ends stay consistent near chapter tail.
       if (end - start < maxLen) start = Math.max(0, end - maxLen);
+      end = Math.min(total, start + maxLen);
       return {
         text: scalars.slice(start, end).join(''),
         offset: start,
@@ -103,6 +107,7 @@ function centerWindow(params: {
   if (end - start < params.budget) {
     start = Math.max(0, end - params.budget);
   }
+  end = Math.min(total, start + params.budget);
 
   const text = scalars.slice(start, end).join('');
   return {
