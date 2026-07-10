@@ -75,4 +75,21 @@ describe('buildSmartChapterContext', () => {
     expect(match).not.toBeNull();
     expect(Number(match![1])).toBeGreaterThanOrEqual(storeSlice.offset);
   });
+
+  it('centers the window on emoji focus text using scalar indexes', () => {
+    // Supplementary-plane characters must match and position via scalarIndexOf,
+    // not code-unit includes(), so the window stays on the real selection.
+    const focus = '这里是选中的这段😀文字内容';
+    expect([...focus].length).toBeGreaterThanOrEqual(12);
+    const chapter = `${'前'.repeat(5000)}${focus}${'后'.repeat(5000)}`;
+    const context = buildSmartChapterContext({
+      chapterContent: chapter,
+      focusTexts: [focus],
+      chapterIndex: 7,
+    });
+
+    expect(context).toContain('Surrounding chapter context');
+    expect(context).toContain(focus);
+    expect(context).toContain('get_chapter_text(index=7, offset=');
+  });
 });

@@ -42,4 +42,19 @@ describe('selectionStore', () => {
     useSelectionStore.getState().clearAccumulatedTexts();
     expect(useSelectionStore.getState().accumulatedTexts).toEqual([]);
   });
+
+  it('clearSelection resets text, CFI, and accumulated quotes together', () => {
+    const store = useSelectionStore.getState();
+    store.setSelectedText('quote');
+    store.setSelectedCfiRange('epubcfi(/6/2!/4)');
+    store.addToAccumulatedTexts('earlier');
+
+    useSelectionStore.getState().clearSelection();
+
+    expect(useSelectionStore.getState()).toMatchObject({
+      selectedText: '',
+      selectedCfiRange: '',
+      accumulatedTexts: [],
+    });
+  });
 });

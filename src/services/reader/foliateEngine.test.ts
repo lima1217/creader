@@ -871,3 +871,98 @@ describe('foliateEngine scrolled boundary bridge', () => {
     vi.useRealTimers();
   });
 });
+
+describe('foliateEngine destroy cleanup', () => {
+  let mockRenderer: {
+    setAttribute: ReturnType<typeof vi.fn>;
+    removeAttribute: ReturnType<typeof vi.fn>;
+    getContents: ReturnType<typeof vi.fn>;
+    setStyles: ReturnType<typeof vi.fn>;
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+  };
+
+  let mockView: {
+    renderer: typeof mockRenderer;
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+    lastLocation: unknown;
+    open: ReturnType<typeof vi.fn>;
+    init: ReturnType<typeof vi.fn>;
+    goTo: ReturnType<typeof vi.fn>;
+    prev: ReturnType<typeof vi.fn>;
+    next: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+    classList: { add: ReturnType<typeof vi.fn> };
+    remove: ReturnType<typeof vi.fn>;
+  };
+
+  let originalCreateElement: typeof document.createElement;
+
+  beforeEach(() => {
+    mockRenderer = {
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      getContents: vi.fn(() => []),
+      setStyles: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+
+    mockView = {
+      renderer: mockRenderer,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      lastLocation: null,
+      open: vi.fn().mockResolvedValue(undefined),
+      init: vi.fn().mockResolvedValue(undefined),
+      goTo: vi.fn(),
+      prev: vi.fn(),
+      next: vi.fn(),
+      close: vi.fn(),
+      classList: { add: vi.fn() },
+      remove: vi.fn(),
+    };
+
+    originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'foliate-view') return mockView as unknown as HTMLElement;
+      return originalCreateElement(tag);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('removes named view listeners and stops bridge callbacks after destroy', async () => {
+    const instance = await foliateEngineAdapter.open({
+      appBook: { title: 'Test Book' } as any,
+      arrayBuffer: new ArrayBuffer(0),
+      container: document.createElement('div'),
+    });
+
+    const relocated = vi.fn();
+    instance.rendition.on('relocated', relocated);
+
+    const relocateHandler = mockView.addEventListener.mock.calls.find(
+      (call) => call[0] === 'relocate',
+    )?.[1] as EventListener | undefined;
+    const loadHandler = mockView.addEventListener.mock.calls.find(
+      (call) => call[0] === 'load',
+    )?.[1] as EventListener | undefined;
+    expect(relocateHandler).toBeTypeOf('function');
+    expect(loadHandler).toBeTypeOf('function');
+
+    instance.destroy();
+
+    expect(mockView.removeEventListener).toHaveBeenCalledWith('relocate', relocateHandler);
+    expect(mockView.removeEventListener).toHaveBeenCalledWith('load', loadHandler);
+    expect(mockView.close).toHaveBeenCalledOnce();
+
+    relocateHandler?.(new CustomEvent('relocate', {
+      detail: { cfi: 'epubcfi(/6/2)', index: 0, fraction: 0.1 },
+    }));
+    expect(relocated).not.toHaveBeenCalled();
+  });
+});

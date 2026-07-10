@@ -140,7 +140,10 @@ export function buildSmartChapterContext(params: {
   const focus = focusTexts
     .slice()
     .sort((a, b) => b.length - a.length)
-    .find(text => text.length >= MIN_FOCUS_MATCH_CHARS && chapter.includes(text));
+    .find(text => {
+      if (text.length < MIN_FOCUS_MATCH_CHARS) return false;
+      return scalarIndexOf(chapter, text) >= 0;
+    });
 
   const focusStart = focus ? scalarIndexOf(chapter, focus) : -1;
   const focusEnd = focusStart >= 0 ? focusStart + toScalars(focus!).length : undefined;

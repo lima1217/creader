@@ -65,6 +65,21 @@ describe('ChatStore Dexie persistence', () => {
     ]);
   });
 
+  it('trims overflow with a bounded oldest-key cursor when appending past the limit', async () => {
+    const seed = Array.from({ length: 20 }, (_, i) => msg(`seed${i}`, 100 + i));
+    await appendChatMessages(seed, 20);
+
+    await appendChatMessages([msg('new', 1000)], 5);
+
+    await expect(loadChatMessages(10)).resolves.toEqual([
+      msg('seed16', 116),
+      msg('seed17', 117),
+      msg('seed18', 118),
+      msg('seed19', 119),
+      msg('new', 1000),
+    ]);
+  });
+
   it('persists and clears conversation memory without mixing it into chat messages', async () => {
     const memory: ConversationMemory = {
       id: 'memory-1',

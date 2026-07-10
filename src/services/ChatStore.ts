@@ -50,10 +50,16 @@ export async function appendChatMessages(
       await db.chatMessages.put(msg, messageKey(msg));
     }
 
-    const keys = await db.chatMessages.toCollection().primaryKeys();
-    const overflow = keys.length - limit;
+    const total = await db.chatMessages.count();
+    const overflow = total - limit;
     if (overflow <= 0) return;
-    await db.chatMessages.bulkDelete(keys.slice(0, overflow) as string[]);
+    // Bounded forward cursor: only the oldest overflow keys, not a full-table
+    // primaryKeys() scan that grows with every stored message.
+    const overflowKeys = await db.chatMessages
+      .toCollection()
+      .limit(overflow)
+      .primaryKeys();
+    await db.chatMessages.bulkDelete(overflowKeys as string[]);
   });
 }
 

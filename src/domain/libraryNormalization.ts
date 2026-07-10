@@ -48,15 +48,20 @@ export function normalizeLibrary(rawLibrary: unknown, now: () => number = Date.n
   const rawBooks = Array.isArray(library.books) ? library.books : [];
   const books = rawBooks.map(raw => {
     const book = asRecord(raw);
-    const { categoryId: _categoryId, folderId: _rawFolderId, ...rest } = book;
+    const { categoryId: _categoryId, folderId: _rawFolderId, cover: rawCover, coverKey, ...rest } = book;
     const folderId = typeof book.folderId === 'string'
       ? book.folderId
       : typeof _categoryId === 'string'
         ? _categoryId
         : undefined;
+    const normalizedCoverKey = typeof coverKey === 'string' && coverKey ? coverKey : undefined;
     return {
       ...rest,
       ...(folderId && folderIds.has(folderId) ? { folderId } : {}),
+      ...(normalizedCoverKey ? { coverKey: normalizedCoverKey } : {}),
+      // Once a cover lives in CoverStore, drop the inline base64 payload so
+      // library JSON stays small across reloads.
+      ...(!normalizedCoverKey && typeof rawCover === 'string' ? { cover: rawCover } : {}),
     };
   }) as Library['books'];
 

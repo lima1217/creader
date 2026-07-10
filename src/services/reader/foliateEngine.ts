@@ -226,6 +226,10 @@ class FoliateRenditionEventBridge {
   emit(event: string, ...args: unknown[]): void {
     for (const callback of this.handlers.get(event) ?? []) callback(...args);
   }
+
+  clear(): void {
+    this.handlers.clear();
+  }
 }
 
 /**
@@ -299,27 +303,29 @@ class FoliateRendition implements ReadingEngineRendition {
     }
   };
 
+  private readonly onViewRelocate = (event: Event) => {
+    const detail = (event as CustomEvent<FoliateLocation>).detail;
+    const location = this.toEpubLocation(detail);
+    this.bridge.emit('relocated', location);
+    this.bridge.emit('locationChanged', location);
+    const index = detail.index;
+    if (typeof index === 'number' && index !== this.lastRelocatedSectionIndex) {
+      this.lastRelocatedSectionIndex = index;
+      this.prefetchedSectionIndices.clear();
+      this.resetScrollBoundaryTracking();
+      this.clearBoundaryArm();
+    }
+  };
+
+  private readonly onViewLoad = (event: Event) => {
+    const detail = (event as CustomEvent<{ doc?: Document; index?: number }>).detail;
+    this.attachSelectionListener(detail.doc, detail.index);
+    this.applyThemeToDocument(detail.doc);
+  };
+
   constructor(private readonly view: FoliateViewElement) {
-    view.addEventListener('relocate', event => {
-      const detail = (event as CustomEvent<FoliateLocation>).detail;
-      const location = this.toEpubLocation(detail);
-      this.bridge.emit('relocated', location);
-      this.bridge.emit('locationChanged', location);
-      const index = detail.index;
-      if (typeof index === 'number' && index !== this.lastRelocatedSectionIndex) {
-        this.lastRelocatedSectionIndex = index;
-        this.prefetchedSectionIndices.clear();
-        this.resetScrollBoundaryTracking();
-        this.clearBoundaryArm();
-      }
-    });
-
-    view.addEventListener('load', event => {
-      const detail = (event as CustomEvent<{ doc?: Document; index?: number }>).detail;
-      this.attachSelectionListener(detail.doc, detail.index);
-      this.applyThemeToDocument(detail.doc);
-    });
-
+    view.addEventListener('relocate', this.onViewRelocate);
+    view.addEventListener('load', this.onViewLoad);
     this.attachRendererSectionTracking();
   }
 
@@ -407,8 +413,13 @@ class FoliateRendition implements ReadingEngineRendition {
 
   destroy(): void {
     this.disableScrolledBoundaryBridge();
+    // Always cancel arm decay even if the scrolled bridge was never enabled.
+    this.clearBoundaryArm();
+    this.view.removeEventListener('relocate', this.onViewRelocate);
+    this.view.removeEventListener('load', this.onViewLoad);
     this.view.renderer?.removeEventListener?.('relocate', this.onRendererRelocate, true);
     for (const cleanup of this.selectionCleanups.splice(0)) cleanup();
+    this.bridge.clear();
     this.view.close();
     this.view.remove();
   }

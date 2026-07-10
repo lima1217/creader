@@ -9,6 +9,7 @@ import { resolveFontFaceCss } from '../../services/reader/fontLoader';
 import { foliateEngineAdapter } from '../../services/reader/foliateEngine';
 import { DEFAULT_READING_LAYOUT } from '../../services/reader/readingEngine';
 import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { createLogger } from '../../utils/logger';
 import { classifyBookOpenError, toBookOpenUserMessage } from '../../utils/errors';
 import { perfSpan } from '../../utils/perf';
@@ -44,8 +45,22 @@ export function useEpubBookLifecycle(params: {
   useEffect(() => {
     if (!currentBook || !containerRef.current) return;
 
-    let cancelled = false;
+    // Generation token: every await after this must check `loadGeneration ===
+    // activeGeneration` before writing UI state, so a slow open of book A
+    // cannot clear book B's loading state or attach A's engine.
+    const loadGeneration = Symbol(currentBook.id);
+    let activeGeneration: symbol | null = loadGeneration;
     let engineInstance: ReadingEngineInstance | null = null;
+
+    useSelectionStore.getState().clearSelection();
+
+    const isCurrentGeneration = () => activeGeneration === loadGeneration;
+
+    const discardEngine = () => {
+      if (!engineInstance) return;
+      engineInstance.destroy();
+      engineInstance = null;
+    };
 
     const loadBook = async () => {
       setIsLoading(true);
@@ -56,30 +71,26 @@ export function useEpubBookLifecycle(params: {
 
       // Yield to allow the loading UI to paint before heavy work.
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      if (cancelled) return;
+      if (!isCurrentGeneration()) return;
 
-      if (engineInstance) {
-        engineInstance.destroy();
-        engineInstance = null;
-      }
+      discardEngine();
       renditionRef.current = null;
       onRenditionCreated?.(null);
 
       try {
         const fileData = await perfSpan('epub:readFile', async () => readFile(currentBook.filePath));
-        if (cancelled) return;
+        if (!isCurrentGeneration()) return;
 
         const arrayBuffer = uint8ArrayToArrayBuffer(fileData);
 
         const container = containerRef.current;
-        if (!container || cancelled) return;
+        if (!container || !isCurrentGeneration()) return;
 
         engineInstance = await perfSpan('epub:open', async () =>
           foliateEngineAdapter.open({ appBook: currentBook, arrayBuffer, container }),
         );
-        if (cancelled) {
-          engineInstance.destroy();
-          engineInstance = null;
+        if (!isCurrentGeneration()) {
+          discardEngine();
           return;
         }
 
@@ -96,7 +107,10 @@ export function useEpubBookLifecycle(params: {
         } catch (error) {
           logger.warn('Failed to inject reading font faces:', error);
         }
-        if (cancelled) return;
+        if (!isCurrentGeneration()) {
+          discardEngine();
+          return;
+        }
 
         applyEpubTheme(rendition, {
           theme: settings.theme,
@@ -113,10 +127,17 @@ export function useEpubBookLifecycle(params: {
         const startTarget = currentBook.progress.currentCfi || undefined;
         await perfSpan('epub:firstDisplay', async () => rendition.display(startTarget));
 
+        if (!isCurrentGeneration()) {
+          // Effect cleanup already tore down shared refs for the newer book;
+          // only discard this generation's engine if it somehow survived.
+          discardEngine();
+          return;
+        }
+
         setIsLoading(false);
       } catch (err) {
         logger.error('Failed to load book:', err);
-        if (!cancelled) {
+        if (isCurrentGeneration()) {
           const kind = classifyBookOpenError(err);
           setIsFileNotFound(kind === 'not-found');
           setIsEngineLoadError(kind === 'engine-load');
@@ -129,11 +150,8 @@ export function useEpubBookLifecycle(params: {
     void loadBook();
 
     return () => {
-      cancelled = true;
-      if (engineInstance) {
-        engineInstance.destroy();
-        engineInstance = null;
-      }
+      activeGeneration = null;
+      discardEngine();
       renditionRef.current = null;
       onRenditionCreated?.(null);
     };
