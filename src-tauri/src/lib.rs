@@ -2,6 +2,7 @@ mod ai;
 mod book_files;
 mod book_text;
 mod font_files;
+mod path_safety;
 mod reading_memory;
 
 use std::sync::Arc;

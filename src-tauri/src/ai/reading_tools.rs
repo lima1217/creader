@@ -10,8 +10,8 @@ use crate::book_text::{
     BookSearchResult, BookTextCache,
 };
 use crate::reading_memory::{
-    allowed_reading_memory_dir, write_reading_memory_from_tool, ReadingMemoryDirectDecision,
-    ReadingMemoryDirectIngestRequest,
+    allowed_reading_memory_dir, resolve_reading_memory_root, write_reading_memory_from_tool,
+    ReadingMemoryDirectDecision, ReadingMemoryDirectIngestRequest,
 };
 
 use super::ChatRequest;
@@ -559,6 +559,12 @@ pub(crate) async fn execute_local_tool(
         "write_reading_memory" => {
             let args: WriteReadingMemoryToolArgs = serde_json::from_str(arguments)
                 .map_err(|e| format!("Invalid write_reading_memory arguments: {}", e))?;
+            if allowed_reading_memory_dir(args.target_dir.as_str()).is_none() {
+                return Err("Reading Memory target_dir is outside allowed directories".to_string());
+            }
+            let app = app.ok_or_else(|| {
+                "Reading Memory writes require an application handle for root binding".to_string()
+            })?;
             let root_path = tool_ctx
                 .reading_memory_path
                 .as_deref()
@@ -566,6 +572,7 @@ pub(crate) async fn execute_local_tool(
                 .ok_or_else(|| {
                     "Reading Memory repository is not configured".to_string()
                 })?;
+            let root = resolve_reading_memory_root(app, root_path)?;
             let book_title = tool_ctx
                 .book_title
                 .clone()
@@ -581,15 +588,8 @@ pub(crate) async fn execute_local_tool(
                 confidence: Some(args.confidence),
                 reason: args.reason,
             };
-            if allowed_reading_memory_dir(
-                decision.target_dir.as_deref().unwrap_or(""),
-            )
-            .is_none()
-            {
-                return Err("Reading Memory target_dir is outside allowed directories".to_string());
-            }
             let request = ReadingMemoryDirectIngestRequest {
-                root_path: root_path.to_string(),
+                root_path: root.to_string_lossy().to_string(),
                 book_title,
                 book_author: tool_ctx.book_author.clone(),
                 source_chapter: tool_ctx.source_chapter.clone(),
