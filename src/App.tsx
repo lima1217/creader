@@ -35,14 +35,9 @@ function AppContent() {
   const { isImporting, importBook, importBookFile } = useAppLifecycleImport({ notice });
   const [isDragging, setIsDragging] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
-  const [hasLoadedAIPanel, setHasLoadedAIPanel] = useState(isAIPanelOpen);
   const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
   const setFileDropDragging = useCallback((value: boolean) => setIsDragging(value), []);
   useEpubFileDropImport(importBookFile, setFileDropDragging);
-
-  useEffect(() => {
-    if (isAIPanelOpen) setHasLoadedAIPanel(true);
-  }, [isAIPanelOpen]);
 
   useEffect(() => {
     if (isSettingsOpen) setHasLoadedSettings(true);
@@ -123,7 +118,7 @@ function AppContent() {
           </ErrorBoundary>
         </div>
         <ErrorBoundary>
-          {(isAIPanelOpen || hasLoadedAIPanel) && (
+          {isAIPanelOpen && (
             <Suspense fallback={null}>
               <AIPanel />
             </Suspense>

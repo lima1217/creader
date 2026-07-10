@@ -78,4 +78,50 @@ describe('useEpubProgressTracking', () => {
 
     flushSync(() => root.unmount());
   });
+
+  it('skips chapter location writes when index, title, and remaining percent are unchanged', () => {
+    const rendition = createRendition();
+    const updateBookProgress = vi.fn();
+    const setCurrentChapterLocation = vi.fn();
+    const setCurrentChapterSlice = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+
+    flushSync(() => {
+      root.render(
+        <Harness
+          rendition={rendition}
+          updateBookProgress={updateBookProgress}
+          setCurrentChapterLocation={setCurrentChapterLocation}
+          setCurrentChapterSlice={setCurrentChapterSlice}
+        />,
+      );
+    });
+
+    // bookId effect clears location once; currentLocation() writes once more.
+    const writesAfterMount = setCurrentChapterLocation.mock.calls.length;
+    expect(writesAfterMount).toBeGreaterThanOrEqual(1);
+
+    rendition.emit('locationChanged', {
+      start: { cfi: 'epubcfi(/6/4!/4/2)', index: 4, percentage: 0.62, sectionFraction: 0.38, label: '' },
+    });
+    rendition.emit('locationChanged', {
+      start: { cfi: 'epubcfi(/6/4!/4/8)', index: 4, percentage: 0.621, sectionFraction: 0.379, label: '' },
+    });
+
+    expect(setCurrentChapterLocation.mock.calls.length).toBe(writesAfterMount);
+
+    rendition.emit('locationChanged', {
+      start: { cfi: 'epubcfi(/6/4!/4/20)', index: 4, percentage: 0.7, sectionFraction: 0.3, label: '' },
+    });
+
+    expect(setCurrentChapterLocation).toHaveBeenLastCalledWith({
+      index: 4,
+      title: 'Chapter 5',
+      remainingPercent: 70,
+    });
+    expect(setCurrentChapterLocation.mock.calls.length).toBe(writesAfterMount + 1);
+
+    flushSync(() => root.unmount());
+  });
 });

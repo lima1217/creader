@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, type SVGProps } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, memo, type SVGProps } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ChatMessage as AstryxChatMessage } from '@astryxdesign/core/Chat';
 import { ChatComposerInput } from '@astryxdesign/core/Chat';
@@ -14,7 +14,7 @@ import { useSelectionStore } from '../stores/selectionStore';
 import { isTauriRuntime } from '../utils/tauri';
 import { handleWindowDragMouseDown } from '../utils/windowDrag';
 import { createLogger } from '../utils/logger';
-import type { AIProviderStatus } from '../types';
+import type { AIProviderStatus, ChatMessage } from '../types';
 import { AI_PANEL_WIDTH, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH } from '../constants';
 import {
     TrashIcon,
@@ -52,19 +52,69 @@ function HeaderBookIcon(props: SVGProps<SVGSVGElement>) {
     );
 }
 
+const ChatMessageCopyButton = memo(function ChatMessageCopyButton({
+    content,
+}: {
+    content: string;
+}) {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = useCallback(async () => {
+        try {
+            await navigator.clipboard.writeText(content);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 2000);
+        } catch {
+            logger.warn('Failed to copy message');
+        }
+    }, [content]);
+
+    return (
+        <button
+            className={`ai-message-copy ${copied ? 'copied' : ''}`}
+            onClick={() => { void handleCopy(); }}
+            aria-label={copied ? '已复制' : '复制回答'}
+        >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+        </button>
+    );
+});
+
+const ChatMessageRow = memo(function ChatMessageRow({ message }: { message: ChatMessage }) {
+    return (
+        <AstryxChatMessage
+            sender={message.role === 'user' ? 'user' : 'assistant'}
+            className={`ai-message ai-message-${message.role}`}
+        >
+            {message.context && (
+                <div className="ai-message-reference">
+                    <QuoteIcon />
+                    <span>“{message.context.slice(0, 100)}{message.context.length > 100 ? '…' : ''}”</span>
+                </div>
+            )}
+            <div className="ai-message-content">
+                {message.role === 'assistant' ? (
+                    <FormatMessage content={message.content} />
+                ) : (
+                    message.content
+                )}
+            </div>
+            {message.role === 'assistant' && (
+                <div className="ai-message-actions">
+                    <ChatMessageCopyButton content={message.content} />
+                </div>
+            )}
+        </AstryxChatMessage>
+    );
+});
+
 export function AIPanel() {
-    const isAIPanelOpen = useUIStore((s) => s.isAIPanelOpen);
     const setAIPanelOpen = useUIStore((s) => s.setAIPanelOpen);
     const chatMessages = useAIStore((s) => s.chatMessages);
     const conversationMemory = useAIStore((s) => s.conversationMemory);
     const addChatMessage = useAIStore((s) => s.addChatMessage);
     const setConversationMemory = useAIStore((s) => s.setConversationMemory);
     const clearChat = useAIStore((s) => s.clearChat);
-    const currentChapterContent = useAIStore((s) => s.currentChapterContent);
-    const currentChapterContentOffset = useAIStore((s) => s.currentChapterContentOffset);
-    const currentChapterSliceTruncatedEnd = useAIStore((s) => s.currentChapterSliceTruncatedEnd);
-    const currentChapterIndex = useAIStore((s) => s.currentChapterIndex);
-    const currentChapterTitle = useAIStore((s) => s.currentChapterTitle);
     const selectedText = useSelectionStore((s) => s.selectedText);
     const setSelectedText = useSelectionStore((s) => s.setSelectedText);
     const selectedCfiRange = useSelectionStore((s) => s.selectedCfiRange);
@@ -72,8 +122,8 @@ export function AIPanel() {
     const removeAccumulatedText = useSelectionStore((s) => s.removeAccumulatedText);
     const clearAccumulatedTexts = useSelectionStore((s) => s.clearAccumulatedTexts);
     const currentBook = useLibraryStore((s) => s.currentBook);
-    const bookProgressById = useProgressStore((s) => s.bookProgressById);
-    const settings = useSettingsStore((s) => s.settings);
+    const aiTextSize = useSettingsStore((s) => s.settings.aiTextSize);
+    const aiThinkingEnabled = useSettingsStore((s) => s.settings.aiThinkingEnabled);
     const setSettings = useSettingsStore((s) => s.setSettings);
     const isTauri = isTauriRuntime();
 
@@ -83,7 +133,6 @@ export function AIPanel() {
     const [toolActivity, setToolActivity] = useState<string | null>(null);
     const streamingContentRef = useRef('');
     const [providers, setProviders] = useState<AIProviderStatus[]>([]);
-    const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
     const [quickActionConfigs, setQuickActionConfigs] = useState<QuickActionConfig[]>(loadQuickActionConfigs);
     const [panelWidth, setPanelWidth] = useState(AI_PANEL_WIDTH);
     const [isResizing, setIsResizing] = useState(false);
@@ -105,24 +154,39 @@ export function AIPanel() {
         latestMemoryRef.current = conversationMemory;
     }, [conversationMemory]);
 
-    sessionStateRef.current = {
-        input,
-        isLoading,
-        isTauri,
+    const readSessionState = useCallback((): AIConversationSessionState => {
+        const ai = useAIStore.getState();
+        return {
+            input,
+            isLoading,
+            isTauri,
+            chatMessages,
+            conversationMemory,
+            currentBook,
+            bookProgressById: useProgressStore.getState().bookProgressById,
+            selectedText,
+            selectedCfiRange,
+            accumulatedTexts,
+            currentChapterContent: ai.currentChapterContent,
+            currentChapterContentOffset: ai.currentChapterContentOffset,
+            currentChapterSliceTruncatedEnd: ai.currentChapterSliceTruncatedEnd,
+            currentChapterIndex: ai.currentChapterIndex,
+            currentChapterTitle: ai.currentChapterTitle,
+            settings: useSettingsStore.getState().settings,
+        };
+    }, [
+        accumulatedTexts,
         chatMessages,
         conversationMemory,
         currentBook,
-        bookProgressById,
-        selectedText,
+        input,
+        isLoading,
+        isTauri,
         selectedCfiRange,
-        accumulatedTexts,
-        currentChapterContent,
-        currentChapterContentOffset,
-        currentChapterSliceTruncatedEnd,
-        currentChapterIndex,
-        currentChapterTitle,
-        settings,
-    };
+        selectedText,
+    ]);
+
+    sessionStateRef.current = readSessionState();
 
     useEffect(() => {
         const reloadQuickActions = () => setQuickActionConfigs(loadQuickActionConfigs());
@@ -254,28 +318,17 @@ export function AIPanel() {
 
     const handleThinkingEnabledChange = useCallback((enabled: boolean) => {
         setSettings({
-            ...settings,
+            ...useSettingsStore.getState().settings,
             aiThinkingEnabled: enabled,
         });
-    }, [setSettings, settings]);
+    }, [setSettings]);
 
     // Focus input when panel opens
     useEffect(() => {
-        if (isAIPanelOpen && isTauri) {
+        if (isTauri) {
             void refreshProviders();
         }
-    }, [isAIPanelOpen, isTauri, refreshProviders]);
-
-    // Copy message content
-    const copyMessage = useCallback(async (messageId: string, content: string) => {
-        try {
-            await navigator.clipboard.writeText(content);
-            setCopiedMessageId(messageId);
-            setTimeout(() => setCopiedMessageId(null), 2000);
-        } catch {
-            logger.warn('Failed to copy message');
-        }
-    }, []);
+    }, [isTauri, refreshProviders]);
 
     const startNewSession = async () => {
         clearChat();
@@ -310,46 +363,16 @@ export function AIPanel() {
     const sendMessage = useCallback((overrideText?: string) => session.send(overrideText), [session]);
     const stopGeneration = useCallback(() => session.stop(), [session]);
 
-    // Note: We still mount and run hooks while detached so the
-    // window-bridge sync effects keep working. The actual embedded UI is
-    // conditionally rendered at the end of the component.
-    const shouldRenderEmbeddedPanel = isAIPanelOpen;
+    useEffect(() => () => {
+        session.stop();
+    }, [session]);
 
-    const renderedMessages = useMemo(() => {
-        if (!shouldRenderEmbeddedPanel) return null;
-        return chatMessages.map(msg => (
-            <AstryxChatMessage
-                key={msg.id}
-                sender={msg.role === 'user' ? 'user' : 'assistant'}
-                className={`ai-message ai-message-${msg.role}`}
-            >
-                {msg.context && (
-                    <div className="ai-message-reference">
-                        <QuoteIcon />
-                        <span>“{msg.context.slice(0, 100)}{msg.context.length > 100 ? '…' : ''}”</span>
-                    </div>
-                )}
-                <div className="ai-message-content">
-                    {msg.role === 'assistant' ? (
-                        <FormatMessage content={msg.content} />
-                    ) : (
-                        msg.content
-                    )}
-                </div>
-                {msg.role === 'assistant' && (
-                    <div className="ai-message-actions">
-                        <button
-                            className={`ai-message-copy ${copiedMessageId === msg.id ? 'copied' : ''}`}
-                            onClick={() => copyMessage(msg.id, msg.content)}
-                            aria-label={copiedMessageId === msg.id ? '已复制' : '复制回答'}
-                        >
-                            {copiedMessageId === msg.id ? <CheckIcon /> : <CopyIcon />}
-                        </button>
-                    </div>
-                )}
-            </AstryxChatMessage>
-        ));
-    }, [shouldRenderEmbeddedPanel, chatMessages, copiedMessageId, copyMessage]);
+    const renderedMessages = useMemo(
+        () => chatMessages.map(msg => (
+            <ChatMessageRow key={msg.id} message={msg} />
+        )),
+        [chatMessages],
+    );
 
     const quickActionControls = (
         <div className="ai-margin-actions">
@@ -379,15 +402,13 @@ export function AIPanel() {
         </div>
     );
 
-    if (!shouldRenderEmbeddedPanel) return null;
-
     return (
         <aside
             ref={panelRef}
             className={`ai-panel ${isResizing ? 'ai-panel-resizing' : ''}`}
             style={{
                 width: `${panelWidth}px`,
-                '--ai-text-size': `${settings.aiTextSize}px`,
+                '--ai-text-size': `${aiTextSize}px`,
             } as React.CSSProperties}
         >
             {/* Resize handle */}
@@ -550,7 +571,7 @@ export function AIPanel() {
                         providers={providers}
                         isLoading={isLoading}
                         canSend={Boolean(input.trim())}
-                        thinkingEnabled={settings.aiThinkingEnabled}
+                        thinkingEnabled={aiThinkingEnabled}
                         onThinkingEnabledChange={handleThinkingEnabledChange}
                         onSelectProvider={(providerId) => { void handleSelectProvider(providerId); }}
                         onSend={() => { void sendMessage(); }}

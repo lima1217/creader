@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -22,7 +22,12 @@ const logger = createLogger('EPUBReader');
 export function EPUBReader() {
     const currentBook = useLibraryStore((s) => s.currentBook);
     const updateBookFilePath = useLibraryStore((s) => s.updateBookFilePath);
-    const settings = useSettingsStore((s) => s.settings);
+    const theme = useSettingsStore((s) => s.settings.theme);
+    const fontSize = useSettingsStore((s) => s.settings.fontSize);
+    const settings = useMemo(
+        () => ({ ...useSettingsStore.getState().settings, theme, fontSize }),
+        [theme, fontSize],
+    );
     const containerRef = useRef<HTMLDivElement>(null);
     const renditionRef = useRef<ReaderRendition | null>(null);
     const [activeRendition, setActiveRendition] = useState<ReaderRendition | null>(null);

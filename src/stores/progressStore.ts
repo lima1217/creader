@@ -62,3 +62,11 @@ export function hydrateProgress(bookProgressById: BookProgressById): void {
   if (shouldSkipPrefHydrate('progress')) return;
   useProgressStore.getState().replaceAll(bookProgressById);
 }
+
+/** Select one book's progress percentage. Prefer this over whole-map subscriptions. */
+export function selectBookProgressPercentage(
+  bookProgressById: BookProgressById,
+  bookId: string,
+): number | undefined {
+  return bookProgressById[bookId]?.percentage;
+}
