@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { isEditableEventTarget } from '../utils/dom';
 
 export function useKeyboardShortcuts(params: {
@@ -14,6 +14,16 @@ export function useKeyboardShortcuts(params: {
     setAIPanelOpen,
   } = params;
 
+  const isSidebarOpenRef = useRef(isSidebarOpen);
+  const isAIPanelOpenRef = useRef(isAIPanelOpen);
+  const setSidebarOpenRef = useRef(setSidebarOpen);
+  const setAIPanelOpenRef = useRef(setAIPanelOpen);
+
+  isSidebarOpenRef.current = isSidebarOpen;
+  isAIPanelOpenRef.current = isAIPanelOpen;
+  setSidebarOpenRef.current = setSidebarOpen;
+  setAIPanelOpenRef.current = setAIPanelOpen;
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isEditableEventTarget(e.target)) return;
@@ -24,22 +34,17 @@ export function useKeyboardShortcuts(params: {
       const key = e.key.toLowerCase();
       if (key === 'b') {
         e.preventDefault();
-        setSidebarOpen(!isSidebarOpen);
+        setSidebarOpenRef.current(!isSidebarOpenRef.current);
         return;
       }
       if (key === 'a' && e.shiftKey) {
         e.preventDefault();
-        setAIPanelOpen(!isAIPanelOpen);
+        setAIPanelOpenRef.current(!isAIPanelOpenRef.current);
         return;
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    isAIPanelOpen,
-    isSidebarOpen,
-    setAIPanelOpen,
-    setSidebarOpen,
-  ]);
+  }, []);
 }

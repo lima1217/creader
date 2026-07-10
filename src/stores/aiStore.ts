@@ -25,6 +25,7 @@ type AIState = {
   currentChapterContent: string;
   currentChapterContentOffset: number;
   currentChapterSliceTruncatedEnd: boolean;
+  currentChapterContentLength: number;
   currentChapterIndex: number | null;
   currentChapterTitle: string | null;
   currentChapterRemainingPercent: number | null;
@@ -46,6 +47,7 @@ export const useAIStore = create<AIState>((set, get) => ({
   currentChapterContent: '',
   currentChapterContentOffset: 0,
   currentChapterSliceTruncatedEnd: false,
+  currentChapterContentLength: 0,
   currentChapterIndex: null,
   currentChapterTitle: null,
   currentChapterRemainingPercent: null,
@@ -53,6 +55,7 @@ export const useAIStore = create<AIState>((set, get) => ({
     currentChapterContent: slice.content,
     currentChapterContentOffset: slice.offset,
     currentChapterSliceTruncatedEnd: slice.truncatedEnd,
+    currentChapterContentLength: slice.content.length,
   }),
   setCurrentChapterLocation: (location) => set({
     currentChapterIndex: location.index,

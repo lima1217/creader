@@ -25,10 +25,11 @@ import './Toolbar.css';
 const logger = createLogger('Toolbar');
 
 export function Toolbar() {
-    const settings = useSettingsStore((s) => s.settings);
+    const theme = useSettingsStore((s) => s.settings.theme);
+    const fontSize = useSettingsStore((s) => s.settings.fontSize);
     const setSettings = useSettingsStore((s) => s.setSettings);
     const currentBook = useLibraryStore((s) => s.currentBook);
-    const currentChapterContent = useAIStore((s) => s.currentChapterContent);
+    const currentChapterContentLength = useAIStore((s) => s.currentChapterContentLength);
     const currentChapterTitle = useAIStore((s) => s.currentChapterTitle);
     const currentChapterRemainingPercent = useAIStore((s) => s.currentChapterRemainingPercent);
     const addToAccumulatedTexts = useSelectionStore((s) => s.addToAccumulatedTexts);
@@ -40,9 +41,9 @@ export function Toolbar() {
     const setTocOpen = useUIStore((s) => s.setTocOpen);
     const [chapterCopied, setChapterCopied] = useState(false);
 
-    const canUseChapter = Boolean(currentChapterContent && currentChapterContent.length > 100);
+    const canUseChapter = currentChapterContentLength > 100;
     const useChapterLabel = canUseChapter
-        ? `使用本章（约 ${Math.round(currentChapterContent!.length / 1000)}k 字）`
+        ? `使用本章（约 ${Math.round(currentChapterContentLength / 1000)}k 字）`
         : '使用本章';
 
     const themes: Theme[] = ['light', 'dark'];
@@ -56,21 +57,23 @@ export function Toolbar() {
         dark: '暗色',
     };
 
-    const selectTheme = (theme: Theme) => {
-        setSettings({ ...settings, theme });
+    const selectTheme = (nextTheme: Theme) => {
+        setSettings({ ...useSettingsStore.getState().settings, theme: nextTheme });
     };
 
     const handleUseChapter = () => {
-        if (!canUseChapter || !currentChapterContent) return;
-        addToAccumulatedTexts(currentChapterContent);
+        const content = useAIStore.getState().currentChapterContent;
+        if (!canUseChapter || !content) return;
+        addToAccumulatedTexts(content);
         setAIPanelOpen(true);
     };
 
     const handleCopyChapter = async () => {
-        if (!canUseChapter || !currentChapterContent) return;
+        const content = useAIStore.getState().currentChapterContent;
+        if (!canUseChapter || !content) return;
 
         try {
-            await navigator.clipboard.writeText(currentChapterContent);
+            await navigator.clipboard.writeText(content);
             setChapterCopied(true);
             window.setTimeout(() => setChapterCopied(false), 2000);
         } catch {
@@ -80,7 +83,7 @@ export function Toolbar() {
 
     useEffect(() => {
         setChapterCopied(false);
-    }, [currentChapterContent]);
+    }, [currentChapterContentLength]);
 
     useKeyboardShortcuts({
         isSidebarOpen,
@@ -137,10 +140,13 @@ export function Toolbar() {
                             <div className="toolbar-more-section-title" aria-hidden="true">字号</div>
                             <div className="toolbar-more-font-size">
                                 <TextSizeControl
-                                    value={settings.fontSize}
+                                    value={fontSize}
                                     min={12}
                                     max={24}
-                                    onChange={fontSize => setSettings({ ...settings, fontSize })}
+                                    onChange={nextFontSize => setSettings({
+                                        ...useSettingsStore.getState().settings,
+                                        fontSize: nextFontSize,
+                                    })}
                                     inputLabel="字号"
                                     decrementAriaLabel="减小字号"
                                     incrementAriaLabel="增大字号"
@@ -171,9 +177,9 @@ export function Toolbar() {
 
                     <DropdownMenu
                         button={{
-                            label: `主题：${themeLabels[settings.theme]}`,
+                            label: `主题：${themeLabels[theme]}`,
                             isIconOnly: true,
-                            icon: themeIcons[settings.theme],
+                            icon: themeIcons[theme],
                             variant: 'secondary',
                             size: 'md',
                             className: 'toolbar-action toolbar-theme-button',
@@ -186,10 +192,10 @@ export function Toolbar() {
                             {
                                 type: 'section',
                                 title: '阅读主题',
-                                items: themes.map(theme => ({
-                                    label: themeLabels[theme],
-                                    icon: themeIcons[theme],
-                                    onClick: () => selectTheme(theme),
+                                items: themes.map(nextTheme => ({
+                                    label: themeLabels[nextTheme],
+                                    icon: themeIcons[nextTheme],
+                                    onClick: () => selectTheme(nextTheme),
                                 })),
                             },
                         ]}

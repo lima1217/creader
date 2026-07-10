@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
 import { CopyIcon, CheckIcon } from './icons';
 import { createLogger } from '../../utils/logger';
 
@@ -12,7 +12,13 @@ interface ParsedContent {
     items?: string[];
 }
 
+const parsedMarkdownCache = new Map<string, ParsedContent[]>();
+const PARSED_MARKDOWN_CACHE_LIMIT = 64;
+
 export function parseMarkdown(text: string): ParsedContent[] {
+    const cached = parsedMarkdownCache.get(text);
+    if (cached) return cached;
+
     const result: ParsedContent[] = [];
     const lines = text.split('\n');
     let i = 0;
@@ -99,6 +105,11 @@ export function parseMarkdown(text: string): ParsedContent[] {
         i++;
     }
 
+    if (parsedMarkdownCache.size >= PARSED_MARKDOWN_CACHE_LIMIT) {
+        const oldest = parsedMarkdownCache.keys().next().value;
+        if (oldest !== undefined) parsedMarkdownCache.delete(oldest);
+    }
+    parsedMarkdownCache.set(text, result);
     return result;
 }
 
@@ -134,12 +145,12 @@ export function CodeBlock({ code, language }: { code: string; language: string }
     );
 }
 
-export function renderInlineFormatting(text: string): React.ReactNode[] {
-    const nodes: React.ReactNode[] = [];
+export function renderInlineFormatting(text: string): ReactNode[] {
+    const nodes: ReactNode[] = [];
     const remaining = text;
     let key = 0;
 
-    const allMatches: { index: number; length: number; replacement: React.ReactNode }[] = [];
+    const allMatches: { index: number; length: number; replacement: ReactNode }[] = [];
 
     let match;
     const boldRegex = /\*\*(.+?)\*\*/g;
@@ -212,8 +223,8 @@ export function renderInlineFormatting(text: string): React.ReactNode[] {
     return nodes.length > 0 ? nodes : [text];
 }
 
-export function FormatMessage({ content }: { content: string }) {
-    const parsed = parseMarkdown(content);
+export const FormatMessage = memo(function FormatMessage({ content }: { content: string }) {
+    const parsed = useMemo(() => parseMarkdown(content), [content]);
 
     return (
         <>
@@ -264,4 +275,4 @@ export function FormatMessage({ content }: { content: string }) {
             })}
         </>
     );
-}
+});

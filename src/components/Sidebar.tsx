@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { memo, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import type { SVGProps } from 'react';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useUIStore } from '../stores/uiStore';
-import { useProgressStore } from '../stores/progressStore';
+import { useProgressStore, selectBookProgressPercentage } from '../stores/progressStore';
 import type { Book, BookFolder } from '../types';
 import { getCoverUrl } from '../services/CoverStore';
 import { useAppDialog } from './AppDialog';
@@ -28,6 +28,8 @@ import {
 } from './icons/icons';
 import './Sidebar.css';
 import { handleWindowDragMouseDown } from '../utils/windowDrag';
+
+const EMPTY_BOOK_PROGRESS_BY_ID: Record<string, { lastReadAt?: number }> = {};
 
 function AstryxFolderIcon(props: SVGProps<SVGSVGElement>) {
     return (
@@ -204,6 +206,73 @@ function LazyBookCover({ book }: { book: Book }) {
     );
 }
 
+type LibraryBookRowProps = {
+    book: Book;
+    isActive: boolean;
+    isDragging: boolean;
+    onPreloadReader: () => void;
+    onOpen: (book: Book) => void;
+    onEdit: (book: Book) => void;
+    onDelete: (bookId: string) => void;
+    onDragStart: (event: React.DragEvent, book: Book) => void;
+    onDragEnd: () => void;
+};
+
+const LibraryBookRow = memo(function LibraryBookRow({
+    book,
+    isActive,
+    isDragging,
+    onPreloadReader,
+    onOpen,
+    onEdit,
+    onDelete,
+    onDragStart,
+    onDragEnd,
+}: LibraryBookRowProps) {
+    const percentage = useProgressStore(
+        (s) => selectBookProgressPercentage(s.bookProgressById, book.id) ?? book.progress.percentage,
+    );
+
+    return (
+        <ContextMenu
+            hasAutoFocus={false}
+            items={[
+                { label: '重命名', icon: AstryxEditIcon, onClick: () => onEdit(book) },
+                { label: '移除书籍', icon: AstryxTrashIcon, onClick: () => onDelete(book.id) },
+            ]}
+        >
+            <ListItem
+                className={`book-item ${isActive ? 'active' : ''} ${isDragging ? 'is-dragging' : ''}`}
+                onMouseEnter={() => void onPreloadReader()}
+                onClick={() => onOpen(book)}
+                draggable
+                onDragStart={(event) => onDragStart(event, book)}
+                onDragEnd={onDragEnd}
+                isSelected={isActive}
+                startContent={<LazyBookCover book={book} />}
+                label={
+                    <span className="book-title-row">
+                        <span className="book-title">{book.title}</span>
+                    </span>
+                }
+                description={
+                    <span className="book-info">
+                        <span className="book-author">{book.author || 'Unknown'}</span>
+                        {percentage > 0 && (
+                            <div className="book-progress">
+                                <div
+                                    className="book-progress-bar"
+                                    style={{ '--book-progress-scale': percentage / 100 } as React.CSSProperties}
+                                />
+                            </div>
+                        )}
+                    </span>
+                }
+            />
+        </ContextMenu>
+    );
+});
+
 export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: SidebarProps) {
     const { confirm } = useAppDialog();
     const library = useLibraryStore((s) => s.library);
@@ -214,7 +283,6 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
     const updateFolder = useLibraryStore((s) => s.updateFolder);
     const reorderFolder = useLibraryStore((s) => s.reorderFolder);
     const setBookFolder = useLibraryStore((s) => s.setBookFolder);
-    const bookProgressById = useProgressStore((s) => s.bookProgressById);
     const isSidebarOpen = useUIStore((s) => s.isSidebarOpen);
 
     const [bookToEdit, setBookToEdit] = useState<EditBookState | null>(null);
@@ -242,15 +310,17 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         folders,
         books: library.books,
         currentBook,
-        bookProgressById,
+        // Ordering/expand use book.lastReadAt; live progress ticks must not
+        // re-render the whole organizer (issue #129).
+        bookProgressById: EMPTY_BOOK_PROGRESS_BY_ID,
     });
     const trimmedFolderName = normalizeFolderName(newFolderName);
     const hasDuplicateFolderName = isDuplicateFolderName(trimmedFolderName, folders, editingFolder?.id);
     const canSubmitFolder = trimmedFolderName.length > 0 && !hasDuplicateFolderName;
 
     const orderedBooks = useMemo(
-        () => orderBooks(library.books, currentBook, bookProgressById),
-        [currentBook, library.books, bookProgressById],
+        () => orderBooks(library.books, currentBook, EMPTY_BOOK_PROGRESS_BY_ID),
+        [currentBook, library.books],
     );
 
     const groupedBooks = useMemo(
@@ -266,15 +336,15 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         }
     }, []);
 
-    const handleBookClick = (book: Book) => {
+    const handleBookClick = useCallback((book: Book) => {
         if (suppressBookClickRef.current) {
             suppressBookClickRef.current = false;
             return;
         }
         openBookThroughLifecycle({ book });
-    };
+    }, []);
 
-    const handleDeleteBookAction = async (bookId: string) => {
+    const handleDeleteBookAction = useCallback(async (bookId: string) => {
         const shouldDelete = await confirm({
             title: '移出书库',
             message: '从书库移除这本书？本地 EPUB 文件会保留在磁盘上。',
@@ -285,15 +355,15 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         if (shouldDelete) {
             removeBookThroughLifecycle({ bookId });
         }
-    };
+    }, [confirm]);
 
-    const handleEditBookAction = (book: Book) => {
+    const handleEditBookAction = useCallback((book: Book) => {
         setBookToEdit({
             id: book.id,
             title: book.title,
             author: book.author || '',
         });
-    };
+    }, []);
 
     const confirmEdit = () => {
         if (bookToEdit) {
@@ -416,14 +486,14 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         }
     };
 
-    const handleDragEnd = () => {
+    const handleDragEnd = useCallback(() => {
         if (activeDragRef.current?.kind === 'book') {
             suppressBookClickRef.current = true;
         }
         finishDrag();
-    };
+    }, []);
 
-    const handleBookDragStart = (event: React.DragEvent, book: Book) => {
+    const handleBookDragStart = useCallback((event: React.DragEvent, book: Book) => {
         activeDragRef.current = { kind: 'book', id: book.id };
         setDraggingBookId(book.id);
         event.dataTransfer.effectAllowed = 'move';
@@ -445,7 +515,7 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
             const offsetY = grabbedOnCover ? event.clientY - coverRect.top : coverRect.height / 2;
             event.dataTransfer.setDragImage(ghost, offsetX, offsetY);
         }
-    };
+    }, []);
 
     const handleFolderDragStart = (event: React.DragEvent, folder: BookFolder) => {
         activeDragRef.current = { kind: 'folder', id: folder.id };
@@ -511,48 +581,24 @@ export function Sidebar({ onImportBook, onOpenSettings, onPreloadReader }: Sideb
         reorderFolder(sourceFolderId, targetFolderId);
     };
 
-    const renderBookItem = (book: Book) => {
-        const percentage = bookProgressById[book.id]?.percentage ?? book.progress.percentage;
-        return (
-            <ContextMenu
-                key={book.id}
-                hasAutoFocus={false}
-                items={[
-                    { label: '重命名', icon: AstryxEditIcon, onClick: () => handleEditBookAction(book) },
-                    { label: '移除书籍', icon: AstryxTrashIcon, onClick: () => void handleDeleteBookAction(book.id) },
-                ]}
-            >
-                <ListItem
-                    className={`book-item ${currentBook?.id === book.id ? 'active' : ''} ${draggingBookId === book.id ? 'is-dragging' : ''}`}
-                    onMouseEnter={() => void onPreloadReader()}
-                    onClick={() => handleBookClick(book)}
-                    draggable
-                    onDragStart={(event) => handleBookDragStart(event, book)}
-                    onDragEnd={handleDragEnd}
-                    isSelected={currentBook?.id === book.id}
-                    startContent={<LazyBookCover book={book} />}
-                    label={
-                        <span className="book-title-row">
-                            <span className="book-title">{book.title}</span>
-                        </span>
-                    }
-                    description={
-                        <span className="book-info">
-                            <span className="book-author">{book.author || 'Unknown'}</span>
-                            {percentage > 0 && (
-                                <div className="book-progress">
-                                    <div
-                                        className="book-progress-bar"
-                                        style={{ '--book-progress-scale': percentage / 100 } as React.CSSProperties}
-                                    />
-                                </div>
-                            )}
-                        </span>
-                    }
-                />
-            </ContextMenu>
-        );
-    };
+    const onDeleteBook = useCallback((bookId: string) => {
+        void handleDeleteBookAction(bookId);
+    }, [handleDeleteBookAction]);
+
+    const renderBookItem = (book: Book) => (
+        <LibraryBookRow
+            key={book.id}
+            book={book}
+            isActive={currentBook?.id === book.id}
+            isDragging={draggingBookId === book.id}
+            onPreloadReader={onPreloadReader}
+            onOpen={handleBookClick}
+            onEdit={handleEditBookAction}
+            onDelete={onDeleteBook}
+            onDragStart={handleBookDragStart}
+            onDragEnd={handleDragEnd}
+        />
+    );
 
     if (!isSidebarOpen) return null;
 

@@ -4,7 +4,7 @@ import { getRenditionContents } from '../../services/reader/epubAdapter';
 import { sliceChapterContent } from '../../domain/contextWindow';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { computeChapterRemainingPercent, computeEpubPercentage } from './epubProgress';
-import { CHAPTER_EXTRACT_INTERVAL_MS, MAX_CHAPTER_CONTENT_LENGTH, PROGRESS_UPDATE_INTERVAL_MS, PROGRESS_UPDATE_THRESHOLD_PERCENT } from '../../constants';
+import { MAX_CHAPTER_CONTENT_LENGTH, PROGRESS_UPDATE_INTERVAL_MS, PROGRESS_UPDATE_THRESHOLD_PERCENT } from '../../constants';
 import { createLogger } from '../../utils/logger';
 
 const logger = createLogger('useEpubProgressTracking');
@@ -53,11 +53,17 @@ export function useEpubProgressTracking(params: {
 }) {
   const { rendition, bookId, updateBookProgress, setCurrentChapterSlice, setCurrentChapterLocation } = params;
   const progressStateRef = useRef({ lastTs: 0, lastCfi: '', lastPercentage: 0 });
-  const chapterStateRef = useRef({ lastTs: 0, lastCfi: '' });
+  const chapterStateRef = useRef({ lastTs: 0, lastSectionIndex: null as number | null | undefined, idleHandle: 0 });
+  const locationStateRef = useRef<{
+    index: number | null;
+    title: string | null;
+    remainingPercent: number | null;
+  }>({ index: null, title: null, remainingPercent: null });
 
   useEffect(() => {
     progressStateRef.current = { lastTs: 0, lastCfi: '', lastPercentage: 0 };
-    chapterStateRef.current = { lastTs: 0, lastCfi: '' };
+    chapterStateRef.current = { lastTs: 0, lastSectionIndex: null, idleHandle: 0 };
+    locationStateRef.current = { index: null, title: null, remainingPercent: null };
     setCurrentChapterLocation({ index: null, title: null, remainingPercent: null });
     setCurrentChapterSlice({ content: '', offset: 0, truncatedEnd: false });
   }, [bookId, setCurrentChapterLocation, setCurrentChapterSlice]);
@@ -65,15 +71,85 @@ export function useEpubProgressTracking(params: {
   useEffect(() => {
     if (!rendition || !bookId) return;
 
+    const cancelIdleExtract = () => {
+      const handle = chapterStateRef.current.idleHandle;
+      if (!handle) return;
+      const cancelIdle = (window as Window & {
+        cancelIdleCallback?: (id: number) => void;
+      }).cancelIdleCallback;
+      if (cancelIdle) {
+        cancelIdle(handle);
+      } else {
+        window.clearTimeout(handle);
+      }
+      chapterStateRef.current.idleHandle = 0;
+    };
+
+    const extractChapterSlice = () => {
+      chapterStateRef.current.idleHandle = 0;
+      try {
+        const contents = getRenditionContents(rendition);
+        const content = contents[0];
+        const body = content?.document?.body;
+        const rawText = body?.innerText || body?.textContent || '';
+        const normalized = rawText
+          .replace(/\r\n/g, '\n')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        if (!normalized) return;
+
+        const selectedText = useSelectionStore.getState().selectedText.trim();
+        const slice = sliceChapterContent(
+          normalized,
+          MAX_CHAPTER_CONTENT_LENGTH,
+          selectedText || undefined,
+        );
+        setCurrentChapterSlice({
+          content: slice.text,
+          offset: slice.offset,
+          truncatedEnd: slice.truncatedEnd,
+        });
+      } catch (e) {
+        logger.warn('Failed to extract chapter content:', e);
+      }
+    };
+
+    const scheduleChapterExtract = (sectionIndex: number | null) => {
+      const last = chapterStateRef.current;
+      // Same section: CFI moves do not need another innerText pass.
+      if (last.lastSectionIndex === sectionIndex && last.lastTs > 0) return;
+
+      chapterStateRef.current = {
+        ...last,
+        lastTs: Date.now(),
+        lastSectionIndex: sectionIndex,
+      };
+      cancelIdleExtract();
+
+      const requestIdle = (window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      }).requestIdleCallback;
+      if (requestIdle) {
+        chapterStateRef.current.idleHandle = requestIdle(extractChapterSlice, { timeout: 500 });
+      } else {
+        chapterStateRef.current.idleHandle = window.setTimeout(extractChapterSlice, 0);
+      }
+    };
+
     const handleLocationChange = (location: unknown) => {
       if (!location) return;
 
       const { cfi, index, title, sectionFraction } = readLocationStart(location);
-      setCurrentChapterLocation({
-        index,
-        title,
-        remainingPercent: computeChapterRemainingPercent(sectionFraction),
-      });
+      const remainingPercent = computeChapterRemainingPercent(sectionFraction);
+      const lastLocation = locationStateRef.current;
+      if (
+        lastLocation.index !== index
+        || lastLocation.title !== title
+        || lastLocation.remainingPercent !== remainingPercent
+      ) {
+        locationStateRef.current = { index, title, remainingPercent };
+        setCurrentChapterLocation({ index, title, remainingPercent });
+      }
 
       if (cfi) {
         const percentage = computeEpubPercentage({ location, cfi });
@@ -94,35 +170,8 @@ export function useEpubProgressTracking(params: {
         }
       }
 
-      try {
-        const now = Date.now();
-        const last = chapterStateRef.current;
-        if (now - last.lastTs >= CHAPTER_EXTRACT_INTERVAL_MS && cfi && cfi !== last.lastCfi) {
-          chapterStateRef.current = { lastTs: now, lastCfi: cfi };
-          const contents = getRenditionContents(rendition);
-          const content = contents[0];
-          const body = content?.document?.body;
-          const rawText = body?.innerText || body?.textContent || '';
-          const normalized = rawText
-            .replace(/\r\n/g, '\n')
-            .replace(/\n{3,}/g, '\n\n')
-            .trim();
-            if (normalized) {
-            const selectedText = useSelectionStore.getState().selectedText.trim();
-            const slice = sliceChapterContent(
-              normalized,
-              MAX_CHAPTER_CONTENT_LENGTH,
-              selectedText || undefined,
-            );
-            setCurrentChapterSlice({
-              content: slice.text,
-              offset: slice.offset,
-              truncatedEnd: slice.truncatedEnd,
-            });
-          }
-        }
-      } catch (e) {
-        logger.warn('Failed to extract chapter content:', e);
+      if (cfi) {
+        scheduleChapterExtract(index);
       }
     };
 
@@ -140,6 +189,7 @@ export function useEpubProgressTracking(params: {
     }
 
     return () => {
+      cancelIdleExtract();
       rendition.off('locationChanged', handleLocationChange);
       rendition.off('relocated', handleLocationChange);
     };
