@@ -144,7 +144,11 @@ export function AIPanel() {
     const pendingPanelWidthRef = useRef<number | null>(null);
     const panelWidthRafRef = useRef<number | null>(null);
     const latestMemoryRef = useRef(conversationMemory);
-    const sessionStateRef = useRef<AIConversationSessionState | null>(null);
+    // Call at send time (not render-cache): chapter/progress come from store
+    // getState() so scroll without an AIPanel re-render still freezes live context.
+    const readSessionStateRef = useRef<() => AIConversationSessionState>(() => {
+        throw new Error('readSessionStateRef used before init');
+    });
 
     useEffect(() => {
         streamingContentRef.current = streamingContent;
@@ -186,7 +190,7 @@ export function AIPanel() {
         selectedText,
     ]);
 
-    sessionStateRef.current = readSessionState();
+    readSessionStateRef.current = readSessionState;
 
     useEffect(() => {
         const reloadQuickActions = () => setQuickActionConfigs(loadQuickActionConfigs());
@@ -341,7 +345,7 @@ export function AIPanel() {
     };
 
     const session = useMemo(() => createTauriAIConversationSession({
-        getState: () => sessionStateRef.current!,
+        getState: () => readSessionStateRef.current(),
         getLatestConversationMemory: () => latestMemoryRef.current,
         setLatestConversationMemory: (memory) => {
             latestMemoryRef.current = memory;
