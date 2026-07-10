@@ -1,9 +1,12 @@
 use crate::ai::{active_provider, chat_completion_oneshot, truncate_for_prompt};
+use crate::path_safety::{ensure_canonical_inside_root, safe_join_under_root};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadingMemoryDirectIngestRequest {
@@ -477,8 +480,133 @@ const OKF_AGENTS_MD: &str = "# AGENTS.md\n\nThis is an OKF-compatible LLM Wiki p
 
 const READING_MEMORY_ROOT_AGENTS_MD: &str = "# AGENTS.md\n\nThis Reading Memory repository is an OKF-compatible LLM Wiki.\n\n## Layout\n\n- `shared/` — cross-book concepts, claims, questions, glossary.\n- `books/<book-slug>/` — one OKF sub-package per book (chapters, concepts,\n  claims, questions, sources). Book-related notes land here.\n- Legacy flat directories (`concepts/`, `claims/`, `questions/`) are kept for\n  backward compatibility; new writes prefer the book sub-packages.\n- `.reading-memory/ingestion-log.jsonl` records automatic writes for linting.\n\n## Rules\n\n- Read a book's `index.md` before adding notes to its sub-package.\n- Preserve source metadata (book, chapter, CFI, excerpt).\n- Merge duplicate notes; prefer concept/claim pages over recaps.\n- Mark low-value automatic blocks as archived during lint instead of deleting.\n";
 
+fn reading_memory_bound_root_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Failed to get app config directory: {}", e))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create app config directory: {}", e))?;
+    Ok(dir.join("reading_memory_root.txt"))
+}
+
+/// Persist the canonical Reading Memory repository root chosen in Settings.
+pub(crate) fn bind_reading_memory_root_at(
+    bound_file: &Path,
+    root: &Path,
+) -> Result<PathBuf, String> {
+    let canon = ensure_directory(root)?;
+    if let Some(parent) = bound_file.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    }
+    std::fs::write(bound_file, canon.to_string_lossy().as_bytes())
+        .map_err(|e| format!("Failed to persist Reading Memory root: {}", e))?;
+    Ok(canon)
+}
+
+fn read_bound_reading_memory_root(bound_file: &Path) -> Result<Option<PathBuf>, String> {
+    if !bound_file.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(bound_file)
+        .map_err(|e| format!("Failed to read Reading Memory root binding: {}", e))?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let bound = PathBuf::from(trimmed);
+    let canon = if bound.exists() {
+        std::fs::canonicalize(&bound)
+            .map_err(|e| format!("Failed to resolve bound Reading Memory root: {}", e))?
+    } else {
+        return Err("Bound Reading Memory root no longer exists".to_string());
+    };
+    Ok(Some(canon))
+}
+
+/// Resolve a caller-supplied root against the Settings-bound repository.
+/// When unbound (upgrade / first use), bind the provided path once so existing
+/// Settings paths keep working until the user reopens Settings.ensure.
+/// When already bound, a mismatched root is rejected.
+pub(crate) fn resolve_bound_reading_memory_root_at(
+    bound_file: &Path,
+    root_path: &str,
+) -> Result<PathBuf, String> {
+    let candidate = ensure_directory(Path::new(root_path))?;
+    match read_bound_reading_memory_root(bound_file)? {
+        Some(bound) if bound == candidate => Ok(candidate),
+        Some(_) => Err(
+            "Reading Memory root does not match the configured repository".to_string(),
+        ),
+        None => bind_reading_memory_root_at(bound_file, &candidate),
+    }
+}
+
+pub(crate) fn resolve_reading_memory_root(
+    app: &tauri::AppHandle,
+    root_path: &str,
+) -> Result<PathBuf, String> {
+    let bound_file = reading_memory_bound_root_file(app)?;
+    resolve_bound_reading_memory_root_at(&bound_file, root_path)
+}
+
+#[derive(Debug, Clone)]
+struct PendingReadingMemoryIngest {
+    request_fingerprint: u64,
+    decision: ReadingMemoryDirectDecision,
+}
+
+fn pending_reading_memory_ingest() -> &'static Mutex<Option<PendingReadingMemoryIngest>> {
+    static PENDING: OnceLock<Mutex<Option<PendingReadingMemoryIngest>>> = OnceLock::new();
+    PENDING.get_or_init(|| Mutex::new(None))
+}
+
+fn fingerprint_ingest_request(request: &ReadingMemoryDirectIngestRequest) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    request.root_path.hash(&mut hasher);
+    request.book_title.hash(&mut hasher);
+    request.book_author.hash(&mut hasher);
+    request.source_chapter.hash(&mut hasher);
+    request.source_cfi.hash(&mut hasher);
+    request
+        .source_progress
+        .map(|p| p.to_bits())
+        .hash(&mut hasher);
+    request.user_question.hash(&mut hasher);
+    request.selected_excerpt.hash(&mut hasher);
+    request.assistant_answer.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn store_pending_ingest(request: &ReadingMemoryDirectIngestRequest, decision: ReadingMemoryDirectDecision) {
+    let pending = PendingReadingMemoryIngest {
+        request_fingerprint: fingerprint_ingest_request(request),
+        decision,
+    };
+    *pending_reading_memory_ingest().lock().unwrap_or_else(|e| e.into_inner()) = Some(pending);
+}
+
+fn take_pending_ingest_for(
+    request: &ReadingMemoryDirectIngestRequest,
+) -> Result<ReadingMemoryDirectDecision, String> {
+    let mut guard = pending_reading_memory_ingest()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let pending = guard
+        .take()
+        .ok_or_else(|| "No approved Reading Memory review for this request".to_string())?;
+    if pending.request_fingerprint != fingerprint_ingest_request(request) {
+        return Err("Reading Memory write does not match the approved review".to_string());
+    }
+    Ok(pending.decision)
+}
+
 #[tauri::command]
-pub(crate) fn ensure_reading_memory_repository(root_path: String) -> Result<String, String> {
+pub(crate) fn ensure_reading_memory_repository(
+    app: tauri::AppHandle,
+    root_path: String,
+) -> Result<String, String> {
     let root = ensure_directory(Path::new(&root_path))?;
     for dir in [
         "inbox",
@@ -523,6 +651,9 @@ pub(crate) fn ensure_reading_memory_repository(root_path: String) -> Result<Stri
         .map_err(|e| format!("Failed to write lint-rules.md: {}", e))?;
     }
 
+    let bound_file = reading_memory_bound_root_file(&app)?;
+    let root = bind_reading_memory_root_at(&bound_file, &root)?;
+
     root.to_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "Invalid repository path encoding".to_string())
@@ -537,6 +668,9 @@ pub(crate) fn ensure_book_subpackage(
     let pkg = root.join("books").join(&slug);
     std::fs::create_dir_all(&pkg)
         .map_err(|e| format!("Failed to create book package {}: {}", slug, e))?;
+    ensure_canonical_inside_root(&pkg, root).map_err(|_| {
+        "Refusing to create book package outside Reading Memory root".to_string()
+    })?;
 
     write_if_missing(&pkg.join("AGENTS.md"), OKF_AGENTS_MD)?;
     write_if_missing(
@@ -556,7 +690,14 @@ pub(crate) fn ensure_book_subpackage(
     )?;
 
     for sub in ["chapters", "concepts", "claims", "questions", "sources"] {
-        ensure_package_index(&pkg.join(sub), &format!("# {}/{}\n\n", slug, sub))?;
+        let sub_dir = pkg.join(sub);
+        std::fs::create_dir_all(&sub_dir)
+            .map_err(|e| format!("Failed to create {}/{}: {}", slug, sub, e))?;
+        ensure_canonical_inside_root(&sub_dir, root).map_err(|_| {
+            "Refusing to write Reading Memory package directory outside repository root"
+                .to_string()
+        })?;
+        ensure_package_index(&sub_dir, &format!("# {}/{}\n\n", slug, sub))?;
     }
 
     Ok(pkg)
@@ -686,8 +827,20 @@ pub(crate) fn write_reading_memory_note_inner(
     let dir = book_pkg.join(book_subdir);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create {}: {}", book_subdir, e))?;
-    let note_path = dir.join(format!("{}.md", title));
+    // Containment after create: catches a symlink under the package that
+    // redirects the target directory outside the repository root.
+    ensure_canonical_inside_root(&dir, &root).map_err(|_| {
+        "Refusing to write Reading Memory note outside repository root".to_string()
+    })?;
+    let note_name = format!("{}.md", title);
+    let note_path = safe_join_under_root(&dir, Path::new(&note_name))?;
     let new_file = !note_path.exists();
+    if !new_file {
+        // Existing note must itself stay inside the root (file symlink escape).
+        ensure_canonical_inside_root(&note_path, &root).map_err(|_| {
+            "Refusing to write Reading Memory note outside repository root".to_string()
+        })?;
+    }
     let block_hash = content_hash(&rendered_markdown);
 
     // Idempotent ingest: if this exact block hash is already in the note,
@@ -796,11 +949,10 @@ pub(crate) fn allowed_reading_memory_page_path(relative_path: &Path) -> bool {
     }
 }
 
-#[tauri::command]
-pub(crate) fn rewrite_reading_memory_page(
-    root_path: String,
-    relative_path: String,
-    markdown: String,
+pub(crate) fn rewrite_reading_memory_page_inner(
+    root: &Path,
+    relative_path: &str,
+    markdown: &str,
 ) -> Result<ReadingMemoryPageRewriteResult, String> {
     if markdown.trim().is_empty() {
         return Ok(ReadingMemoryPageRewriteResult {
@@ -810,24 +962,20 @@ pub(crate) fn rewrite_reading_memory_page(
         });
     }
 
-    let root = ensure_directory(Path::new(&root_path))?;
-    let relative = safe_relative_markdown_path(&relative_path)?;
+    let relative = safe_relative_markdown_path(relative_path)?;
     if !allowed_reading_memory_page_path(&relative) {
         return Err("Reading Memory page path is outside allowed package areas".to_string());
     }
 
-    let page_path = root.join(&relative);
+    let page_path = safe_join_under_root(root, &relative)?;
     let parent = page_path
         .parent()
         .ok_or_else(|| "Invalid Reading Memory page path".to_string())?;
     std::fs::create_dir_all(parent)
         .map_err(|e| format!("Failed to create Reading Memory page directory: {}", e))?;
 
-    let canonical_parent = std::fs::canonicalize(parent)
-        .map_err(|e| format!("Failed to resolve Reading Memory page directory: {}", e))?;
-    if !canonical_parent.starts_with(&root) {
-        return Err("Refusing to rewrite page outside Reading Memory root".to_string());
-    }
+    ensure_canonical_inside_root(parent, root)
+        .map_err(|_| "Refusing to rewrite page outside Reading Memory root".to_string())?;
 
     let temp_path = page_path.with_extension("md.tmp");
     std::fs::write(&temp_path, markdown)
@@ -843,33 +991,72 @@ pub(crate) fn rewrite_reading_memory_page(
 }
 
 #[tauri::command]
+pub(crate) fn rewrite_reading_memory_page(
+    app: tauri::AppHandle,
+    root_path: String,
+    relative_path: String,
+    markdown: String,
+) -> Result<ReadingMemoryPageRewriteResult, String> {
+    let root = resolve_reading_memory_root(&app, &root_path)?;
+    rewrite_reading_memory_page_inner(&root, &relative_path, &markdown)
+}
+
+/// Review a turn for Reading Memory durability. On approval, stores a one-time
+/// write credential keyed to this request so [`write_reading_memory_note`] can
+/// land the TypeScript-rendered Markdown without accepting a forged decision.
+#[tauri::command]
 pub(crate) async fn review_reading_memory_direct(
     app: tauri::AppHandle,
     request: ReadingMemoryDirectIngestRequest,
 ) -> Result<ReadingMemoryDirectReviewResult, String> {
-    let root = ensure_directory(Path::new(&request.root_path))?;
+    let root = resolve_reading_memory_root(&app, &request.root_path)?;
     std::fs::create_dir_all(root.join(".reading-memory"))
         .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
-    review_reading_memory_decision(app, &request).await
+    let review = review_reading_memory_decision(app, &request).await?;
+    if let Some(decision) = review.decision.clone() {
+        store_pending_ingest(&request, decision);
+    } else {
+        clear_pending_ingest_state();
+    }
+    Ok(review)
 }
 
+/// Write a note only after [`review_reading_memory_direct`] approved the same
+/// request. The decision is taken from the pending credential, never from the
+/// caller — closing the forged `should_ingest` bypass while keeping TypeScript
+/// Markdown rendering on the frontend.
 #[tauri::command]
 pub(crate) fn write_reading_memory_note(
+    app: tauri::AppHandle,
     request: ReadingMemoryDirectIngestRequest,
-    decision: ReadingMemoryDirectDecision,
     rendered_markdown: String,
 ) -> Result<ReadingMemoryDirectIngestResult, String> {
+    let _root = resolve_reading_memory_root(&app, &request.root_path)?;
+    let decision = take_pending_ingest_for(&request)?;
     write_reading_memory_note_inner(request, decision, rendered_markdown)
 }
 
+fn clear_pending_ingest_state() {
+    *pending_reading_memory_ingest()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+#[cfg(test)]
+fn clear_pending_ingest() {
+    clear_pending_ingest_state();
+}
+
+/// Review-gated ingest that renders Markdown in Rust. Used by tests and as a
+/// fallback path; the frontend prefers review + TypeScript render + write.
 #[tauri::command]
 pub(crate) async fn ingest_reading_memory_direct(
     app: tauri::AppHandle,
     request: ReadingMemoryDirectIngestRequest,
 ) -> Result<ReadingMemoryDirectIngestResult, String> {
+    let root = resolve_reading_memory_root(&app, &request.root_path)?;
     let review = review_reading_memory_decision(app, &request).await?;
     let Some(decision) = review.decision else {
-        let root = ensure_directory(Path::new(&request.root_path))?;
         let meta_dir = root.join(".reading-memory");
         std::fs::create_dir_all(&meta_dir)
             .map_err(|e| format!("Failed to create .reading-memory: {}", e))?;
@@ -1270,22 +1457,156 @@ mod tests {
     #[test]
     fn reading_memory_rewrite_page_writes_inside_root() {
         let root = unique_temp_dir("reading_memory_rewrite");
-        let result = rewrite_reading_memory_page(
-            root.to_string_lossy().to_string(),
-            "books/book/concepts/page.md".to_string(),
-            "---\ntype: Concept\n---\n# Page\n".to_string(),
+        std::fs::create_dir_all(&root).unwrap();
+        let root = std::fs::canonicalize(&root).unwrap();
+        let result = rewrite_reading_memory_page_inner(
+            &root,
+            "books/book/concepts/page.md",
+            "---\ntype: Concept\n---\n# Page\n",
         )
         .unwrap();
 
         assert!(!result.skipped);
-        let canonical_root = std::fs::canonicalize(&root).unwrap();
         let page_path = PathBuf::from(result.page_path);
-        assert!(page_path.starts_with(&canonical_root));
+        assert!(page_path.starts_with(&root));
         assert!(std::fs::read_to_string(page_path)
             .unwrap()
             .contains("# Page"));
 
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reading_memory_root_binding_rejects_forged_root() {
+        let bound_file = unique_temp_dir("rm_bound_file").join("reading_memory_root.txt");
+        let configured = unique_temp_dir("rm_configured");
+        let forged = unique_temp_dir("rm_forged");
+        std::fs::create_dir_all(&configured).unwrap();
+        std::fs::create_dir_all(&forged).unwrap();
+
+        let bound = bind_reading_memory_root_at(&bound_file, &configured).unwrap();
+        assert_eq!(bound, std::fs::canonicalize(&configured).unwrap());
+
+        let ok = resolve_bound_reading_memory_root_at(
+            &bound_file,
+            &configured.to_string_lossy(),
+        )
+        .unwrap();
+        assert_eq!(ok, bound);
+
+        let err = resolve_bound_reading_memory_root_at(&bound_file, &forged.to_string_lossy())
+            .expect_err("forged root");
+        assert!(err.contains("does not match"), "unexpected error: {}", err);
+
+        // Forged root must not gain a .reading-memory spray from resolve alone.
+        assert!(!forged.join(".reading-memory").exists());
+
+        let _ = std::fs::remove_dir_all(&configured);
+        let _ = std::fs::remove_dir_all(&forged);
+        let _ = std::fs::remove_dir_all(bound_file.parent().unwrap());
+    }
+
+    #[test]
+    fn reading_memory_write_rejects_forged_decision_without_pending_review() {
+        clear_pending_ingest();
+        let root = unique_temp_dir("rm_forged_decision");
+        std::fs::create_dir_all(&root).unwrap();
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: root.to_string_lossy().to_string(),
+            book_title: "Book".to_string(),
+            book_author: None,
+            source_chapter: None,
+            source_cfi: None,
+            source_progress: None,
+            user_question: "解释这个概念".to_string(),
+            selected_excerpt: Some("excerpt".to_string()),
+            assistant_answer: "answer".to_string(),
+        };
+        // No prior review → take_pending must fail (forged decision path closed).
+        let err = take_pending_ingest_for(&request).expect_err("no pending");
+        assert!(
+            err.contains("No approved") || err.contains("review"),
+            "unexpected error: {}",
+            err
+        );
+        // Storing a pending for a different request must not authorize this one.
+        let other = ReadingMemoryDirectIngestRequest {
+            user_question: "different".to_string(),
+            ..request.clone()
+        };
+        store_pending_ingest(
+            &other,
+            ReadingMemoryDirectDecision {
+                should_ingest: true,
+                target_dir: Some("concepts".to_string()),
+                title: Some("Forged".to_string()),
+                note_type: Some("concept".to_string()),
+                summary: None,
+                body: Some("forged body".to_string()),
+                links: None,
+                confidence: Some(0.99),
+                reason: Some("forged".to_string()),
+            },
+        );
+        let mismatch = take_pending_ingest_for(&request).expect_err("mismatch");
+        assert!(
+            mismatch.contains("does not match"),
+            "unexpected error: {}",
+            mismatch
+        );
+        clear_pending_ingest();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reading_memory_write_rejects_symlink_escape() {
+        let root = unique_temp_dir("rm_symlink_root");
+        let outside = unique_temp_dir("rm_symlink_outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        let request = ReadingMemoryDirectIngestRequest {
+            root_path: root.to_string_lossy().to_string(),
+            book_title: "Book".to_string(),
+            book_author: Some("Author".to_string()),
+            source_chapter: Some("Chapter 1".to_string()),
+            source_cfi: Some("epubcfi(/6/8)".to_string()),
+            source_progress: Some(12.5),
+            user_question: "解释这个概念".to_string(),
+            selected_excerpt: Some("source excerpt".to_string()),
+            assistant_answer: "assistant answer".to_string(),
+        };
+        let decision = ReadingMemoryDirectDecision {
+            should_ingest: true,
+            target_dir: Some("concepts".to_string()),
+            title: Some("机会成本".to_string()),
+            note_type: Some("concept".to_string()),
+            summary: None,
+            body: Some("这是一个可复用概念。".to_string()),
+            links: Some(vec!["Related".to_string()]),
+            confidence: Some(0.82),
+            reason: Some("形成可复用概念".to_string()),
+        };
+        let rendered = "---\ntype: Concept\n---\n# 机会成本\n\nsymlink escape body\n".to_string();
+
+        // Create the book package, then replace concepts/ with a symlink out.
+        let pkg = ensure_book_subpackage(&root, "Book", Some("Author")).unwrap();
+        let concepts = pkg.join("concepts");
+        std::fs::remove_dir_all(&concepts).unwrap();
+        std::os::unix::fs::symlink(&outside, &concepts).unwrap();
+
+        let err = write_reading_memory_note_inner(request, decision, rendered)
+            .expect_err("symlink escape");
+        assert!(
+            err.contains("outside") || err.contains("Refusing"),
+            "unexpected error: {}",
+            err
+        );
+        assert!(std::fs::read_dir(&outside).unwrap().next().is_none());
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     #[test]

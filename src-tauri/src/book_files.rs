@@ -1,7 +1,12 @@
+use crate::path_safety::{ensure_canonical_inside_root, safe_join_under_root};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+
+/// Reject base64 payloads whose decoded size would exceed this limit.
+/// Aligns above the font import cap (32 MiB) for whole-book EPUB imports.
+pub(crate) const MAX_IMPORT_DECODED_BYTES: usize = 200 * 1024 * 1024;
 
 // ============================================================
 // Library / book file commands
@@ -124,16 +129,12 @@ pub(crate) fn import_book_to_library(
         .to_str()
         .ok_or("Invalid file name encoding")?;
 
-    let extension = source
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("epub");
-    let new_file_name = format!("{}_{}.{}", book_id, sanitize_filename(file_name), extension);
-
     let books_dir = ensure_books_dir(&app)?;
-    let dest_path = books_dir.join(&new_file_name);
+    let dest_path = library_book_dest_path(&books_dir, &book_id, file_name)?;
 
     std::fs::copy(source, &dest_path).map_err(|e| format!("Failed to copy file: {}", e))?;
+    let dest_path = ensure_canonical_inside_root(&dest_path, &books_dir)
+        .map_err(|_| "Refusing to import file outside library directory".to_string())?;
 
     let new_path = dest_path
         .to_str()
@@ -143,11 +144,25 @@ pub(crate) fn import_book_to_library(
     Ok(ImportBookResult { new_path, book_id })
 }
 
+pub(crate) fn sanitize_book_id(book_id: &str) -> Result<&str, String> {
+    if book_id.is_empty() {
+        return Err("book_id cannot be empty".to_string());
+    }
+    if !book_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("book_id contains invalid characters".to_string());
+    }
+    Ok(book_id)
+}
+
 pub(crate) fn library_book_dest_path(
     books_dir: &Path,
     book_id: &str,
     file_name: &str,
 ) -> Result<PathBuf, String> {
+    let book_id = sanitize_book_id(book_id)?;
     let extension = Path::new(file_name)
         .extension()
         .and_then(|e| e.to_str())
@@ -158,7 +173,9 @@ pub(crate) fn library_book_dest_path(
 
     let sanitized = sanitize_filename(file_name);
     let new_file_name = format!("{}_{}.{}", book_id, sanitized, extension);
-    Ok(books_dir.join(&new_file_name))
+    // Filename is a single Normal component after sanitization; join under root
+    // and reject any accidental multi-component escape.
+    safe_join_under_root(books_dir, Path::new(&new_file_name))
 }
 
 pub(crate) fn decode_import_bytes_base64(bytes_base64: &str) -> Result<Vec<u8>, String> {
@@ -166,9 +183,29 @@ pub(crate) fn decode_import_bytes_base64(bytes_base64: &str) -> Result<Vec<u8>, 
         return Err("Empty file".to_string());
     }
 
-    STANDARD
+    // Reject before decode/allocation. Base64 expands ~4/3, so encoded length
+    // above this bound cannot decode into a payload within the decoded cap.
+    let max_encoded = MAX_IMPORT_DECODED_BYTES
+        .saturating_mul(4)
+        .saturating_div(3)
+        .saturating_add(4);
+    if bytes_base64.len() > max_encoded {
+        return Err(format!(
+            "Book file is too large (max {} MiB)",
+            MAX_IMPORT_DECODED_BYTES / (1024 * 1024)
+        ));
+    }
+
+    let bytes = STANDARD
         .decode(bytes_base64)
-        .map_err(|e| format!("Invalid book bytes: {}", e))
+        .map_err(|e| format!("Invalid book bytes: {}", e))?;
+    if bytes.len() > MAX_IMPORT_DECODED_BYTES {
+        return Err(format!(
+            "Book file is too large (max {} MiB)",
+            MAX_IMPORT_DECODED_BYTES / (1024 * 1024)
+        ));
+    }
+    Ok(bytes)
 }
 
 pub(crate) fn write_imported_book_bytes(
@@ -183,8 +220,8 @@ pub(crate) fn write_imported_book_bytes(
 
     let dest_path = library_book_dest_path(books_dir, book_id, file_name)?;
     std::fs::write(&dest_path, bytes).map_err(|e| format!("Failed to write file: {}", e))?;
-
-    Ok(dest_path)
+    ensure_canonical_inside_root(&dest_path, books_dir)
+        .map_err(|_| "Refusing to write file outside library directory".to_string())
 }
 
 #[tauri::command]
@@ -254,14 +291,8 @@ fn library_books_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// only if it falls inside the library directory. Shared by lookup and delete
 /// paths so they apply the same escape protection.
 fn resolve_inside_books_dir(raw_path: &Path, books_dir: &Path) -> Result<PathBuf, String> {
-    let books_dir_canon = std::fs::canonicalize(books_dir)
-        .map_err(|e| format!("Failed to resolve books directory: {}", e))?;
-    let path_canon = std::fs::canonicalize(raw_path)
-        .map_err(|e| format!("Failed to resolve file path: {}", e))?;
-    if !path_canon.starts_with(&books_dir_canon) {
-        return Err("Path is outside library directory".to_string());
-    }
-    Ok(path_canon)
+    ensure_canonical_inside_root(raw_path, books_dir)
+        .map_err(|_| "Path is outside library directory".to_string())
 }
 
 /// Exact-match rule for the `original_filename` fallback: a library file is
@@ -403,6 +434,56 @@ mod tests {
         assert!(!is_supported_book_extension(Path::new("a.markdown")));
         assert!(!is_supported_book_extension(Path::new("a.txt")));
         assert!(!is_supported_book_extension(Path::new("a")));
+    }
+
+    #[test]
+    fn library_book_dest_path_rejects_traversal_book_id() {
+        let books_dir = unique_temp_dir("dest_path_traversal");
+        std::fs::create_dir_all(&books_dir).unwrap();
+
+        assert!(library_book_dest_path(&books_dir, "../evil", "book.epub").is_err());
+        assert!(library_book_dest_path(&books_dir, "a/b", "book.epub").is_err());
+        assert!(library_book_dest_path(&books_dir, "a\\b", "book.epub").is_err());
+        assert!(library_book_dest_path(&books_dir, "", "book.epub").is_err());
+        // UUID-shaped ids remain valid.
+        assert!(library_book_dest_path(
+            &books_dir,
+            "550e8400-e29b-41d4-a716-446655440000",
+            "book.epub"
+        )
+        .is_ok());
+
+        let _ = std::fs::remove_dir_all(&books_dir);
+    }
+
+    #[test]
+    fn write_imported_book_bytes_rejects_traversal_book_id() {
+        let books_dir = unique_temp_dir("import_bytes_traversal");
+        let outside = unique_temp_dir("import_bytes_outside");
+        std::fs::create_dir_all(&books_dir).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        let before = std::fs::read_dir(&outside).unwrap().count();
+        assert!(
+            write_imported_book_bytes(&books_dir, "../escape", "book.epub", b"epub-bytes").is_err()
+        );
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), before);
+        assert!(std::fs::read_dir(&books_dir).unwrap().next().is_none());
+
+        let _ = std::fs::remove_dir_all(&books_dir);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn decode_import_bytes_base64_rejects_oversized_payload() {
+        let oversized = "A".repeat(
+            MAX_IMPORT_DECODED_BYTES
+                .saturating_mul(4)
+                .saturating_div(3)
+                .saturating_add(5),
+        );
+        let err = decode_import_bytes_base64(&oversized).expect_err("oversized");
+        assert!(err.contains("too large"), "unexpected error: {}", err);
     }
 
     #[test]

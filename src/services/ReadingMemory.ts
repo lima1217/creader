@@ -37,6 +37,12 @@ export async function ensureReadingMemoryRepository(rootPath: string): Promise<s
   return await invoke<string>('ensure_reading_memory_repository', { rootPath });
 }
 
+/**
+ * Review-gated Reading Memory ingest. Review stores a one-time write credential
+ * in Rust; the write command consumes it and never accepts a caller-supplied
+ * decision, so forged `should_ingest` cannot bypass durability review.
+ * TypeScript still owns Markdown rendering between the two invokes.
+ */
 export async function ingestReadingMemoryDirect(
   input: ReadingMemoryIngestInput
 ): Promise<DirectIngestResult | null> {
@@ -56,7 +62,6 @@ export async function ingestReadingMemoryDirect(
   const renderedMarkdown = renderReadingMemoryNoteMarkdown(request, review.decision);
   return await invoke<DirectIngestResult>('write_reading_memory_note', {
     request,
-    decision: review.decision,
     renderedMarkdown,
   });
 }

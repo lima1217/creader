@@ -449,7 +449,48 @@ fn set_api_key(app: &tauri::AppHandle, provider_id: &str, key: &str) -> Result<(
         .collect();
     lines.push(format!("{}={}", name, key));
     std::fs::write(&path, format!("{}\n", lines.join("\n")))
-        .map_err(|e| format!("Failed to write ai_keys.env: {}", e))
+        .map_err(|e| format!("Failed to write ai_keys.env: {}", e))?;
+    tighten_api_keys_permissions(&path)?;
+    Ok(())
+}
+
+fn remove_api_key(app: &tauri::AppHandle, provider_id: &str) -> Result<(), String> {
+    let path = api_keys_file(app)?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let name = api_key_env_name(provider_id);
+    let existing = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read ai_keys.env: {}", e))?;
+    let lines: Vec<String> = existing
+        .lines()
+        .filter(|line| {
+            line.split_once('=')
+                .map(|(k, _)| k.trim() != name)
+                .unwrap_or(true)
+        })
+        .map(str::to_string)
+        .collect();
+    if lines.is_empty() {
+        let _ = std::fs::remove_file(&path);
+        return Ok(());
+    }
+    std::fs::write(&path, format!("{}\n", lines.join("\n")))
+        .map_err(|e| format!("Failed to write ai_keys.env: {}", e))?;
+    tighten_api_keys_permissions(&path)?;
+    Ok(())
+}
+
+fn tighten_api_keys_permissions(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(path, perms)
+            .map_err(|e| format!("Failed to set ai_keys.env permissions: {}", e))?;
+    }
+    let _ = path;
+    Ok(())
 }
 
 pub(crate) fn active_provider(
@@ -537,6 +578,7 @@ pub(crate) fn delete_ai_provider(app: tauri::AppHandle, id: String) -> Result<()
         store.active_id = store.providers.first().map(|p| p.id.clone());
     }
     save_provider_store(&app, &store)?;
+    remove_api_key(&app, &id)?;
     Ok(())
 }
 
@@ -1170,6 +1212,70 @@ mod tests {
             api_key_env_name("custom.provider-1"),
             "AI_API_KEY_CUSTOM_PROVIDER_1"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ai_keys_env_is_written_with_owner_only_permissions() {
+        let dir = std::env::temp_dir().join(format!(
+            "creader_ai_keys_perm_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ai_keys.env");
+        std::fs::write(&path, "AI_API_KEY_X=secret\n").unwrap();
+        // Start from a looser mode so the tighten step is observable.
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        tighten_api_keys_permissions(&path).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_api_key_line_strips_matching_env_entry() {
+        let dir = std::env::temp_dir().join(format!(
+            "creader_ai_keys_remove_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ai_keys.env");
+        std::fs::write(
+            &path,
+            "AI_API_KEY_KEEP=one\nAI_API_KEY_DROP=two\nAI_API_KEY_OTHER=three\n",
+        )
+        .unwrap();
+
+        let name = api_key_env_name("drop");
+        assert_eq!(name, "AI_API_KEY_DROP");
+        let existing = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<String> = existing
+            .lines()
+            .filter(|line| {
+                line.split_once('=')
+                    .map(|(k, _)| k.trim() != name)
+                    .unwrap_or(true)
+            })
+            .map(str::to_string)
+            .collect();
+        std::fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+        let remaining = std::fs::read_to_string(&path).unwrap();
+        assert!(remaining.contains("AI_API_KEY_KEEP=one"));
+        assert!(remaining.contains("AI_API_KEY_OTHER=three"));
+        assert!(!remaining.contains("AI_API_KEY_DROP"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn spawn_oneshot_completion_server(
