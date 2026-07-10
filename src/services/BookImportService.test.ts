@@ -79,4 +79,29 @@ describe('BookImportService file import', () => {
     await expect(importBookFromFile({ file })).rejects.toThrow('Only EPUB files are supported.');
     expect(invokeMock).not.toHaveBeenCalled();
   });
+
+  it('uses path import when the File exposes a native path', async () => {
+    invokeMock
+      .mockResolvedValueOnce({ path: '/library/42_from-disk.epub' })
+      .mockResolvedValueOnce({ new_path: '/library/42_from-disk.epub', book_id: '42' });
+
+    const file = makeEpubFile('epub', 'from-disk.epub');
+    Object.defineProperty(file, 'path', { value: '/Users/me/Books/from-disk.epub' });
+
+    const result = await importBookFromFile({ file, bookId: '42' });
+
+    expect(result).toMatchObject({
+      status: 'imported',
+      book: { id: '42', filePath: '/library/42_from-disk.epub' },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'preview_import_book_path', {
+      bookId: '42',
+      fileName: 'from-disk.epub',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'import_book_to_library', {
+      sourcePath: '/Users/me/Books/from-disk.epub',
+      bookId: '42',
+    });
+    expect(invokeMock.mock.calls.some((call) => call[0] === 'import_book_bytes_to_library')).toBe(false);
+  });
 });

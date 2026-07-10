@@ -6,6 +6,7 @@ import type { Book, NavItem } from '../../types';
 import type { ReaderRendition } from '../../services/reader/epubAdapter';
 import type { ReadingEngineInstance } from '../../services/reader/readingEngine';
 import { DEFAULT_READING_LAYOUT } from '../../services/reader/readingEngine';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { useEpubBookLifecycle } from './useEpubBookLifecycle';
 
 const mocks = vi.hoisted(() => ({
@@ -38,6 +39,15 @@ const book: Book = {
   progress: { currentCfi: '', percentage: 0 },
 };
 
+const bookB: Book = {
+  id: 'book-2',
+  title: 'B Book',
+  author: 'B Author',
+  filePath: '/tmp/book-b.epub',
+  addedAt: 2,
+  progress: { currentCfi: '', percentage: 0 },
+};
+
 function foliateInstance(): ReadingEngineInstance {
   const rendition = {
     display: mocks.display,
@@ -57,11 +67,13 @@ function foliateInstance(): ReadingEngineInstance {
 }
 
 function Harness({
+  currentBook = book,
   onLoadingChange,
   onError,
   onFileNotFound,
   onEngineLoadError,
 }: {
+  currentBook?: Book;
   onLoadingChange: (loading: boolean) => void;
   onError?: (error: string | null) => void;
   onFileNotFound?: (isNotFound: boolean) => void;
@@ -72,7 +84,7 @@ function Harness({
   const [, setLoading] = useState(false);
 
   useEpubBookLifecycle({
-    currentBook: book,
+    currentBook,
     containerRef,
     settings: {
       theme: 'light',
@@ -108,6 +120,7 @@ describe('useEpubBookLifecycle opening critical path', () => {
     vi.clearAllMocks();
     mocks.readFile.mockResolvedValue(new Uint8Array([1, 2, 3]));
     adapterMocks.foliateOpen.mockResolvedValue(foliateInstance());
+    useSelectionStore.setState({ selectedText: '', selectedCfiRange: '', accumulatedTexts: [] });
   });
 
   it('surfaces an engine-load message when foliate cannot be imported', async () => {
@@ -290,6 +303,79 @@ describe('useEpubBookLifecycle opening critical path', () => {
       animated: true,
     });
     expect(mocks.display).toHaveBeenCalledOnce();
+
+    flushSync(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  it('clears selection state when opening a book', async () => {
+    useSelectionStore.setState({
+      selectedText: 'stale quote',
+      selectedCfiRange: 'epubcfi(/6/2!/4)',
+      accumulatedTexts: ['old'],
+    });
+    mocks.display.mockResolvedValue(undefined);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    flushSync(() => root.render(<Harness onLoadingChange={() => {}} />));
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+
+    expect(useSelectionStore.getState()).toMatchObject({
+      selectedText: '',
+      selectedCfiRange: '',
+      accumulatedTexts: [],
+    });
+
+    flushSync(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  it('ignores a slow book A finish after book B has started loading', async () => {
+    const pendingDisplays: Array<() => void> = [];
+    mocks.display.mockImplementation(() => new Promise<void>((resolve) => {
+      pendingDisplays.push(resolve);
+    }));
+
+    const loadingStates: boolean[] = [];
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    flushSync(() => root.render(
+      <Harness
+        currentBook={book}
+        onLoadingChange={(loading) => loadingStates.push(loading)}
+      />,
+    ));
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+    expect(pendingDisplays).toHaveLength(1);
+    expect(loadingStates[loadingStates.length - 1]).toBe(true);
+
+    flushSync(() => root.render(
+      <Harness
+        currentBook={bookB}
+        onLoadingChange={(loading) => loadingStates.push(loading)}
+      />,
+    ));
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+    expect(pendingDisplays).toHaveLength(2);
+    expect(loadingStates[loadingStates.length - 1]).toBe(true);
+
+    // Book A's late display resolve must not clear book B's loading state.
+    pendingDisplays[0]();
+    await settle();
+    expect(loadingStates[loadingStates.length - 1]).toBe(true);
+
+    pendingDisplays[1]();
+    await settle();
+    expect(loadingStates[loadingStates.length - 1]).toBe(false);
 
     flushSync(() => root.unmount());
     container.remove();

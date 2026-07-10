@@ -53,4 +53,20 @@ describe('normalizeLibrary', () => {
 
     expect(result.folders).toEqual([{ id: 'ok', name: 'Valid', sortOrder: 0, createdAt: 1 }]);
   });
+
+  it('strips inline cover when coverKey is already present', () => {
+    const result = normalizeLibrary({
+      books: [{
+        id: 'b1',
+        title: 'Book',
+        cover: 'data:image/png;base64,abc',
+        coverKey: 'b1',
+      }],
+      folders: [],
+      lastUpdated: 1,
+    });
+
+    expect(result.books[0].coverKey).toBe('b1');
+    expect(result.books[0].cover).toBeUndefined();
+  });
 });

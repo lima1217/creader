@@ -31,6 +31,16 @@ async function resolveFileName(filePath: string): Promise<string> {
   return leaf && leaf.length > 0 ? leaf : 'book.epub';
 }
 
+/**
+ * Tauri / WebView may expose a native filesystem path on dropped File objects.
+ * Prefer that path so import can skip base64 IPC.
+ */
+export function resolveNativeFilePath(file: File): string | undefined {
+  const path = (file as File & { path?: string }).path;
+  if (typeof path === 'string' && path.trim()) return path;
+  return undefined;
+}
+
 async function buildImportedBook(params: {
   bookId: string;
   finalPath: string;
@@ -124,6 +134,17 @@ export async function importBookFromFile(params: {
 
   if (!file.name.toLowerCase().endsWith('.epub')) {
     throw new Error('Only EPUB files are supported.');
+  }
+
+  // Prefer a native path when the host exposes one (Tauri drag-drop), so we
+  // avoid base64-encoding the whole EPUB through IPC.
+  const nativePath = resolveNativeFilePath(file);
+  if (nativePath) {
+    return importBookFromPath({
+      filePath: nativePath,
+      existingFilePaths,
+      bookId,
+    });
   }
 
   const { invoke } = await import('@tauri-apps/api/core');

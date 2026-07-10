@@ -16,6 +16,7 @@ type SelectionState = {
   addToAccumulatedTexts: (text: string) => void;
   removeAccumulatedText: (index: number) => void;
   clearAccumulatedTexts: () => void;
+  clearSelection: () => void;
 };
 
 export const useSelectionStore = create<SelectionState>((set) => ({
@@ -33,4 +34,5 @@ export const useSelectionStore = create<SelectionState>((set) => ({
   removeAccumulatedText: (index) =>
     set((state) => ({ accumulatedTexts: state.accumulatedTexts.filter((_, i) => i !== index) })),
   clearAccumulatedTexts: () => set({ accumulatedTexts: [] }),
+  clearSelection: () => set({ selectedText: '', selectedCfiRange: '', accumulatedTexts: [] }),
 }));

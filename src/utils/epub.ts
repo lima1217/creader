@@ -28,6 +28,13 @@ function readZipText(entries: Record<string, Uint8Array>, name: string): string 
   return strFromU8(readZipEntry(entries, name));
 }
 
+function unzipSelected(data: Uint8Array, names: Iterable<string>): Record<string, Uint8Array> {
+  const wanted = new Set(names);
+  return unzipSync(data, {
+    filter: (file) => wanted.has(file.name),
+  });
+}
+
 function parseXml(raw: string, label: string): XMLDocument {
   const doc = new DOMParser().parseFromString(raw, 'application/xml');
   const parserError = doc.querySelector('parsererror');
@@ -78,19 +85,25 @@ function findCoverItem(opf: XMLDocument): Element | null {
   }) ?? null;
 }
 
+/**
+ * Extract title/author/cover by decompressing only the needed ZIP entries
+ * (container.xml → OPF → cover image), not the whole EPUB archive.
+ */
 export async function extractEpubMetadata(filePath: string): Promise<EpubMetadata> {
   logger.debug('Starting metadata extraction for:', filePath);
 
   try {
     const fileData = await readFile(filePath);
-    const entries = unzipSync(fileData);
-    const container = parseXml(readZipText(entries, 'META-INF/container.xml'), 'container.xml');
+
+    const containerEntries = unzipSelected(fileData, ['META-INF/container.xml']);
+    const container = parseXml(readZipText(containerEntries, 'META-INF/container.xml'), 'container.xml');
     const opfPath = Array.from(container.getElementsByTagName('*'))
       .find(element => element.localName === 'rootfile')
       ?.getAttribute('full-path');
     if (!opfPath) throw new Error('EPUB container did not declare an OPF package path');
 
-    const opf = parseXml(readZipText(entries, opfPath), opfPath);
+    const opfEntries = unzipSelected(fileData, [opfPath]);
+    const opf = parseXml(readZipText(opfEntries, opfPath), opfPath);
     const opfBase = opfPath.split('/').slice(0, -1).join('/');
     const title = textForTag(opf, 'title') ?? fallbackMetadata(filePath).title;
     const author = textForTag(opf, 'creator') ?? 'Unknown';
@@ -101,7 +114,8 @@ export async function extractEpubMetadata(filePath: string): Promise<EpubMetadat
     if (coverHref) {
       try {
         const coverPath = joinEpubPath(opfBase, coverHref);
-        const coverBytes = readZipEntry(entries, coverPath);
+        const coverEntries = unzipSelected(fileData, [coverPath]);
+        const coverBytes = readZipEntry(coverEntries, coverPath);
         coverBlob = new Blob([coverBytes], {
           type: mediaTypeForPath(coverPath, coverItem?.getAttribute('media-type')),
         });

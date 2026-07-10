@@ -21,6 +21,9 @@ export function buildReadingMemoryIngestInput(params: {
   const book = params.readingContext.book;
   if (!book) return null;
 
+  const chapterTitle = params.readingContext.chapterTitle
+    || params.readingContext.progress?.currentChapter;
+
   return {
     rootPath: params.rootPath,
     book,
@@ -28,7 +31,7 @@ export function buildReadingMemoryIngestInput(params: {
     assistantMessage: params.assistantMessage,
     selectedContext: params.userMessage.context || params.readingContext.selection?.text,
     selectedCfiRange: params.userMessage.contextCfi || params.readingContext.selection?.cfiRange,
-    currentChapter: params.readingContext.chapterContent,
+    currentChapter: chapterTitle,
     progress: params.readingContext.progress || book.progress,
   };
 }

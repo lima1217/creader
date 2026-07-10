@@ -83,11 +83,11 @@ function buildDirectIngestRequest(input: ReadingMemoryIngestInput): ReadingMemor
     root_path: input.rootPath,
     book_title: input.book.title,
     book_author: input.book.author,
-    source_chapter: progress.currentChapter || '',
+    source_chapter: input.currentChapter || progress.currentChapter || '',
     source_cfi: input.selectedCfiRange || input.userMessage.contextCfi || progress.currentCfi || '',
     source_progress: progress.percentage || 0,
     user_question: input.userMessage.content,
-    selected_excerpt: input.selectedContext || input.userMessage.context || input.currentChapter || '',
+    selected_excerpt: input.selectedContext || input.userMessage.context || '',
     assistant_answer: input.assistantMessage.content,
   };
 }
